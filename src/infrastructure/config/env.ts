@@ -1,0 +1,12 @@
+export const env = {
+  PORT: Number(process.env.PORT) || 3000,
+  HOST: process.env.HOST,
+  BROKER_PROVIDER: process.env.BROKER_PROVIDER || 'tradestation',
+  TRADESTATION_CLIENT_ID: process.env.TRADESTATION_CLIENT_ID,
+  TRADESTATION_CLIENT_SECRET: process.env.TRADESTATION_CLIENT_SECRET,
+  TRADESTATION_REFRESH_TOKEN: process.env.TRADESTATION_REFRESH_TOKEN,
+  TRADESTATION_ACCOUNT_ID: process.env.TRADESTATION_ACCOUNT_ID,
+  TRADESTATION_SIM_URL: process.env.TRADESTATION_SIM_URL || 'https://sim.api.tradestation.com',
+  TRADESTATION_LIVE_URL: process.env.TRADESTATION_LIVE_URL || 'https://api.tradestation.com',
+  TRADESTATION_SIGNIN_URL: process.env.TRADESTATION_SIGNIN_URL || 'https://signin.tradestation.com',
+};
