@@ -14,6 +14,12 @@ import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatch
 import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
 import { registerWatchlistRoutes } from './infrastructure/http/watchlistRoutes.js';
+import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
+import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
+import { GetEMA } from './application/indicators/GetEMA.js';
+import { GetMACD } from './application/indicators/GetMACD.js';
+import { GetVWAP } from './application/indicators/GetVWAP.js';
+import { registerIndicatorRoutes } from './infrastructure/http/indicatorRoutes.js';
 
 function buildBroker(): BrokerPort {
   switch (env.BROKER_PROVIDER) {
@@ -73,6 +79,22 @@ function buildScannerMonitor(repository: InMemoryWatchlistRepository): ScannerMo
   });
 }
 
+function buildIndicatorProvider(): IndicatorPort {
+  switch (env.INDICATOR_PROVIDER) {
+    case 'alphavantage': {
+      if (!env.ALPHA_VANTAGE_API_KEY) {
+        throw new Error('Missing required env var: ALPHA_VANTAGE_API_KEY');
+      }
+      return new AlphaVantageAdapter({
+        apiKey: env.ALPHA_VANTAGE_API_KEY,
+        baseUrl: env.ALPHA_VANTAGE_BASE_URL,
+      });
+    }
+    default:
+      throw new Error(`Unknown INDICATOR_PROVIDER: ${env.INDICATOR_PROVIDER}`);
+  }
+}
+
 async function main() {
   const server = await createServer();
 
@@ -81,6 +103,7 @@ async function main() {
   const broker = buildBroker();
   const watchlistRepository = new InMemoryWatchlistRepository();
   const monitor = buildScannerMonitor(watchlistRepository);
+  const indicators = buildIndicatorProvider();
 
   registerBrokerRoutes({
     server,
@@ -95,18 +118,26 @@ async function main() {
 
   registerWatchlistRoutes({ server, repository: watchlistRepository, monitor });
 
-  await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
-  console.log(
-    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? 'enabled' : 'disabled'}`,
-  );
+  registerIndicatorRoutes({
+    server,
+    getEMA: new GetEMA(indicators),
+    getMACD: new GetMACD(indicators),
+    getVWAP: new GetVWAP(indicators),
+  });
 
-  // Conexion al scanner en background — el server ya esta arriba, no bloqueamos /health.
-  monitor.start().catch((err) => {
+  try {
+    await monitor.start();
+  } catch (err) {
     console.error(
       '[cw-bot] ScannerMonitor start failed (degraded mode — adapter will keep retrying):',
       err,
     );
-  });
+  }
+
+  await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
+  console.log(
+    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${monitor.getStatus()})` : 'disabled'}`,
+  );
 
   const shutdown = async (signal: string) => {
     console.log(`[cw-bot] ${signal} received, shutting down...`);

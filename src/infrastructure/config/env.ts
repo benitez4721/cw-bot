@@ -14,4 +14,7 @@ export const env = {
   CW_USER_ID: process.env.CW_USER_ID,
   CW_API_KEY: process.env.CW_API_KEY,
   CW_CONFIG_ID: process.env.CW_CONFIG_ID,
+  INDICATOR_PROVIDER: process.env.INDICATOR_PROVIDER || 'alphavantage',
+  ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
+  ALPHA_VANTAGE_BASE_URL: process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
 };
