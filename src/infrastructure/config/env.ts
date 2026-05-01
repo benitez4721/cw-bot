@@ -9,4 +9,9 @@ export const env = {
   TRADESTATION_SIM_URL: process.env.TRADESTATION_SIM_URL || 'https://sim.api.tradestation.com',
   TRADESTATION_LIVE_URL: process.env.TRADESTATION_LIVE_URL || 'https://api.tradestation.com',
   TRADESTATION_SIGNIN_URL: process.env.TRADESTATION_SIGNIN_URL || 'https://signin.tradestation.com',
+  CW_ENABLED: (process.env.CW_ENABLED ?? 'true').toLowerCase() !== 'false',
+  CW_WS_URL: process.env.CW_WS_URL || 'wss://app.chartswatcher.com/api/v1/websocket',
+  CW_USER_ID: process.env.CW_USER_ID,
+  CW_API_KEY: process.env.CW_API_KEY,
+  CW_CONFIG_ID: process.env.CW_CONFIG_ID,
 };

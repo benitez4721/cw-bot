@@ -10,6 +10,10 @@ import { GetPositions } from './application/broker/GetPositions.js';
 import { GetOrders } from './application/broker/GetOrders.js';
 import { GetHistoricalOrders } from './application/broker/GetHistoricalOrders.js';
 import { registerBrokerRoutes } from './infrastructure/http/brokerRoutes.js';
+import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatcherAdapter.js';
+import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
+import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
+import { registerWatchlistRoutes } from './infrastructure/http/watchlistRoutes.js';
 
 function buildBroker(): BrokerPort {
   switch (env.BROKER_PROVIDER) {
@@ -36,12 +40,47 @@ function buildBroker(): BrokerPort {
   }
 }
 
+function buildScannerMonitor(repository: InMemoryWatchlistRepository): ScannerMonitor {
+  if (!env.CW_ENABLED) {
+    const noop = new ChartsWatcherAdapter({ wsUrl: '', userId: '', apiKey: '' });
+    return new ScannerMonitor({
+      feed: noop,
+      repository,
+      configId: '',
+      enabled: false,
+    });
+  }
+
+  const missing: string[] = [];
+  if (!env.CW_USER_ID) missing.push('CW_USER_ID');
+  if (!env.CW_API_KEY) missing.push('CW_API_KEY');
+  if (!env.CW_CONFIG_ID) missing.push('CW_CONFIG_ID');
+  if (missing.length > 0) {
+    throw new Error(`Missing required env vars for Charts Watcher: ${missing.join(', ')}`);
+  }
+
+  const adapter = new ChartsWatcherAdapter({
+    wsUrl: env.CW_WS_URL,
+    userId: env.CW_USER_ID!,
+    apiKey: env.CW_API_KEY!,
+  });
+
+  return new ScannerMonitor({
+    feed: adapter,
+    repository,
+    configId: env.CW_CONFIG_ID!,
+    enabled: true,
+  });
+}
+
 async function main() {
   const server = await createServer();
 
   server.get('/health', async () => ({ status: 'ok' }));
 
   const broker = buildBroker();
+  const watchlistRepository = new InMemoryWatchlistRepository();
+  const monitor = buildScannerMonitor(watchlistRepository);
 
   registerBrokerRoutes({
     server,
@@ -54,8 +93,34 @@ async function main() {
     getHistoricalOrders: new GetHistoricalOrders(broker),
   });
 
+  registerWatchlistRoutes({ server, repository: watchlistRepository, monitor });
+
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
-  console.log(`[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER}`);
+  console.log(
+    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? 'enabled' : 'disabled'}`,
+  );
+
+  // Conexion al scanner en background — el server ya esta arriba, no bloqueamos /health.
+  monitor.start().catch((err) => {
+    console.error(
+      '[cw-bot] ScannerMonitor start failed (degraded mode — adapter will keep retrying):',
+      err,
+    );
+  });
+
+  const shutdown = async (signal: string) => {
+    console.log(`[cw-bot] ${signal} received, shutting down...`);
+    try {
+      monitor.stop();
+      await server.close();
+    } catch (err) {
+      console.error('[cw-bot] Error during shutdown:', err);
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch((err) => {
