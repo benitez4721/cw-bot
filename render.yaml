@@ -19,10 +19,10 @@ services:
     plan: starter
     region: ohio
     branch: main
-    # autoDeploy disabled: deploy is triggered by GitHub Actions
-    # (.github/workflows/deploy.yml) only after CI passes on main, via
-    # Render Deploy Hook. This prevents broken code from reaching prod.
-    autoDeploy: false
+    autoDeploy: true
+    # Dashboard setting "Auto-Deploy: After CI Checks Pass" gates this on
+    # GitHub Actions success — broken code on main never reaches prod.
+    # Configure manually: Render service → Settings → Auto-Deploy.
     healthCheckPath: /health
     numInstances: 1
     envVars:
