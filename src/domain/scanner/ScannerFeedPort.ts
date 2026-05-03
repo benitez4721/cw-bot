@@ -6,4 +6,5 @@ export interface ScannerFeedPort {
   subscribe(configId: string): void;
   unsubscribe(configId: string): void;
   onUpdate(callback: (configId: string, rows: ScannerRow[]) => void): void;
+  onConnectionChange(callback: (connected: boolean) => void): void;
 }
