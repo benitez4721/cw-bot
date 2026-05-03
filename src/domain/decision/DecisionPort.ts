@@ -1,6 +1,6 @@
 import type { Quote } from '../broker/BrokerTypes.js';
 import type { MACD, VWAP } from '../indicators/IndicatorTypes.js';
-import type { DecisionSignal } from './DecisionTypes.js';
+import type { DecisionSignal, OrderConfig } from './DecisionTypes.js';
 
 export interface MarketSnapshot {
   symbol: string;
@@ -16,5 +16,6 @@ export interface EvaluateInput {
 
 export interface DecisionModelPort {
   readonly name: string;
+  readonly orderConfig: OrderConfig;
   evaluate(input: EvaluateInput): DecisionSignal;
 }

@@ -5,28 +5,38 @@ import type {
 } from '../../domain/decision/DecisionPort.js';
 import type {
   DecisionSignal,
-  OrderPlan,
+  OrderConfig,
   RuleCheck,
 } from '../../domain/decision/DecisionTypes.js';
 
-export interface TechnicalDecisionModelParams {
-  quantity: number;
+export interface TechnicalDecisionModelParams extends OrderConfig {
   entryOffset: number;
-  stopOffset: number;
-  takeProfitOffset: number;
 }
 
 export class TechnicalDecisionModel implements DecisionModelPort {
   readonly name = 'technical';
+  readonly orderConfig: OrderConfig;
 
-  constructor(private readonly params: TechnicalDecisionModelParams) {}
+  constructor(private readonly params: TechnicalDecisionModelParams) {
+    this.orderConfig = {
+      quantity: params.quantity,
+      stopOffset: params.stopOffset,
+      takeProfitOffset: params.takeProfitOffset,
+    };
+  }
 
   evaluate({ snapshot }: EvaluateInput): DecisionSignal {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks };
     }
-    return { action: 'buy', plan: this.buildPlan(snapshot), checks };
+    return {
+      action: 'buy',
+      symbol: snapshot.symbol,
+      side: 'BUY',
+      entryLimitPrice: round2(snapshot.quote.last + this.params.entryOffset),
+      checks,
+    };
   }
 
   private runChecks(s: MarketSnapshot): RuleCheck[] {
@@ -45,17 +55,6 @@ export class TechnicalDecisionModel implements DecisionModelPort {
       },
       { name: 'price > VWAP (1min)', passed: s.quote.last > s.vwap1min.value },
     ];
-  }
-
-  private buildPlan(s: MarketSnapshot): OrderPlan {
-    return {
-      symbol: s.symbol,
-      side: 'BUY',
-      quantity: this.params.quantity,
-      entryLimitPrice: round2(s.quote.last + this.params.entryOffset),
-      stopOffset: this.params.stopOffset,
-      takeProfitOffset: this.params.takeProfitOffset,
-    };
   }
 }
 

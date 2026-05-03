@@ -1,4 +1,5 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
+import type { OrderConfig } from '../../domain/decision/DecisionTypes.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
 import type { EvaluateDecision } from './EvaluateDecision.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
@@ -10,6 +11,7 @@ export interface DecisionRunnerOptions {
   placeBracketOrder: PlaceBracketOrder;
   watchlist: WatchlistRepository;
   broker: BrokerPort;
+  orderConfig: OrderConfig;
   intervalMs: number;
   enabled?: boolean;
 }
@@ -19,6 +21,7 @@ export class DecisionRunner {
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly watchlist: WatchlistRepository;
   private readonly broker: BrokerPort;
+  private readonly orderConfig: OrderConfig;
   private readonly intervalMs: number;
   private readonly enabled: boolean;
   private readonly inFlight = new Set<string>();
@@ -30,6 +33,7 @@ export class DecisionRunner {
     this.placeBracketOrder = options.placeBracketOrder;
     this.watchlist = options.watchlist;
     this.broker = options.broker;
+    this.orderConfig = options.orderConfig;
     this.intervalMs = options.intervalMs;
     this.enabled = options.enabled ?? true;
     this.status = this.enabled ? 'idle' : 'disabled';
@@ -61,7 +65,6 @@ export class DecisionRunner {
   private async tick(): Promise<void> {
     const symbols = this.watchlist
       .list()
-      .filter((s) => s.status === 'active')
       .map((s) => s.symbol);
 
     if (symbols.length === 0) return;
@@ -82,7 +85,12 @@ export class DecisionRunner {
       const signal = await this.evaluate.execute({ symbol });
       if (signal.action !== 'buy') return;
 
-      const result = await this.placeBracketOrder.execute(signal.plan);
+      const result = await this.placeBracketOrder.execute({
+        symbol: signal.symbol,
+        side: signal.side,
+        entryLimitPrice: signal.entryLimitPrice,
+        ...this.orderConfig,
+      });
       console.log(
         `[DecisionRunner] ${symbol} buy → orderId=${result.orderId} status=${result.status}`,
       );

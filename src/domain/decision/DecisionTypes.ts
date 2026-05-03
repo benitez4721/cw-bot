@@ -5,15 +5,18 @@ export interface RuleCheck {
   passed: boolean;
 }
 
-export interface OrderPlan {
-  symbol: string;
-  side: OrderSide;
+export interface OrderConfig {
   quantity: number;
-  entryLimitPrice: number;
   stopOffset: number;
   takeProfitOffset: number;
 }
 
 export type DecisionSignal =
-  | { action: 'buy'; plan: OrderPlan; checks: RuleCheck[] }
+  | {
+      action: 'buy';
+      symbol: string;
+      side: OrderSide;
+      entryLimitPrice: number;
+      checks: RuleCheck[];
+    }
   | { action: 'hold'; checks: RuleCheck[] };

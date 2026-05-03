@@ -134,6 +134,7 @@ async function main() {
     placeBracketOrder: placeBracketOrderUseCase,
     watchlist: watchlistRepository,
     broker,
+    orderConfig: decisionModel.orderConfig,
     intervalMs: env.DECISION_INTERVAL_MS,
     enabled: env.DECISION_ENABLED,
   });

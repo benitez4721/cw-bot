@@ -24,21 +24,25 @@ function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
 }
 
 describe('TechnicalDecisionModel', () => {
-  it('emits buy with correct plan when all five rules pass', () => {
+  it('emits buy with symbol, side and entry price when all five rules pass', () => {
     const model = new TechnicalDecisionModel(PARAMS);
     const result = model.evaluate({ snapshot: snapshot() });
 
     expect(result.action).toBe('buy');
     if (result.action !== 'buy') return;
-    expect(result.plan).toEqual({
-      symbol: 'AAPL',
-      side: 'BUY',
+    expect(result.symbol).toBe('AAPL');
+    expect(result.side).toBe('BUY');
+    expect(result.entryLimitPrice).toBe(101.05);
+    expect(result.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('exposes orderConfig derived from constructor params', () => {
+    const model = new TechnicalDecisionModel(PARAMS);
+    expect(model.orderConfig).toEqual({
       quantity: 2000,
-      entryLimitPrice: 101.05,
       stopOffset: 0.2,
       takeProfitOffset: 0.35,
     });
-    expect(result.checks.every((c) => c.passed)).toBe(true);
   });
 
   it('holds when 5min MACD is not positive', () => {
