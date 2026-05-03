@@ -1,4 +1,7 @@
-import type { BrokerPort, GetQuoteInput } from '../../domain/broker/BrokerPort.js';
+import type {
+  BrokerPort,
+  GetQuoteInput,
+} from '../../domain/broker/BrokerPort.js';
 import type {
   Balance,
   BracketOrderInput,
@@ -153,7 +156,9 @@ export class TradeStationAdapter implements BrokerPort {
     const cost = round2(input.entryLimitPrice);
     const exitSide: OrderSide = input.side === 'BUY' ? 'SELL' : 'BUY';
     const stopPrice =
-      input.side === 'BUY' ? round2(cost - input.stopOffset) : round2(cost + input.stopOffset);
+      input.side === 'BUY'
+        ? round2(cost - input.stopOffset)
+        : round2(cost + input.stopOffset);
     const takeProfitPrice =
       input.side === 'BUY'
         ? round2(cost + input.takeProfitOffset)
@@ -181,8 +186,16 @@ export class TradeStationAdapter implements BrokerPort {
         {
           Type: 'BRK',
           Orders: [
-            { ...exitLeg, OrderType: 'StopMarket', StopPrice: String(stopPrice) },
-            { ...exitLeg, OrderType: 'Limit', LimitPrice: String(takeProfitPrice) },
+            {
+              ...exitLeg,
+              OrderType: 'StopMarket',
+              StopPrice: String(stopPrice),
+            },
+            {
+              ...exitLeg,
+              OrderType: 'Limit',
+              LimitPrice: String(takeProfitPrice),
+            },
           ],
         },
       ],
@@ -245,8 +258,10 @@ export class TradeStationAdapter implements BrokerPort {
       Quantity: String(order.quantity),
       OrderType: order.type,
     };
-    if (order.limitPrice !== undefined) payload.LimitPrice = String(order.limitPrice);
-    if (order.stopPrice !== undefined) payload.StopPrice = String(order.stopPrice);
+    if (order.limitPrice !== undefined)
+      payload.LimitPrice = String(order.limitPrice);
+    if (order.stopPrice !== undefined)
+      payload.StopPrice = String(order.stopPrice);
 
     const response = await this.request<TsPlaceOrderResponse>({
       method: 'PUT',
@@ -327,7 +342,10 @@ export class TradeStationAdapter implements BrokerPort {
     const first = response.Quotes?.[0];
     if (!first || first.Error) {
       const reason =
-        first?.Message ?? response.Errors?.[0]?.Message ?? first?.Error ?? 'unknown error';
+        first?.Message ??
+        response.Errors?.[0]?.Message ??
+        first?.Error ??
+        'unknown error';
       throw new Error(`[TradeStation] getQuote(${symbol}) failed: ${reason}`);
     }
 
@@ -340,7 +358,11 @@ export class TradeStationAdapter implements BrokerPort {
     };
   }
 
-  async getHistoricalOrders({ since }: { since: string }): Promise<HistoricalOrder[]> {
+  async getHistoricalOrders({
+    since,
+  }: {
+    since: string;
+  }): Promise<HistoricalOrder[]> {
     const account = encodeURIComponent(this.config.accountId);
     const response = await this.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
@@ -353,18 +375,25 @@ export class TradeStationAdapter implements BrokerPort {
       return {
         ...base,
         filledAt: o.ClosedDateTime,
-        filledPrice: firstLeg?.ExecutionPrice ? parseNumber(firstLeg.ExecutionPrice) : undefined,
+        filledPrice: firstLeg?.ExecutionPrice
+          ? parseNumber(firstLeg.ExecutionPrice)
+          : undefined,
       };
     });
   }
 
   private apiBase(): string {
-    return this.config.accountId.startsWith('SIM') ? this.config.simBaseUrl : this.config.liveBaseUrl;
+    return this.config.accountId.startsWith('SIM')
+      ? this.config.simBaseUrl
+      : this.config.liveBaseUrl;
   }
 
   private async getAccessToken(): Promise<string> {
     const now = Date.now();
-    if (this.tokenCache && this.tokenCache.expiresAt - TOKEN_REFRESH_MARGIN_MS > now) {
+    if (
+      this.tokenCache &&
+      this.tokenCache.expiresAt - TOKEN_REFRESH_MARGIN_MS > now
+    ) {
       return this.tokenCache.accessToken;
     }
     if (this.refreshPromise) {
@@ -393,10 +422,15 @@ export class TradeStationAdapter implements BrokerPort {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`[TradeStation] refresh failed: HTTP ${res.status} ${text}`);
+      throw new Error(
+        `[TradeStation] refresh failed: HTTP ${res.status} ${text}`,
+      );
     }
 
-    const data = (await res.json()) as { access_token: string; expires_in: number };
+    const data = (await res.json()) as {
+      access_token: string;
+      expires_in: number;
+    };
     if (!data.access_token) {
       throw new Error('[TradeStation] refresh response missing access_token');
     }
@@ -405,7 +439,9 @@ export class TradeStationAdapter implements BrokerPort {
       accessToken: data.access_token,
       expiresAt: Date.now() + data.expires_in * 1000,
     };
-    console.log(`[TradeStation] Refreshed access token, expires in ${data.expires_in}s`);
+    console.log(
+      `[TradeStation] Refreshed access token, expires in ${data.expires_in}s`,
+    );
     return this.tokenCache.accessToken;
   }
 
@@ -445,7 +481,10 @@ export class TradeStationAdapter implements BrokerPort {
     }
 
     if (!res.ok) {
-      console.error(`[TradeStation] HTTP ${res.status} ${method} ${path}:`, text);
+      console.error(
+        `[TradeStation] HTTP ${res.status} ${method} ${path}:`,
+        text,
+      );
       throw new Error(`TradeStation API error: HTTP ${res.status}`);
     }
 
@@ -513,7 +552,9 @@ function toOrder(o: TsOrder): Order {
     side: mapSide(firstLeg?.BuyOrSell),
     type: mapOrderType(o.OrderType),
     status: mapStatus(o.Status),
-    filledQuantity: o.FilledQuantity ? parseNumber(o.FilledQuantity) : undefined,
+    filledQuantity: o.FilledQuantity
+      ? parseNumber(o.FilledQuantity)
+      : undefined,
     limitPrice: o.LimitPrice ? parseNumber(o.LimitPrice) : undefined,
     stopPrice: o.StopPrice ? parseNumber(o.StopPrice) : undefined,
     createdAt: o.OpenedDateTime ?? '',

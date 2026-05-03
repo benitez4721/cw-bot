@@ -20,25 +20,25 @@ pnpm dev
 
 ## Scripts
 
-| Script | Action |
-|--------|--------|
-| `pnpm dev` | Start with tsx watch + .env auto-load |
-| `pnpm build` | Compile TypeScript to `dist/` |
-| `pnpm start` | Run compiled output (`dist/main.js`) |
-| `pnpm test` | Run vitest |
+| Script       | Action                                |
+| ------------ | ------------------------------------- |
+| `pnpm dev`   | Start with tsx watch + .env auto-load |
+| `pnpm build` | Compile TypeScript to `dist/`         |
+| `pnpm start` | Run compiled output (`dist/main.js`)  |
+| `pnpm test`  | Run vitest                            |
 
 ## Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health probe |
-| POST | `/api/broker/orders` | Place order |
-| PUT | `/api/broker/orders/:orderId` | Replace order |
-| DELETE | `/api/broker/orders/:orderId` | Cancel order |
-| GET | `/api/broker/orders?symbol=` | List active orders |
-| GET | `/api/broker/orders/historical?since=` | Historical orders |
-| GET | `/api/broker/balances` | Account balances |
-| GET | `/api/broker/positions` | Open positions |
+| Method | Path                                   | Description        |
+| ------ | -------------------------------------- | ------------------ |
+| GET    | `/health`                              | Health probe       |
+| POST   | `/api/broker/orders`                   | Place order        |
+| PUT    | `/api/broker/orders/:orderId`          | Replace order      |
+| DELETE | `/api/broker/orders/:orderId`          | Cancel order       |
+| GET    | `/api/broker/orders?symbol=`           | List active orders |
+| GET    | `/api/broker/orders/historical?since=` | Historical orders  |
+| GET    | `/api/broker/balances`                 | Account balances   |
+| GET    | `/api/broker/positions`                | Open positions     |
 
 Account environment (sim vs live) is detected from the `TRADESTATION_ACCOUNT_ID` prefix (`SIM*` → simulator).
 

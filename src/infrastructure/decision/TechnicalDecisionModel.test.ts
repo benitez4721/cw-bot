@@ -48,21 +48,29 @@ describe('TechnicalDecisionModel', () => {
   it('holds when 5min MACD is not positive', () => {
     const model = new TechnicalDecisionModel(PARAMS);
     const result = model.evaluate({
-      snapshot: snapshot({ macd5min: { macd: -0.1, signal: 0, histogram: 0.3, timestamp: 't' } }),
+      snapshot: snapshot({
+        macd5min: { macd: -0.1, signal: 0, histogram: 0.3, timestamp: 't' },
+      }),
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === '5min MACD > 0')?.passed).toBe(false);
+    expect(result.checks.find((c) => c.name === '5min MACD > 0')?.passed).toBe(
+      false,
+    );
   });
 
   it('holds when 5min histogram is not positive', () => {
     const model = new TechnicalDecisionModel(PARAMS);
     const result = model.evaluate({
-      snapshot: snapshot({ macd5min: { macd: 0.5, signal: 0.4, histogram: -0.05, timestamp: 't' } }),
+      snapshot: snapshot({
+        macd5min: { macd: 0.5, signal: 0.4, histogram: -0.05, timestamp: 't' },
+      }),
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === '5min histogram > 0')?.passed).toBe(false);
+    expect(
+      result.checks.find((c) => c.name === '5min histogram > 0')?.passed,
+    ).toBe(false);
   });
 
   it('holds when 1min MACD is not positive', () => {
@@ -77,7 +85,9 @@ describe('TechnicalDecisionModel', () => {
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === '1min MACD > 0')?.passed).toBe(false);
+    expect(result.checks.find((c) => c.name === '1min MACD > 0')?.passed).toBe(
+      false,
+    );
   });
 
   it('holds when histogram already positive in previous bar (no crossover)', () => {
@@ -92,9 +102,10 @@ describe('TechnicalDecisionModel', () => {
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === '1min histogram bullish crossover')?.passed).toBe(
-      false,
-    );
+    expect(
+      result.checks.find((c) => c.name === '1min histogram bullish crossover')
+        ?.passed,
+    ).toBe(false);
   });
 
   it('holds when current histogram is negative (bearish crossover)', () => {
@@ -109,9 +120,10 @@ describe('TechnicalDecisionModel', () => {
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === '1min histogram bullish crossover')?.passed).toBe(
-      false,
-    );
+    expect(
+      result.checks.find((c) => c.name === '1min histogram bullish crossover')
+        ?.passed,
+    ).toBe(false);
   });
 
   it('holds when price is below VWAP', () => {
@@ -124,20 +136,25 @@ describe('TechnicalDecisionModel', () => {
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === 'price > VWAP (1min)')?.passed).toBe(false);
+    expect(
+      result.checks.find((c) => c.name === 'price > VWAP (1min)')?.passed,
+    ).toBe(false);
   });
 
   it('holds when 1min series has fewer than 2 points', () => {
     const model = new TechnicalDecisionModel(PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
-        macd1minSeries: [{ macd: 0.4, signal: 0.1, histogram: 0.3, timestamp: 't0' }],
+        macd1minSeries: [
+          { macd: 0.4, signal: 0.1, histogram: 0.3, timestamp: 't0' },
+        ],
       }),
     });
 
     expect(result.action).toBe('hold');
-    expect(result.checks.find((c) => c.name === '1min histogram bullish crossover')?.passed).toBe(
-      false,
-    );
+    expect(
+      result.checks.find((c) => c.name === '1min histogram bullish crossover')
+        ?.passed,
+    ).toBe(false);
   });
 });

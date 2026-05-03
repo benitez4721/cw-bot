@@ -24,7 +24,10 @@ export class PlaceBracketOrder {
     if (!Number.isFinite(input.stopOffset) || input.stopOffset <= 0) {
       throw new Error('stopOffset must be a positive number');
     }
-    if (!Number.isFinite(input.takeProfitOffset) || input.takeProfitOffset <= 0) {
+    if (
+      !Number.isFinite(input.takeProfitOffset) ||
+      input.takeProfitOffset <= 0
+    ) {
       throw new Error('takeProfitOffset must be a positive number');
     }
     return this.broker.placeBracketOrder(input);

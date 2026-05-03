@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { exec } from 'node:child_process';
 import Fastify from 'fastify';
 
-const SIGNIN_URL = process.env.TRADESTATION_SIGNIN_URL || 'https://signin.tradestation.com';
+const SIGNIN_URL =
+  process.env.TRADESTATION_SIGNIN_URL || 'https://signin.tradestation.com';
 const AUDIENCE = 'https://api.tradestation.com';
 const SCOPE = 'openid profile offline_access MarketData ReadAccount Trade';
 const REDIRECT_PORT = Number(process.env.OAUTH_REDIRECT_PORT) || 3001;
@@ -57,64 +58,94 @@ async function main() {
     process.exit(code);
   };
 
-  server.get<{ Querystring: { code?: string; state?: string; error?: string; error_description?: string } }>(
-    '/',
-    async (request, reply) => {
-      const { code, state: returnedState, error, error_description } = request.query;
+  server.get<{
+    Querystring: {
+      code?: string;
+      state?: string;
+      error?: string;
+      error_description?: string;
+    };
+  }>('/', async (request, reply) => {
+    const {
+      code,
+      state: returnedState,
+      error,
+      error_description,
+    } = request.query;
 
-      if (error) {
-        const msg = `${error}: ${error_description ?? ''}`;
-        console.error('[oauth] authorize error:', msg);
-        reply.type('text/html').send(`<h1>Auth error</h1><pre>${msg}</pre>`);
+    if (error) {
+      const msg = `${error}: ${error_description ?? ''}`;
+      console.error('[oauth] authorize error:', msg);
+      reply.type('text/html').send(`<h1>Auth error</h1><pre>${msg}</pre>`);
+      setImmediate(() => finish(1));
+      return;
+    }
+
+    if (!code) {
+      reply.status(400).type('text/html').send('<h1>Missing code</h1>');
+      setImmediate(() => finish(1));
+      return;
+    }
+
+    if (returnedState !== state) {
+      console.error('[oauth] state mismatch — possible CSRF. Aborting.');
+      reply.status(400).type('text/html').send('<h1>State mismatch</h1>');
+      setImmediate(() => finish(1));
+      return;
+    }
+
+    try {
+      const tokens = await exchangeCodeForTokens({
+        code,
+        clientId,
+        clientSecret,
+      });
+      if (!tokens.refresh_token) {
+        console.error(
+          '[oauth] token response missing refresh_token. Full body:',
+          tokens,
+        );
+        reply
+          .status(500)
+          .type('text/html')
+          .send('<h1>No refresh_token in response</h1>');
         setImmediate(() => finish(1));
         return;
       }
 
-      if (!code) {
-        reply.status(400).type('text/html').send('<h1>Missing code</h1>');
-        setImmediate(() => finish(1));
-        return;
-      }
+      console.log('\n=== TradeStation tokens ===');
+      console.log(
+        `access_token  (preview): ${tokens.access_token?.slice(0, 20)}...`,
+      );
+      console.log(`expires_in:              ${tokens.expires_in}s`);
+      console.log(`refresh_token:           ${tokens.refresh_token}`);
+      console.log(
+        '\nPaste the refresh_token into .env as TRADESTATION_REFRESH_TOKEN=<value>\n',
+      );
 
-      if (returnedState !== state) {
-        console.error('[oauth] state mismatch — possible CSRF. Aborting.');
-        reply.status(400).type('text/html').send('<h1>State mismatch</h1>');
-        setImmediate(() => finish(1));
-        return;
-      }
-
-      try {
-        const tokens = await exchangeCodeForTokens({ code, clientId, clientSecret });
-        if (!tokens.refresh_token) {
-          console.error('[oauth] token response missing refresh_token. Full body:', tokens);
-          reply.status(500).type('text/html').send('<h1>No refresh_token in response</h1>');
-          setImmediate(() => finish(1));
-          return;
-        }
-
-        console.log('\n=== TradeStation tokens ===');
-        console.log(`access_token  (preview): ${tokens.access_token?.slice(0, 20)}...`);
-        console.log(`expires_in:              ${tokens.expires_in}s`);
-        console.log(`refresh_token:           ${tokens.refresh_token}`);
-        console.log('\nPaste the refresh_token into .env as TRADESTATION_REFRESH_TOKEN=<value>\n');
-
-        reply.type('text/html').send(
+      reply
+        .type('text/html')
+        .send(
           '<h1>Token obtenido</h1><p>Ya puedes cerrar esta ventana y volver a la terminal.</p>',
         );
-        setImmediate(() => finish(0));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('[oauth] token exchange failed:', message);
-        reply.status(500).type('text/html').send(`<h1>Exchange failed</h1><pre>${message}</pre>`);
-        setImmediate(() => finish(1));
-      }
-    },
-  );
+      setImmediate(() => finish(0));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[oauth] token exchange failed:', message);
+      reply
+        .status(500)
+        .type('text/html')
+        .send(`<h1>Exchange failed</h1><pre>${message}</pre>`);
+      setImmediate(() => finish(1));
+    }
+  });
 
   await server.listen({ port: REDIRECT_PORT, host: '127.0.0.1' });
 
   console.log(`[oauth] Listening on ${REDIRECT_URI}`);
-  console.log('[oauth] Open this URL in your browser if it does not open automatically:\n');
+  console.log(
+    '[oauth] Open this URL in your browser if it does not open automatically:\n',
+  );
   console.log(authorizeUrl);
   console.log('');
 
@@ -125,7 +156,9 @@ async function main() {
   });
 
   setTimeout(() => {
-    console.error(`[oauth] Timeout after ${TIMEOUT_MS / 1000}s without callback. Aborting.`);
+    console.error(
+      `[oauth] Timeout after ${TIMEOUT_MS / 1000}s without callback. Aborting.`,
+    );
     finish(1);
   }, TIMEOUT_MS).unref();
 }
@@ -158,7 +191,9 @@ async function exchangeCodeForTokens({
   try {
     parsed = JSON.parse(text) as TokenResponse;
   } catch {
-    throw new Error(`Non-JSON response from /oauth/token (HTTP ${res.status}): ${text}`);
+    throw new Error(
+      `Non-JSON response from /oauth/token (HTTP ${res.status}): ${text}`,
+    );
   }
 
   if (!res.ok) {

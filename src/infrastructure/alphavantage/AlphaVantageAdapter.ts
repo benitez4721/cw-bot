@@ -5,7 +5,11 @@ import type {
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
-import type { EMA, MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
+import type {
+  EMA,
+  MACD,
+  VWAP,
+} from '../../domain/indicators/IndicatorTypes.js';
 
 interface AlphaVantageConfig {
   apiKey: string;
@@ -70,15 +74,20 @@ export class AlphaVantageAdapter implements IndicatorPort {
       interval: input.interval,
       series_type: input.seriesType ?? 'close',
     };
-    if (input.fastPeriod !== undefined) params.fastperiod = String(input.fastPeriod);
-    if (input.slowPeriod !== undefined) params.slowperiod = String(input.slowPeriod);
-    if (input.signalPeriod !== undefined) params.signalperiod = String(input.signalPeriod);
+    if (input.fastPeriod !== undefined)
+      params.fastperiod = String(input.fastPeriod);
+    if (input.slowPeriod !== undefined)
+      params.slowperiod = String(input.slowPeriod);
+    if (input.signalPeriod !== undefined)
+      params.signalperiod = String(input.signalPeriod);
 
     const data = await this.request(params);
     return pickSeries(data, 'Technical Analysis: MACD');
   }
 
-  private async request(params: Record<string, string>): Promise<AlphaVantageResponse> {
+  private async request(
+    params: Record<string, string>,
+  ): Promise<AlphaVantageResponse> {
     const url = new URL(this.config.baseUrl);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('apikey', this.config.apiKey);
@@ -98,7 +107,9 @@ export class AlphaVantageAdapter implements IndicatorPort {
     try {
       parsed = JSON.parse(text) as AlphaVantageResponse;
     } catch {
-      throw new Error(`Alpha Vantage: invalid JSON response: ${text.slice(0, 200)}`);
+      throw new Error(
+        `Alpha Vantage: invalid JSON response: ${text.slice(0, 200)}`,
+      );
     }
 
     if (parsed['Error Message']) {

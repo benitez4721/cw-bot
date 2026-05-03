@@ -63,9 +63,7 @@ export class DecisionRunner {
   }
 
   private async tick(): Promise<void> {
-    const symbols = this.watchlist
-      .list()
-      .map((s) => s.symbol);
+    const symbols = this.watchlist.list().map((s) => s.symbol);
 
     if (symbols.length === 0) return;
 
@@ -108,11 +106,14 @@ export class DecisionRunner {
       this.broker.getOrders({ symbol }),
     ]);
 
-    if (positions.some((p) => p.symbol === symbol && p.quantity !== 0)) return true;
+    if (positions.some((p) => p.symbol === symbol && p.quantity !== 0))
+      return true;
     return orders.some(
       (o) =>
         o.symbol === symbol &&
-        (o.status === 'open' || o.status === 'pending' || o.status === 'partiallyFilled'),
+        (o.status === 'open' ||
+          o.status === 'pending' ||
+          o.status === 'partiallyFilled'),
     );
   }
 }

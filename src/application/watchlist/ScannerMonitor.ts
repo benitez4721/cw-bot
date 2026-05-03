@@ -2,7 +2,11 @@ import type { ScannerFeedPort } from '../../domain/scanner/ScannerFeedPort.js';
 import type { ScannerRow } from '../../domain/scanner/ScannerTypes.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
 
-export type ScannerMonitorStatus = 'connected' | 'connecting' | 'disconnected' | 'disabled';
+export type ScannerMonitorStatus =
+  | 'connected'
+  | 'connecting'
+  | 'disconnected'
+  | 'disabled';
 
 export interface ScannerMonitorOptions {
   feed: ScannerFeedPort;

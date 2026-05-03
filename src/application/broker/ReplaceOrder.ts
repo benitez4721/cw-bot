@@ -1,5 +1,8 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { OrderResult, PlaceOrderInput } from '../../domain/broker/BrokerTypes.js';
+import type {
+  OrderResult,
+  PlaceOrderInput,
+} from '../../domain/broker/BrokerTypes.js';
 
 export interface ReplaceOrderInput {
   orderId: string;

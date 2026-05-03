@@ -1,6 +1,9 @@
 import WebSocket from 'ws';
 import type { ScannerFeedPort } from '../../domain/scanner/ScannerFeedPort.js';
-import type { ScannerColumn, ScannerRow } from '../../domain/scanner/ScannerTypes.js';
+import type {
+  ScannerColumn,
+  ScannerRow,
+} from '../../domain/scanner/ScannerTypes.js';
 
 export interface ChartsWatcherConfig {
   wsUrl: string;
@@ -40,7 +43,8 @@ type CWMessage = CWToplistConfirm | CWToplistUpdate | CWKeepAlive | CWError;
 export class ChartsWatcherAdapter implements ScannerFeedPort {
   private ws: WebSocket | null = null;
   private readonly config: ChartsWatcherConfig;
-  private updateCallbacks: ((configId: string, rows: ScannerRow[]) => void)[] = [];
+  private updateCallbacks: ((configId: string, rows: ScannerRow[]) => void)[] =
+    [];
   private subscribedConfigs: Record<string, true> = {};
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
@@ -155,14 +159,19 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
         break;
 
       default:
-        console.warn('[ChartsWatcher] Unknown message type:', (msg as { '@type': string })['@type']);
+        console.warn(
+          '[ChartsWatcher] Unknown message type:',
+          (msg as { '@type': string })['@type'],
+        );
     }
   }
 
   private handleUpdate(msg: CWToplistUpdate): void {
     const rows: ScannerRow[] = msg.rows.map((r) => ({
       symbol: r.symbol,
-      columns: r.columns.map((c): ScannerColumn => ({ key: c.key, value: c.value })),
+      columns: r.columns.map(
+        (c): ScannerColumn => ({ key: c.key, value: c.value }),
+      ),
     }));
 
     for (const cb of this.updateCallbacks) {

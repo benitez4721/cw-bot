@@ -1,4 +1,7 @@
-import type { EMAInput, IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
+import type {
+  EMAInput,
+  IndicatorPort,
+} from '../../domain/indicators/IndicatorPort.js';
 import type { EMA } from '../../domain/indicators/IndicatorTypes.js';
 
 export class GetEMA {

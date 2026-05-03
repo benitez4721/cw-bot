@@ -1,4 +1,7 @@
-import type { BrokerPort, GetQuoteInput } from '../../domain/broker/BrokerPort.js';
+import type {
+  BrokerPort,
+  GetQuoteInput,
+} from '../../domain/broker/BrokerPort.js';
 import type { Quote } from '../../domain/broker/BrokerTypes.js';
 
 export class GetQuote {
