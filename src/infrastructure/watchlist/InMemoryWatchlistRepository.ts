@@ -4,25 +4,25 @@ import type { WatchedSymbol } from '../../domain/watchlist/WatchlistTypes.js';
 export class InMemoryWatchlistRepository implements WatchlistRepository {
   private readonly symbols = new Map<string, WatchedSymbol>();
 
-  insert(symbol: WatchedSymbol): void {
+  async insert(symbol: WatchedSymbol): Promise<void> {
     if (this.symbols.has(symbol.symbol)) {
       throw new Error(`Symbol already in watchlist: ${symbol.symbol}`);
     }
     this.symbols.set(symbol.symbol, symbol);
   }
 
-  update(symbol: WatchedSymbol): void {
+  async update(symbol: WatchedSymbol): Promise<void> {
     if (!this.symbols.has(symbol.symbol)) {
       throw new Error(`Symbol not in watchlist: ${symbol.symbol}`);
     }
     this.symbols.set(symbol.symbol, symbol);
   }
 
-  getBySymbol(symbol: string): WatchedSymbol | undefined {
+  async getBySymbol(symbol: string): Promise<WatchedSymbol | undefined> {
     return this.symbols.get(symbol);
   }
 
-  list(): WatchedSymbol[] {
+  async list(): Promise<WatchedSymbol[]> {
     return Array.from(this.symbols.values());
   }
 }

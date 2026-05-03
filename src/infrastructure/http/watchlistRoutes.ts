@@ -9,7 +9,7 @@ export const watchlistRoutes: FastifyPluginAsync<
   WatchlistRoutesOptions
 > = async (server, opts) => {
   server.get('/api/watchlist', async () => {
-    const items = opts.listWatchlist.execute();
+    const items = await opts.listWatchlist.execute();
     return { items, count: items.length };
   });
 };
