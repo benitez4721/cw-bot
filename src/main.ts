@@ -122,50 +122,63 @@ async function main() {
 
   server.get('/health', async () => ({ status: 'ok' }));
 
-  const broker = buildBroker();
+  // Adapters
+  const brokerAdapter = buildBroker();
+  const indicatorAdapter = buildIndicatorProvider();
+  const decisionModelAdapter = buildDecisionModel();
+
+  // Repositories
   const watchlistRepository = new InMemoryWatchlistRepository();
-  const monitor = buildScannerMonitor(watchlistRepository);
-  const indicators = buildIndicatorProvider();
-  const decisionModel = buildDecisionModel();
-  const evaluateDecision = new EvaluateDecision(decisionModel, indicators, broker);
-  const placeBracketOrderUseCase = new PlaceBracketOrder(broker);
-  const decisionRunner = new DecisionRunner({
-    evaluate: evaluateDecision,
+
+  // Use cases
+  const scannerMonitorUseCase = buildScannerMonitor(watchlistRepository);
+  const evaluateDecisionUseCase = new EvaluateDecision(
+    decisionModelAdapter,
+    indicatorAdapter,
+    brokerAdapter,
+  );
+  const placeBracketOrderUseCase = new PlaceBracketOrder(brokerAdapter);
+  const decisionRunnerUseCase = new DecisionRunner({
+    evaluate: evaluateDecisionUseCase,
     placeBracketOrder: placeBracketOrderUseCase,
     watchlist: watchlistRepository,
-    broker,
-    orderConfig: decisionModel.orderConfig,
+    broker: brokerAdapter,
+    orderConfig: decisionModelAdapter.orderConfig,
     intervalMs: env.DECISION_INTERVAL_MS,
     enabled: env.DECISION_ENABLED,
   });
 
   registerBrokerRoutes({
     server,
-    placeOrder: new PlaceOrder(broker),
-    cancelOrder: new CancelOrder(broker),
-    replaceOrder: new ReplaceOrder(broker),
-    getBalances: new GetBalances(broker),
-    getPositions: new GetPositions(broker),
-    getOrders: new GetOrders(broker),
-    getHistoricalOrders: new GetHistoricalOrders(broker),
-    getQuote: new GetQuote(broker),
+    placeOrder: new PlaceOrder(brokerAdapter),
+    cancelOrder: new CancelOrder(brokerAdapter),
+    replaceOrder: new ReplaceOrder(brokerAdapter),
+    getBalances: new GetBalances(brokerAdapter),
+    getPositions: new GetPositions(brokerAdapter),
+    getOrders: new GetOrders(brokerAdapter),
+    getHistoricalOrders: new GetHistoricalOrders(brokerAdapter),
+    getQuote: new GetQuote(brokerAdapter),
     placeBracketOrder: placeBracketOrderUseCase,
   });
 
-  registerWatchlistRoutes({ server, repository: watchlistRepository, monitor });
+  registerWatchlistRoutes({
+    server,
+    repository: watchlistRepository,
+    monitor: scannerMonitorUseCase,
+  });
 
   registerIndicatorRoutes({
     server,
-    getEMA: new GetEMA(indicators),
-    getMACD: new GetMACD(indicators),
-    getMACDSeries: new GetMACDSeries(indicators),
-    getVWAP: new GetVWAP(indicators),
+    getEMA: new GetEMA(indicatorAdapter),
+    getMACD: new GetMACD(indicatorAdapter),
+    getMACDSeries: new GetMACDSeries(indicatorAdapter),
+    getVWAP: new GetVWAP(indicatorAdapter),
   });
 
-  registerDecisionRoutes({ server, evaluateDecision });
+  registerDecisionRoutes({ server, evaluateDecision: evaluateDecisionUseCase });
 
   try {
-    await monitor.start();
+    await scannerMonitorUseCase.start();
   } catch (err) {
     console.error(
       '[cw-bot] ScannerMonitor start failed (degraded mode — adapter will keep retrying):',
@@ -173,18 +186,18 @@ async function main() {
     );
   }
 
-  decisionRunner.start();
+  decisionRunnerUseCase.start();
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
   console.log(
-    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${monitor.getStatus()})` : 'disabled'} decision=${env.DECISION_ENABLED ? `${decisionModel.name} (${decisionRunner.getStatus()}, interval=${env.DECISION_INTERVAL_MS}ms)` : 'disabled'}`,
+    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${scannerMonitorUseCase.getStatus()})` : 'disabled'} decision=${env.DECISION_ENABLED ? `${decisionModelAdapter.name} (${decisionRunnerUseCase.getStatus()}, interval=${env.DECISION_INTERVAL_MS}ms)` : 'disabled'}`,
   );
 
   const shutdown = async (signal: string) => {
     console.log(`[cw-bot] ${signal} received, shutting down...`);
     try {
-      decisionRunner.stop();
-      monitor.stop();
+      decisionRunnerUseCase.stop();
+      scannerMonitorUseCase.stop();
       await server.close();
     } catch (err) {
       console.error('[cw-bot] Error during shutdown:', err);
