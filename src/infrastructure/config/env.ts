@@ -1,6 +1,9 @@
 export const env = {
+  NODE_ENV: process.env.NODE_ENV,
+  LOG_LEVEL: process.env.LOG_LEVEL,
   PORT: Number(process.env.PORT) || 3000,
   HOST: process.env.HOST,
+  TZ: process.env.TZ,
   BROKER_PROVIDER: process.env.BROKER_PROVIDER || 'tradestation',
   TRADESTATION_CLIENT_ID: process.env.TRADESTATION_CLIENT_ID,
   TRADESTATION_CLIENT_SECRET: process.env.TRADESTATION_CLIENT_SECRET,
@@ -25,4 +28,11 @@ export const env = {
   DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
   DECISION_ENABLED:
     (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
+  REDIS_URL: process.env.REDIS_URL,
+  API_TOKEN: process.env.API_TOKEN,
+  LOGTAIL_SOURCE_TOKEN: process.env.LOGTAIL_SOURCE_TOKEN,
+  BETTERSTACK_HEARTBEAT_URL: process.env.BETTERSTACK_HEARTBEAT_URL,
+  GRAFANA_CLOUD_PROM_URL: process.env.GRAFANA_CLOUD_PROM_URL,
+  GRAFANA_CLOUD_PROM_USERNAME: process.env.GRAFANA_CLOUD_PROM_USERNAME,
+  GRAFANA_CLOUD_PROM_API_KEY: process.env.GRAFANA_CLOUD_PROM_API_KEY,
 };
