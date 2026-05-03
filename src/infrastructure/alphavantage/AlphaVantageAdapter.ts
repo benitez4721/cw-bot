@@ -2,6 +2,7 @@ import type {
   EMAInput,
   IndicatorPort,
   MACDInput,
+  MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type { EMA, MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
@@ -36,25 +37,17 @@ export class AlphaVantageAdapter implements IndicatorPort {
   }
 
   async getMACD(input: MACDInput): Promise<MACD> {
-    const params: Record<string, string> = {
-      function: 'MACD',
-      symbol: input.symbol,
-      interval: input.interval,
-      series_type: input.seriesType ?? 'close',
-    };
-    if (input.fastPeriod !== undefined) params.fastperiod = String(input.fastPeriod);
-    if (input.slowPeriod !== undefined) params.slowperiod = String(input.slowPeriod);
-    if (input.signalPeriod !== undefined) params.signalperiod = String(input.signalPeriod);
-
-    const data = await this.request(params);
-    const series = pickSeries(data, 'Technical Analysis: MACD');
+    const series = await this.fetchMACDSeries(input);
     const [timestamp, latest] = pickLatest(series);
-    return {
-      macd: parseNumber(latest['MACD']),
-      signal: parseNumber(latest['MACD_Signal']),
-      histogram: parseNumber(latest['MACD_Hist']),
-      timestamp,
-    };
+    return toMACD(timestamp, latest);
+  }
+
+  async getMACDSeries(input: MACDSeriesInput): Promise<MACD[]> {
+    if (!Number.isInteger(input.limit) || input.limit <= 0) {
+      throw new Error('limit must be a positive integer');
+    }
+    const series = await this.fetchMACDSeries(input);
+    return pickRecent(series, input.limit).map(([ts, row]) => toMACD(ts, row));
   }
 
   async getVWAP(input: VWAPInput): Promise<VWAP> {
@@ -66,6 +59,23 @@ export class AlphaVantageAdapter implements IndicatorPort {
     const series = pickSeries(data, 'Technical Analysis: VWAP');
     const [timestamp, latest] = pickLatest(series);
     return { value: parseNumber(latest['VWAP']), timestamp };
+  }
+
+  private async fetchMACDSeries(
+    input: MACDInput,
+  ): Promise<Record<string, Record<string, string>>> {
+    const params: Record<string, string> = {
+      function: 'MACD',
+      symbol: input.symbol,
+      interval: input.interval,
+      series_type: input.seriesType ?? 'close',
+    };
+    if (input.fastPeriod !== undefined) params.fastperiod = String(input.fastPeriod);
+    if (input.slowPeriod !== undefined) params.slowperiod = String(input.slowPeriod);
+    if (input.signalPeriod !== undefined) params.signalperiod = String(input.signalPeriod);
+
+    const data = await this.request(params);
+    return pickSeries(data, 'Technical Analysis: MACD');
   }
 
   private async request(params: Record<string, string>): Promise<AlphaVantageResponse> {
@@ -118,11 +128,27 @@ function pickSeries(
 function pickLatest(
   series: Record<string, Record<string, string>>,
 ): [string, Record<string, string>] {
+  const [first] = pickRecent(series, 1);
+  return first;
+}
+
+function pickRecent(
+  series: Record<string, Record<string, string>>,
+  limit: number,
+): Array<[string, Record<string, string>]> {
   const timestamps = Object.keys(series);
   if (timestamps.length === 0) throw new Error('Alpha Vantage: empty series');
   timestamps.sort((a, b) => (a < b ? 1 : -1));
-  const ts = timestamps[0];
-  return [ts, series[ts]];
+  return timestamps.slice(0, limit).map((ts) => [ts, series[ts]]);
+}
+
+function toMACD(timestamp: string, row: Record<string, string>): MACD {
+  return {
+    macd: parseNumber(row['MACD']),
+    signal: parseNumber(row['MACD_Signal']),
+    histogram: parseNumber(row['MACD_Hist']),
+    timestamp,
+  };
 }
 
 function parseNumber(value: string | undefined): number {

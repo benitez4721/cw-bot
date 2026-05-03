@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { GetEMA } from '../../application/indicators/GetEMA.js';
 import type { GetMACD } from '../../application/indicators/GetMACD.js';
+import type { GetMACDSeries } from '../../application/indicators/GetMACDSeries.js';
 import type { GetVWAP } from '../../application/indicators/GetVWAP.js';
 import type {
   EMAInput,
   MACDInput,
+  MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
@@ -47,6 +49,10 @@ interface MACDQuery {
   fastPeriod?: string;
   slowPeriod?: string;
   signalPeriod?: string;
+}
+
+interface MACDSeriesQuery extends MACDQuery {
+  limit?: string;
 }
 
 interface VWAPQuery {
@@ -110,6 +116,18 @@ function validateMACDQuery(
   };
 }
 
+function validateMACDSeriesQuery(
+  q: MACDSeriesQuery,
+): { ok: true; input: MACDSeriesInput } | { ok: false; error: string } {
+  const base = validateMACDQuery(q);
+  if (!base.ok) return base;
+  const limit = parsePositiveInt(q.limit);
+  if (limit === undefined || Number.isNaN(limit)) {
+    return { ok: false, error: 'limit is required and must be a positive integer' };
+  }
+  return { ok: true, input: { ...base.input, limit } };
+}
+
 function validateVWAPQuery(
   q: VWAPQuery,
 ): { ok: true; input: VWAPInput } | { ok: false; error: string } {
@@ -130,11 +148,13 @@ export function registerIndicatorRoutes({
   server,
   getEMA,
   getMACD,
+  getMACDSeries,
   getVWAP,
 }: {
   server: FastifyInstance;
   getEMA: GetEMA;
   getMACD: GetMACD;
+  getMACDSeries: GetMACDSeries;
   getVWAP: GetVWAP;
 }) {
   server.get<{ Querystring: EMAQuery }>('/api/indicators/ema', async (request, reply) => {
@@ -164,6 +184,23 @@ export function registerIndicatorRoutes({
       return reply.status(500).send({ error: message });
     }
   });
+
+  server.get<{ Querystring: MACDSeriesQuery }>(
+    '/api/indicators/macd-series',
+    async (request, reply) => {
+      const validation = validateMACDSeriesQuery(request.query ?? {});
+      if (!validation.ok) {
+        return reply.status(400).send({ error: validation.error });
+      }
+      try {
+        const result = await getMACDSeries.execute(validation.input);
+        return { series: result };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        return reply.status(500).send({ error: message });
+      }
+    },
+  );
 
   server.get<{ Querystring: VWAPQuery }>('/api/indicators/vwap', async (request, reply) => {
     const validation = validateVWAPQuery(request.query ?? {});

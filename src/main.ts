@@ -19,6 +19,7 @@ import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
 import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
 import { GetEMA } from './application/indicators/GetEMA.js';
 import { GetMACD } from './application/indicators/GetMACD.js';
+import { GetMACDSeries } from './application/indicators/GetMACDSeries.js';
 import { GetVWAP } from './application/indicators/GetVWAP.js';
 import { registerIndicatorRoutes } from './infrastructure/http/indicatorRoutes.js';
 
@@ -124,6 +125,7 @@ async function main() {
     server,
     getEMA: new GetEMA(indicators),
     getMACD: new GetMACD(indicators),
+    getMACDSeries: new GetMACDSeries(indicators),
     getVWAP: new GetVWAP(indicators),
   });
 
