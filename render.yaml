@@ -1,0 +1,54 @@
+# Render Blueprint for cw-bot.
+# IMPORTANT: this is a single-instance, stateful trading bot. Watchlist,
+# DecisionRunner inFlight Set and ChartWatcher WS subscription cannot be
+# safely duplicated. Keep numInstances: 1 and never enable autoscaling.
+#
+# Plan rationale:
+# - "starter" ($7/mo): does NOT sleep on idle. The bot must keep its WS
+#   connection open and tick every 60s — the free plan would suspend it.
+# - region "ohio" (us-east): low latency to TradeStation NJ datacenter.
+#
+# Redis is hosted externally at Upstash (free tier, 10k commands/day).
+# Set REDIS_URL manually in the Render dashboard from the Upstash
+# connection string. Render's own Key-Value (Redis) starts at $10/mo.
+
+services:
+  - type: web
+    name: cw-bot
+    runtime: docker
+    plan: starter
+    region: ohio
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+    numInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: UTC
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: info
+      # Secrets — set via dashboard (sync:false keeps them out of git).
+      - key: TRADESTATION_CLIENT_ID
+        sync: false
+      - key: TRADESTATION_CLIENT_SECRET
+        sync: false
+      - key: TRADESTATION_REFRESH_TOKEN
+        sync: false
+      - key: TRADESTATION_ACCOUNT_ID
+        sync: false
+      - key: CW_USER_ID
+        sync: false
+      - key: CW_API_KEY
+        sync: false
+      - key: CW_CONFIG_ID
+        sync: false
+      - key: ALPHA_VANTAGE_API_KEY
+        sync: false
+      - key: API_TOKEN
+        sync: false
+      - key: REDIS_URL
+        sync: false
