@@ -17,4 +17,9 @@ export const env = {
   INDICATOR_PROVIDER: process.env.INDICATOR_PROVIDER || 'alphavantage',
   ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
   ALPHA_VANTAGE_BASE_URL: process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
+  DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
+  DECISION_QUANTITY: Number(process.env.DECISION_QUANTITY) || 2000,
+  DECISION_ENTRY_OFFSET: Number(process.env.DECISION_ENTRY_OFFSET) || 0.05,
+  DECISION_STOP_OFFSET: Number(process.env.DECISION_STOP_OFFSET) || 0.2,
+  DECISION_TP_OFFSET: Number(process.env.DECISION_TP_OFFSET) || 0.35,
 };

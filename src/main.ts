@@ -23,6 +23,10 @@ import { GetMACD } from './application/indicators/GetMACD.js';
 import { GetMACDSeries } from './application/indicators/GetMACDSeries.js';
 import { GetVWAP } from './application/indicators/GetVWAP.js';
 import { registerIndicatorRoutes } from './infrastructure/http/indicatorRoutes.js';
+import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
+import { TechnicalDecisionModel } from './infrastructure/decision/TechnicalDecisionModel.js';
+import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
+import { registerDecisionRoutes } from './infrastructure/http/decisionRoutes.js';
 
 function buildBroker(): BrokerPort {
   switch (env.BROKER_PROVIDER) {
@@ -82,6 +86,20 @@ function buildScannerMonitor(repository: InMemoryWatchlistRepository): ScannerMo
   });
 }
 
+function buildDecisionModel(): DecisionModelPort {
+  switch (env.DECISION_MODEL) {
+    case 'technical':
+      return new TechnicalDecisionModel({
+        quantity: env.DECISION_QUANTITY,
+        entryOffset: env.DECISION_ENTRY_OFFSET,
+        stopOffset: env.DECISION_STOP_OFFSET,
+        takeProfitOffset: env.DECISION_TP_OFFSET,
+      });
+    default:
+      throw new Error(`Unknown DECISION_MODEL: ${env.DECISION_MODEL}`);
+  }
+}
+
 function buildIndicatorProvider(): IndicatorPort {
   switch (env.INDICATOR_PROVIDER) {
     case 'alphavantage': {
@@ -107,6 +125,8 @@ async function main() {
   const watchlistRepository = new InMemoryWatchlistRepository();
   const monitor = buildScannerMonitor(watchlistRepository);
   const indicators = buildIndicatorProvider();
+  const decisionModel = buildDecisionModel();
+  const evaluateDecision = new EvaluateDecision(decisionModel, indicators, broker);
 
   registerBrokerRoutes({
     server,
@@ -131,6 +151,8 @@ async function main() {
     getVWAP: new GetVWAP(indicators),
   });
 
+  registerDecisionRoutes({ server, evaluateDecision });
+
   try {
     await monitor.start();
   } catch (err) {
@@ -142,7 +164,7 @@ async function main() {
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
   console.log(
-    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${monitor.getStatus()})` : 'disabled'}`,
+    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${monitor.getStatus()})` : 'disabled'} decision=${decisionModel.name}`,
   );
 
   const shutdown = async (signal: string) => {
