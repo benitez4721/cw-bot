@@ -13,15 +13,24 @@ export interface TechnicalDecisionModelParams extends OrderConfig {
   entryOffset: number;
 }
 
+const DEFAULT_PARAMS: TechnicalDecisionModelParams = {
+  quantity: 2000,
+  entryOffset: 0.05,
+  stopOffset: 0.2,
+  takeProfitOffset: 0.35,
+};
+
 export class TechnicalDecisionModel implements DecisionModelPort {
   readonly name = 'technical';
   readonly orderConfig: OrderConfig;
+  private readonly params: TechnicalDecisionModelParams;
 
-  constructor(private readonly params: TechnicalDecisionModelParams) {
+  constructor(params: Partial<TechnicalDecisionModelParams> = {}) {
+    this.params = { ...DEFAULT_PARAMS, ...params };
     this.orderConfig = {
-      quantity: params.quantity,
-      stopOffset: params.stopOffset,
-      takeProfitOffset: params.takeProfitOffset,
+      quantity: this.params.quantity,
+      stopOffset: this.params.stopOffset,
+      takeProfitOffset: this.params.takeProfitOffset,
     };
   }
 
@@ -51,7 +60,11 @@ export class TechnicalDecisionModel implements DecisionModelPort {
       { name: '1min MACD > 0', passed: !!current && current.macd > 0 },
       {
         name: '1min histogram bullish crossover',
-        passed: !!current && !!previous && current.histogram > 0 && previous.histogram < 0,
+        passed:
+          !!current &&
+          !!previous &&
+          current.histogram > 0 &&
+          previous.histogram < 0,
       },
       { name: 'price > VWAP (1min)', passed: s.quote.last > s.vwap1min.value },
     ];

@@ -6,22 +6,23 @@ export const env = {
   TRADESTATION_CLIENT_SECRET: process.env.TRADESTATION_CLIENT_SECRET,
   TRADESTATION_REFRESH_TOKEN: process.env.TRADESTATION_REFRESH_TOKEN,
   TRADESTATION_ACCOUNT_ID: process.env.TRADESTATION_ACCOUNT_ID,
-  TRADESTATION_SIM_URL: process.env.TRADESTATION_SIM_URL || 'https://sim.api.tradestation.com',
-  TRADESTATION_LIVE_URL: process.env.TRADESTATION_LIVE_URL || 'https://api.tradestation.com',
-  TRADESTATION_SIGNIN_URL: process.env.TRADESTATION_SIGNIN_URL || 'https://signin.tradestation.com',
+  TRADESTATION_SIM_URL:
+    process.env.TRADESTATION_SIM_URL || 'https://sim.api.tradestation.com',
+  TRADESTATION_LIVE_URL:
+    process.env.TRADESTATION_LIVE_URL || 'https://api.tradestation.com',
+  TRADESTATION_SIGNIN_URL:
+    process.env.TRADESTATION_SIGNIN_URL || 'https://signin.tradestation.com',
   CW_ENABLED: (process.env.CW_ENABLED ?? 'true').toLowerCase() !== 'false',
-  CW_WS_URL: process.env.CW_WS_URL || 'wss://app.chartswatcher.com/api/v1/websocket',
+  CW_WS_URL:
+    process.env.CW_WS_URL || 'wss://app.chartswatcher.com/api/v1/websocket',
   CW_USER_ID: process.env.CW_USER_ID,
   CW_API_KEY: process.env.CW_API_KEY,
   CW_CONFIG_ID: process.env.CW_CONFIG_ID,
   INDICATOR_PROVIDER: process.env.INDICATOR_PROVIDER || 'alphavantage',
   ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
-  ALPHA_VANTAGE_BASE_URL: process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
+  ALPHA_VANTAGE_BASE_URL:
+    process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
   DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
-  DECISION_QUANTITY: Number(process.env.DECISION_QUANTITY) || 2000,
-  DECISION_ENTRY_OFFSET: Number(process.env.DECISION_ENTRY_OFFSET) || 0.05,
-  DECISION_STOP_OFFSET: Number(process.env.DECISION_STOP_OFFSET) || 0.2,
-  DECISION_TP_OFFSET: Number(process.env.DECISION_TP_OFFSET) || 0.35,
-  DECISION_ENABLED: (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
-  DECISION_INTERVAL_MS: Number(process.env.DECISION_INTERVAL_MS) || 60_000,
+  DECISION_ENABLED:
+    (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
 };

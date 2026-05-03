@@ -18,10 +18,13 @@ function buildBroker(): BrokerPort {
     case 'tradestation': {
       const missing: string[] = [];
       if (!env.TRADESTATION_CLIENT_ID) missing.push('TRADESTATION_CLIENT_ID');
-      if (!env.TRADESTATION_REFRESH_TOKEN) missing.push('TRADESTATION_REFRESH_TOKEN');
+      if (!env.TRADESTATION_REFRESH_TOKEN)
+        missing.push('TRADESTATION_REFRESH_TOKEN');
       if (!env.TRADESTATION_ACCOUNT_ID) missing.push('TRADESTATION_ACCOUNT_ID');
       if (missing.length > 0) {
-        throw new Error(`Missing required env vars for TradeStation: ${missing.join(', ')}`);
+        throw new Error(
+          `Missing required env vars for TradeStation: ${missing.join(', ')}`,
+        );
       }
       return new TradeStationAdapter({
         clientId: env.TRADESTATION_CLIENT_ID!,
@@ -38,9 +41,15 @@ function buildBroker(): BrokerPort {
   }
 }
 
-function buildScannerMonitor(repository: InMemoryWatchlistRepository): ScannerMonitor {
+function buildScannerMonitor(
+  repository: InMemoryWatchlistRepository,
+): ScannerMonitor {
   if (!env.CW_ENABLED) {
-    const noop = new ChartsWatcherAdapter({ wsUrl: '', userId: '', apiKey: '' });
+    const noop = new ChartsWatcherAdapter({
+      wsUrl: '',
+      userId: '',
+      apiKey: '',
+    });
     return new ScannerMonitor({
       feed: noop,
       repository,
@@ -54,7 +63,9 @@ function buildScannerMonitor(repository: InMemoryWatchlistRepository): ScannerMo
   if (!env.CW_API_KEY) missing.push('CW_API_KEY');
   if (!env.CW_CONFIG_ID) missing.push('CW_CONFIG_ID');
   if (missing.length > 0) {
-    throw new Error(`Missing required env vars for Charts Watcher: ${missing.join(', ')}`);
+    throw new Error(
+      `Missing required env vars for Charts Watcher: ${missing.join(', ')}`,
+    );
   }
 
   const adapter = new ChartsWatcherAdapter({
@@ -74,12 +85,7 @@ function buildScannerMonitor(repository: InMemoryWatchlistRepository): ScannerMo
 function buildDecisionModel(): DecisionModelPort {
   switch (env.DECISION_MODEL) {
     case 'technical':
-      return new TechnicalDecisionModel({
-        quantity: env.DECISION_QUANTITY,
-        entryOffset: env.DECISION_ENTRY_OFFSET,
-        stopOffset: env.DECISION_STOP_OFFSET,
-        takeProfitOffset: env.DECISION_TP_OFFSET,
-      });
+      return new TechnicalDecisionModel();
     default:
       throw new Error(`Unknown DECISION_MODEL: ${env.DECISION_MODEL}`);
   }
@@ -128,7 +134,7 @@ async function main() {
     watchlist: watchlistRepository,
     broker: brokerAdapter,
     orderConfig: decisionModelAdapter.orderConfig,
-    intervalMs: env.DECISION_INTERVAL_MS,
+    intervalMs: 60000,
     enabled: env.DECISION_ENABLED,
   });
 
@@ -144,8 +150,14 @@ async function main() {
   decisionRunnerUseCase.start();
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
+  const cwStatus = env.CW_ENABLED
+    ? `enabled (${scannerMonitorUseCase.getStatus()})`
+    : 'disabled';
+  const decisionStatus = env.DECISION_ENABLED
+    ? `${decisionModelAdapter.name} (${decisionRunnerUseCase.getStatus()})`
+    : 'disabled';
   console.log(
-    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${scannerMonitorUseCase.getStatus()})` : 'disabled'} decision=${env.DECISION_ENABLED ? `${decisionModelAdapter.name} (${decisionRunnerUseCase.getStatus()}, interval=${env.DECISION_INTERVAL_MS}ms)` : 'disabled'}`,
+    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${cwStatus} decision=${decisionStatus}`,
   );
 
   const shutdown = async (signal: string) => {
