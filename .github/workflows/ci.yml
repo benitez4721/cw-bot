@@ -15,9 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `version` here — pnpm/action-setup reads it from
+      # package.json#packageManager (single source of truth, matches the
+      # Dockerfile and local dev).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
