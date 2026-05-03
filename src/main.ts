@@ -6,6 +6,10 @@ import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
 import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatcherAdapter.js';
 import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
+import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
+import { GetOrders } from './application/broker/GetOrders.js';
+import { watchlistRoutes } from './infrastructure/http/watchlistRoutes.js';
+import { brokerRoutes } from './infrastructure/http/brokerRoutes.js';
 import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
 import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
 import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
@@ -128,6 +132,8 @@ async function main() {
     brokerAdapter,
   );
   const placeBracketOrderUseCase = new PlaceBracketOrder(brokerAdapter);
+  const listWatchlistUseCase = new ListWatchlist(watchlistRepository);
+  const getOrdersUseCase = new GetOrders(brokerAdapter);
   const decisionRunnerUseCase = new DecisionRunner({
     evaluate: evaluateDecisionUseCase,
     placeBracketOrder: placeBracketOrderUseCase,
@@ -148,6 +154,11 @@ async function main() {
   }
 
   decisionRunnerUseCase.start();
+
+  await server.register(watchlistRoutes, {
+    listWatchlist: listWatchlistUseCase,
+  });
+  await server.register(brokerRoutes, { getOrders: getOrdersUseCase });
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
   const cwStatus = env.CW_ENABLED
