@@ -1,8 +1,13 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type { OrderConfig } from '../../domain/decision/DecisionTypes.js';
+import type { MarketHours } from '../../domain/market/MarketHours.js';
+import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
+import { logger } from '../../infrastructure/logging/logger.js';
 import type { EvaluateDecision } from './EvaluateDecision.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
+
+const log = logger.child({ component: 'DecisionRunner' });
 
 export type DecisionRunnerStatus = 'idle' | 'running' | 'disabled';
 
@@ -11,6 +16,8 @@ export interface DecisionRunnerOptions {
   placeBracketOrder: PlaceBracketOrder;
   watchlist: WatchlistRepository;
   broker: BrokerPort;
+  marketHours: MarketHours;
+  metrics: MetricsPort;
   orderConfig: OrderConfig;
   intervalMs: number;
   enabled?: boolean;
@@ -21,18 +28,24 @@ export class DecisionRunner {
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly watchlist: WatchlistRepository;
   private readonly broker: BrokerPort;
+  private readonly marketHours: MarketHours;
+  private readonly metrics: MetricsPort;
   private readonly orderConfig: OrderConfig;
   private readonly intervalMs: number;
   private readonly enabled: boolean;
   private readonly inFlight = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
   private status: DecisionRunnerStatus;
+  private lastIsOpen: boolean | null = null;
+  private lastSuccessfulTick = 0;
 
   constructor(options: DecisionRunnerOptions) {
     this.evaluate = options.evaluate;
     this.placeBracketOrder = options.placeBracketOrder;
     this.watchlist = options.watchlist;
     this.broker = options.broker;
+    this.marketHours = options.marketHours;
+    this.metrics = options.metrics;
     this.orderConfig = options.orderConfig;
     this.intervalMs = options.intervalMs;
     this.enabled = options.enabled ?? true;
@@ -41,13 +54,13 @@ export class DecisionRunner {
 
   start(): void {
     if (!this.enabled) {
-      console.log('[DecisionRunner] Disabled by config — skipping loop.');
+      log.info('disabled by config — skipping loop');
       return;
     }
     if (this.timer) return;
     this.status = 'running';
     this.timer = setInterval(() => void this.tick(), this.intervalMs);
-    console.log(`[DecisionRunner] Started — interval=${this.intervalMs}ms`);
+    log.info({ intervalMs: this.intervalMs }, 'started');
   }
 
   stop(): void {
@@ -62,17 +75,38 @@ export class DecisionRunner {
     return this.status;
   }
 
-  private async tick(): Promise<void> {
-    const symbols = this.watchlist.list().map((s) => s.symbol);
+  lastSuccessfulTickAt(): number {
+    return this.lastSuccessfulTick;
+  }
 
-    if (symbols.length === 0) return;
+  private async tick(): Promise<void> {
+    const open = this.marketHours.isOpen(new Date());
+    if (this.lastIsOpen !== open) {
+      log.info({ open }, 'market hours transition');
+      this.lastIsOpen = open;
+    }
+    if (!open) {
+      this.metrics.recordTick('market_closed');
+      return;
+    }
+
+    const items = await this.watchlist.list();
+    const symbols = items.map((s) => s.symbol);
+
+    if (symbols.length === 0) {
+      this.metrics.recordTick('empty');
+      this.lastSuccessfulTick = Date.now();
+      return;
+    }
 
     await Promise.all(symbols.map((symbol) => this.processSymbol(symbol)));
+    this.metrics.recordTick('ok');
+    this.lastSuccessfulTick = Date.now();
   }
 
   private async processSymbol(symbol: string): Promise<void> {
     if (this.inFlight.has(symbol)) {
-      console.log(`[DecisionRunner] ${symbol} still in-flight — skipping tick`);
+      log.debug({ symbol }, 'still in-flight — skipping tick');
       return;
     }
     this.inFlight.add(symbol);
@@ -81,6 +115,7 @@ export class DecisionRunner {
         return;
       }
       const signal = await this.evaluate.execute({ symbol });
+      this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
 
       const result = await this.placeBracketOrder.execute({
@@ -89,12 +124,14 @@ export class DecisionRunner {
         entryLimitPrice: signal.entryLimitPrice,
         ...this.orderConfig,
       });
-      console.log(
-        `[DecisionRunner] ${symbol} buy → orderId=${result.orderId} status=${result.status}`,
+      this.metrics.recordOrderResult(result.status);
+      log.info(
+        { symbol, orderId: result.orderId, status: result.status },
+        'bracket placed',
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`[DecisionRunner] ${symbol} failed: ${message}`);
+      log.error({ symbol, err: message }, 'process failed');
     } finally {
       this.inFlight.delete(symbol);
     }

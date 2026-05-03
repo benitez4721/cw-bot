@@ -4,6 +4,9 @@ import type {
   ScannerColumn,
   ScannerRow,
 } from '../../domain/scanner/ScannerTypes.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child({ component: 'ChartsWatcherAdapter' });
 
 export interface ChartsWatcherConfig {
   wsUrl: string;
@@ -45,6 +48,7 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
   private readonly config: ChartsWatcherConfig;
   private updateCallbacks: ((configId: string, rows: ScannerRow[]) => void)[] =
     [];
+  private connectionCallbacks: ((connected: boolean) => void)[] = [];
   private subscribedConfigs: Record<string, true> = {};
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
@@ -59,7 +63,8 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
       this.ws = new WebSocket(url);
 
       this.ws.on('open', () => {
-        console.log('[ChartsWatcher] Connected');
+        log.info('connected');
+        this.notifyConnection(true);
         for (const configId of Object.keys(this.subscribedConfigs)) {
           this.sendSubscribe(configId);
         }
@@ -71,14 +76,15 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
       });
 
       this.ws.on('close', () => {
-        console.log('[ChartsWatcher] Disconnected');
+        log.info('disconnected');
+        this.notifyConnection(false);
         if (this.shouldReconnect) {
           this.scheduleReconnect();
         }
       });
 
       this.ws.on('error', (err) => {
-        console.error('[ChartsWatcher] Error:', err.message);
+        log.error({ err: err.message }, 'ws error');
         if (this.ws?.readyState !== WebSocket.OPEN) {
           reject(err);
         }
@@ -122,6 +128,23 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
     this.updateCallbacks.push(callback);
   }
 
+  onConnectionChange(callback: (connected: boolean) => void): void {
+    this.connectionCallbacks.push(callback);
+  }
+
+  private notifyConnection(connected: boolean): void {
+    for (const cb of this.connectionCallbacks) {
+      try {
+        cb(connected);
+      } catch (err) {
+        log.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'connection callback failed',
+        );
+      }
+    }
+  }
+
   private sendSubscribe(configId: string): void {
     this.ws?.send(
       JSON.stringify({
@@ -137,7 +160,7 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
     try {
       msg = JSON.parse(raw) as CWMessage;
     } catch {
-      console.warn('[ChartsWatcher] Failed to parse message:', raw);
+      log.warn({ raw }, 'failed to parse message');
       return;
     }
 
@@ -146,7 +169,7 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
         break;
 
       case 'ToplistConfirm':
-        console.log(`[ChartsWatcher] Subscription confirmed: ${msg.config_id}`);
+        log.info({ configId: msg.config_id }, 'subscription confirmed');
         break;
 
       case 'ToplistUpdate':
@@ -155,13 +178,13 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
 
       case 'Error':
         // TODO: distinguish fatal (invalid api_key) from per-config errors (unknown config_id).
-        console.error('[ChartsWatcher] Server error:', msg.message);
+        log.error({ message: msg.message }, 'server error');
         break;
 
       default:
-        console.warn(
-          '[ChartsWatcher] Unknown message type:',
-          (msg as { '@type': string })['@type'],
+        log.warn(
+          { type: (msg as { '@type': string })['@type'] },
+          'unknown message type',
         );
     }
   }
@@ -181,13 +204,16 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-    console.log('[ChartsWatcher] Reconnecting in 5s...');
+    log.info('reconnecting in 5s');
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       try {
         await this.connect();
       } catch (err) {
-        console.error('[ChartsWatcher] Reconnection failed:', err);
+        log.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          'reconnection failed',
+        );
         this.scheduleReconnect();
       }
     }, 5000);

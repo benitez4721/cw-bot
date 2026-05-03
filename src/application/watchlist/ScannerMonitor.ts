@@ -1,6 +1,10 @@
+import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { ScannerFeedPort } from '../../domain/scanner/ScannerFeedPort.js';
 import type { ScannerRow } from '../../domain/scanner/ScannerTypes.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
+import { logger } from '../../infrastructure/logging/logger.js';
+
+const log = logger.child({ component: 'ScannerMonitor' });
 
 export type ScannerMonitorStatus =
   | 'connected'
@@ -11,6 +15,7 @@ export type ScannerMonitorStatus =
 export interface ScannerMonitorOptions {
   feed: ScannerFeedPort;
   repository: WatchlistRepository;
+  metrics: MetricsPort;
   configId: string;
   enabled?: boolean;
   clock?: () => number;
@@ -19,35 +24,56 @@ export interface ScannerMonitorOptions {
 export class ScannerMonitor {
   private readonly feed: ScannerFeedPort;
   private readonly repository: WatchlistRepository;
+  private readonly metrics: MetricsPort;
   private readonly configId: string;
   private readonly enabled: boolean;
   private readonly now: () => number;
   private status: ScannerMonitorStatus;
+  private lastTickAt = 0;
 
   constructor(options: ScannerMonitorOptions) {
     this.feed = options.feed;
     this.repository = options.repository;
+    this.metrics = options.metrics;
     this.configId = options.configId;
     this.enabled = options.enabled ?? true;
     this.now = options.clock ?? Date.now;
     this.status = this.enabled ? 'disconnected' : 'disabled';
 
-    this.feed.onUpdate((_configId, rows) => this.handleUpdate(rows));
+    this.feed.onUpdate((_configId, rows) => {
+      this.handleUpdate(rows).catch((err) => {
+        log.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          'handleUpdate failed',
+        );
+      });
+    });
+
+    this.feed.onConnectionChange((connected) => {
+      this.metrics.setScannerConnected(connected);
+      this.status = connected ? 'connected' : 'disconnected';
+    });
+  }
+
+  lastUpdateAt(): number {
+    return this.lastTickAt;
   }
 
   async start(): Promise<void> {
     if (!this.enabled) {
-      console.log('[ScannerMonitor] Disabled by config — skipping connect.');
+      log.info('disabled by config — skipping connect');
       return;
     }
     this.status = 'connecting';
     try {
       await this.feed.connect();
       this.status = 'connected';
+      this.metrics.setScannerConnected(true);
       this.feed.subscribe(this.configId);
-      console.log(`[ScannerMonitor] Subscribed to ${this.configId}.`);
+      log.info({ configId: this.configId }, 'subscribed');
     } catch (err) {
       this.status = 'disconnected';
+      this.metrics.setScannerConnected(false);
       throw err;
     }
   }
@@ -56,6 +82,7 @@ export class ScannerMonitor {
     if (!this.enabled) return;
     this.feed.disconnect();
     this.status = 'disconnected';
+    this.metrics.setScannerConnected(false);
   }
 
   getStatus(): ScannerMonitorStatus {
@@ -66,21 +93,21 @@ export class ScannerMonitor {
     return this.configId;
   }
 
-  private handleUpdate(rows: ScannerRow[]): void {
+  private async handleUpdate(rows: ScannerRow[]): Promise<void> {
     const incoming = new Set<string>();
     const now = this.now();
 
     for (const row of rows) {
       incoming.add(row.symbol);
-      const existing = this.repository.getBySymbol(row.symbol);
+      const existing = await this.repository.getBySymbol(row.symbol);
 
       if (existing) {
         if (existing.status === 'stale') {
           existing.status = 'active';
-          this.repository.update(existing);
+          await this.repository.update(existing);
         }
       } else {
-        this.repository.insert({
+        await this.repository.insert({
           symbol: row.symbol,
           status: 'active',
           createdAt: now,
@@ -88,11 +115,15 @@ export class ScannerMonitor {
       }
     }
 
-    for (const watched of this.repository.list()) {
-      if (watched.status !== 'active') continue;
-      if (incoming.has(watched.symbol)) continue;
-      watched.status = 'stale';
-      this.repository.update(watched);
+    const watched = await this.repository.list();
+    for (const item of watched) {
+      if (item.status !== 'active') continue;
+      if (incoming.has(item.symbol)) continue;
+      item.status = 'stale';
+      await this.repository.update(item);
     }
+
+    this.metrics.setWatchlistSize(watched.length);
+    this.lastTickAt = now;
   }
 }

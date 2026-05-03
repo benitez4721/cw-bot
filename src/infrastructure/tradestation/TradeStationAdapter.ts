@@ -15,6 +15,18 @@ import type {
   Position,
   Quote,
 } from '../../domain/broker/BrokerTypes.js';
+import type {
+  MetricsPort,
+  TsErrorType,
+} from '../../domain/metrics/MetricsPort.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child({ component: 'TradeStationAdapter' });
+
+export interface TokenStatus {
+  cached: boolean;
+  expiresInMs: number;
+}
 
 interface TradeStationConfig {
   clientId: string;
@@ -24,6 +36,7 @@ interface TradeStationConfig {
   simBaseUrl: string;
   liveBaseUrl: string;
   signinUrl: string;
+  metrics?: MetricsPort;
 }
 
 interface TokenCache {
@@ -101,11 +114,21 @@ const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
 
 export class TradeStationAdapter implements BrokerPort {
   private readonly config: TradeStationConfig;
+  private readonly metrics?: MetricsPort;
   private tokenCache: TokenCache | null = null;
   private refreshPromise: Promise<string> | null = null;
 
   constructor(config: TradeStationConfig) {
     this.config = config;
+    this.metrics = config.metrics;
+  }
+
+  tokenStatus(): TokenStatus {
+    if (!this.tokenCache) return { cached: false, expiresInMs: 0 };
+    return {
+      cached: true,
+      expiresInMs: Math.max(0, this.tokenCache.expiresAt - Date.now()),
+    };
   }
 
   async placeOrder(input: PlaceOrderInput): Promise<OrderResult> {
@@ -414,35 +437,46 @@ export class TradeStationAdapter implements BrokerPort {
       refresh_token: this.config.refreshToken,
     });
 
-    const res = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
+    try {
+      const res = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `[TradeStation] refresh failed: HTTP ${res.status} ${text}`,
-      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        this.metrics?.recordOauthRefresh('failure');
+        throw new Error(
+          `[TradeStation] refresh failed: HTTP ${res.status} ${text}`,
+        );
+      }
+
+      const data = (await res.json()) as {
+        access_token: string;
+        expires_in: number;
+      };
+      if (!data.access_token) {
+        this.metrics?.recordOauthRefresh('failure');
+        throw new Error('[TradeStation] refresh response missing access_token');
+      }
+
+      this.tokenCache = {
+        accessToken: data.access_token,
+        expiresAt: Date.now() + data.expires_in * 1000,
+      };
+      this.metrics?.recordOauthRefresh('success');
+      log.info({ expiresInSec: data.expires_in }, 'refreshed access token');
+      return this.tokenCache.accessToken;
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        !err.message.startsWith('[TradeStation] refresh')
+      ) {
+        this.metrics?.recordOauthRefresh('failure');
+      }
+      throw err;
     }
-
-    const data = (await res.json()) as {
-      access_token: string;
-      expires_in: number;
-    };
-    if (!data.access_token) {
-      throw new Error('[TradeStation] refresh response missing access_token');
-    }
-
-    this.tokenCache = {
-      accessToken: data.access_token,
-      expiresAt: Date.now() + data.expires_in * 1000,
-    };
-    console.log(
-      `[TradeStation] Refreshed access token, expires in ${data.expires_in}s`,
-    );
-    return this.tokenCache.accessToken;
   }
 
   private async request<T>({
@@ -454,7 +488,13 @@ export class TradeStationAdapter implements BrokerPort {
     path: string;
     body?: unknown;
   }): Promise<T> {
-    const token = await this.getAccessToken();
+    let token: string;
+    try {
+      token = await this.getAccessToken();
+    } catch (err) {
+      this.metrics?.recordTsRequest(0, 'auth');
+      throw err;
+    }
     const url = this.apiBase() + path;
 
     const headers: Record<string, string> = {
@@ -464,11 +504,18 @@ export class TradeStationAdapter implements BrokerPort {
       headers['content-type'] = 'application/json';
     }
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    const startedAt = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch (err) {
+      this.metrics?.recordTsRequest(Date.now() - startedAt, 'network');
+      throw err;
+    }
 
     const text = await res.text();
     let parsed: unknown = null;
@@ -481,13 +528,14 @@ export class TradeStationAdapter implements BrokerPort {
     }
 
     if (!res.ok) {
-      console.error(
-        `[TradeStation] HTTP ${res.status} ${method} ${path}:`,
-        text,
-      );
+      const errorType: TsErrorType =
+        res.status >= 500 ? 'http_5xx' : 'http_4xx';
+      this.metrics?.recordTsRequest(Date.now() - startedAt, errorType);
+      log.error({ status: res.status, method, path, body: text }, 'http error');
       throw new Error(`TradeStation API error: HTTP ${res.status}`);
     }
 
+    this.metrics?.recordTsRequest(Date.now() - startedAt);
     return parsed as T;
   }
 }
