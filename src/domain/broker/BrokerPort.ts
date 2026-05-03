@@ -5,7 +5,12 @@ import type {
   OrderResult,
   PlaceOrderInput,
   Position,
+  Quote,
 } from './BrokerTypes.js';
+
+export interface GetQuoteInput {
+  symbol: string;
+}
 
 export interface BrokerPort {
   placeOrder(input: PlaceOrderInput): Promise<OrderResult>;
@@ -21,4 +26,5 @@ export interface BrokerPort {
   getPositions(): Promise<Position[]>;
   getOrders({ symbol }: { symbol?: string }): Promise<Order[]>;
   getHistoricalOrders({ since }: { since: string }): Promise<HistoricalOrder[]>;
+  getQuote(input: GetQuoteInput): Promise<Quote>;
 }

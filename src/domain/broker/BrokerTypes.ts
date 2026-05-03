@@ -58,3 +58,11 @@ export interface Balance {
   marketValue: number;
   todaysProfitLoss: number;
 }
+
+export interface Quote {
+  symbol: string;
+  last: number;
+  bid?: number;
+  ask?: number;
+  timestamp: string;
+}

@@ -6,6 +6,7 @@ import type { GetBalances } from '../../application/broker/GetBalances.js';
 import type { GetPositions } from '../../application/broker/GetPositions.js';
 import type { GetOrders } from '../../application/broker/GetOrders.js';
 import type { GetHistoricalOrders } from '../../application/broker/GetHistoricalOrders.js';
+import type { GetQuote } from '../../application/broker/GetQuote.js';
 import type { OrderSide, OrderType, PlaceOrderInput } from '../../domain/broker/BrokerTypes.js';
 
 const VALID_TYPES: OrderType[] = ['Market', 'Limit', 'StopMarket', 'StopLimit'];
@@ -51,6 +52,7 @@ export function registerBrokerRoutes({
   getPositions,
   getOrders,
   getHistoricalOrders,
+  getQuote,
 }: {
   server: FastifyInstance;
   placeOrder: PlaceOrder;
@@ -60,6 +62,7 @@ export function registerBrokerRoutes({
   getPositions: GetPositions;
   getOrders: GetOrders;
   getHistoricalOrders: GetHistoricalOrders;
+  getQuote: GetQuote;
 }) {
   server.post<{ Body: PlaceOrderBody }>('/api/broker/orders', async (request, reply) => {
     const validation = validatePlaceOrderBody(request.body ?? {});
@@ -142,6 +145,20 @@ export function registerBrokerRoutes({
     try {
       const positions = await getPositions.execute();
       return { positions };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return reply.status(500).send({ error: message });
+    }
+  });
+
+  server.get<{ Querystring: { symbol?: string } }>('/api/broker/quote', async (request, reply) => {
+    const { symbol } = request.query;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'symbol is required' });
+    }
+    try {
+      const quote = await getQuote.execute({ symbol });
+      return quote;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.status(500).send({ error: message });

@@ -1,4 +1,4 @@
-import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
+import type { BrokerPort, GetQuoteInput } from '../../domain/broker/BrokerPort.js';
 import type {
   Balance,
   HistoricalOrder,
@@ -9,6 +9,7 @@ import type {
   OrderType,
   PlaceOrderInput,
   Position,
+  Quote,
 } from '../../domain/broker/BrokerTypes.js';
 
 interface TradeStationConfig {
@@ -65,6 +66,21 @@ interface TsOrder {
   OpenedDateTime?: string;
   ClosedDateTime?: string;
   Legs?: TsOrderLeg[];
+}
+
+interface TsQuote {
+  Symbol?: string;
+  Last?: string;
+  Bid?: string;
+  Ask?: string;
+  TradeTime?: string;
+  Error?: string;
+  Message?: string;
+}
+
+interface TsQuoteResponse {
+  Quotes?: TsQuote[];
+  Errors?: Array<{ Symbol?: string; Error?: string; Message?: string }>;
 }
 
 interface TsPlaceOrderResponse {
@@ -235,6 +251,28 @@ export class TradeStationAdapter implements BrokerPort {
     });
 
     return (response.Orders ?? []).map(toOrder);
+  }
+
+  async getQuote({ symbol }: GetQuoteInput): Promise<Quote> {
+    const response = await this.request<TsQuoteResponse>({
+      method: 'GET',
+      path: `/v3/marketdata/quotes/${encodeURIComponent(symbol)}`,
+    });
+
+    const first = response.Quotes?.[0];
+    if (!first || first.Error) {
+      const reason =
+        first?.Message ?? response.Errors?.[0]?.Message ?? first?.Error ?? 'unknown error';
+      throw new Error(`[TradeStation] getQuote(${symbol}) failed: ${reason}`);
+    }
+
+    return {
+      symbol: first.Symbol ?? symbol,
+      last: parseNumber(first.Last),
+      bid: first.Bid !== undefined ? parseNumber(first.Bid) : undefined,
+      ask: first.Ask !== undefined ? parseNumber(first.Ask) : undefined,
+      timestamp: first.TradeTime ?? new Date().toISOString(),
+    };
   }
 
   async getHistoricalOrders({ since }: { since: string }): Promise<HistoricalOrder[]> {
