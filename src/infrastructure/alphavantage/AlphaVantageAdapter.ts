@@ -10,6 +10,9 @@ import type {
   MACD,
   VWAP,
 } from '../../domain/indicators/IndicatorTypes.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child({ component: 'AlphaVantageAdapter' });
 
 interface AlphaVantageConfig {
   apiKey: string;
@@ -96,9 +99,14 @@ export class AlphaVantageAdapter implements IndicatorPort {
     const res = await fetch(url);
     const text = await res.text();
     if (!res.ok) {
-      console.error(
-        `[AlphaVantage] HTTP ${res.status} ${params.function} ${params.symbol}:`,
-        text,
+      log.error(
+        {
+          status: res.status,
+          fn: params.function,
+          symbol: params.symbol,
+          body: text,
+        },
+        'http error',
       );
       throw new Error(`Alpha Vantage API error: HTTP ${res.status}`);
     }
