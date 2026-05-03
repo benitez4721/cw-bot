@@ -66,3 +66,12 @@ export interface Quote {
   ask?: number;
   timestamp: string;
 }
+
+export interface BracketOrderInput {
+  symbol: string;
+  quantity: number;
+  side: OrderSide;
+  entryLimitPrice: number;
+  stopOffset: number;
+  takeProfitOffset: number;
+}

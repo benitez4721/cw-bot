@@ -10,6 +10,7 @@ import { GetPositions } from './application/broker/GetPositions.js';
 import { GetOrders } from './application/broker/GetOrders.js';
 import { GetHistoricalOrders } from './application/broker/GetHistoricalOrders.js';
 import { GetQuote } from './application/broker/GetQuote.js';
+import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
 import { registerBrokerRoutes } from './infrastructure/http/brokerRoutes.js';
 import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatcherAdapter.js';
 import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
@@ -117,6 +118,7 @@ async function main() {
     getOrders: new GetOrders(broker),
     getHistoricalOrders: new GetHistoricalOrders(broker),
     getQuote: new GetQuote(broker),
+    placeBracketOrder: new PlaceBracketOrder(broker),
   });
 
   registerWatchlistRoutes({ server, repository: watchlistRepository, monitor });

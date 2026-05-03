@@ -7,7 +7,13 @@ import type { GetPositions } from '../../application/broker/GetPositions.js';
 import type { GetOrders } from '../../application/broker/GetOrders.js';
 import type { GetHistoricalOrders } from '../../application/broker/GetHistoricalOrders.js';
 import type { GetQuote } from '../../application/broker/GetQuote.js';
-import type { OrderSide, OrderType, PlaceOrderInput } from '../../domain/broker/BrokerTypes.js';
+import type { PlaceBracketOrder } from '../../application/broker/PlaceBracketOrder.js';
+import type {
+  BracketOrderInput,
+  OrderSide,
+  OrderType,
+  PlaceOrderInput,
+} from '../../domain/broker/BrokerTypes.js';
 
 const VALID_TYPES: OrderType[] = ['Market', 'Limit', 'StopMarket', 'StopLimit'];
 const VALID_SIDES: OrderSide[] = ['BUY', 'SELL'];
@@ -19,6 +25,49 @@ interface PlaceOrderBody {
   type?: string;
   limitPrice?: number;
   stopPrice?: number;
+}
+
+interface BracketOrderBody {
+  symbol?: string;
+  quantity?: number;
+  side?: string;
+  entryLimitPrice?: number;
+  stopOffset?: number;
+  takeProfitOffset?: number;
+}
+
+function validateBracketOrderBody(
+  body: BracketOrderBody,
+): { ok: true; input: BracketOrderInput } | { ok: false; error: string } {
+  if (!body.symbol || typeof body.symbol !== 'string') {
+    return { ok: false, error: 'symbol is required (string)' };
+  }
+  if (typeof body.quantity !== 'number' || body.quantity <= 0) {
+    return { ok: false, error: 'quantity must be a positive number' };
+  }
+  if (!body.side || !VALID_SIDES.includes(body.side as OrderSide)) {
+    return { ok: false, error: `side must be one of: ${VALID_SIDES.join(', ')}` };
+  }
+  if (typeof body.entryLimitPrice !== 'number' || body.entryLimitPrice <= 0) {
+    return { ok: false, error: 'entryLimitPrice must be a positive number' };
+  }
+  if (typeof body.stopOffset !== 'number' || body.stopOffset <= 0) {
+    return { ok: false, error: 'stopOffset must be a positive number' };
+  }
+  if (typeof body.takeProfitOffset !== 'number' || body.takeProfitOffset <= 0) {
+    return { ok: false, error: 'takeProfitOffset must be a positive number' };
+  }
+  return {
+    ok: true,
+    input: {
+      symbol: body.symbol,
+      quantity: body.quantity,
+      side: body.side as OrderSide,
+      entryLimitPrice: body.entryLimitPrice,
+      stopOffset: body.stopOffset,
+      takeProfitOffset: body.takeProfitOffset,
+    },
+  };
 }
 
 function validatePlaceOrderBody(body: PlaceOrderBody): { ok: true; input: PlaceOrderInput } | { ok: false; error: string } {
@@ -53,6 +102,7 @@ export function registerBrokerRoutes({
   getOrders,
   getHistoricalOrders,
   getQuote,
+  placeBracketOrder,
 }: {
   server: FastifyInstance;
   placeOrder: PlaceOrder;
@@ -63,6 +113,7 @@ export function registerBrokerRoutes({
   getOrders: GetOrders;
   getHistoricalOrders: GetHistoricalOrders;
   getQuote: GetQuote;
+  placeBracketOrder: PlaceBracketOrder;
 }) {
   server.post<{ Body: PlaceOrderBody }>('/api/broker/orders', async (request, reply) => {
     const validation = validatePlaceOrderBody(request.body ?? {});
@@ -145,6 +196,20 @@ export function registerBrokerRoutes({
     try {
       const positions = await getPositions.execute();
       return { positions };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return reply.status(500).send({ error: message });
+    }
+  });
+
+  server.post<{ Body: BracketOrderBody }>('/api/broker/orders/bracket', async (request, reply) => {
+    const validation = validateBracketOrderBody(request.body ?? {});
+    if (!validation.ok) {
+      return reply.status(400).send({ error: validation.error });
+    }
+    try {
+      const result = await placeBracketOrder.execute(validation.input);
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.status(500).send({ error: message });

@@ -1,5 +1,6 @@
 import type {
   Balance,
+  BracketOrderInput,
   HistoricalOrder,
   Order,
   OrderResult,
@@ -14,6 +15,7 @@ export interface GetQuoteInput {
 
 export interface BrokerPort {
   placeOrder(input: PlaceOrderInput): Promise<OrderResult>;
+  placeBracketOrder(input: BracketOrderInput): Promise<OrderResult>;
   cancelOrder({ orderId }: { orderId: string }): Promise<OrderResult>;
   replaceOrder({
     orderId,

@@ -1,6 +1,7 @@
 import type { BrokerPort, GetQuoteInput } from '../../domain/broker/BrokerPort.js';
 import type {
   Balance,
+  BracketOrderInput,
   HistoricalOrder,
   Order,
   OrderResult,
@@ -122,6 +123,70 @@ export class TradeStationAdapter implements BrokerPort {
     if (input.type === 'StopMarket' || input.type === 'StopLimit') {
       payload.StopPrice = String(input.stopPrice);
     }
+
+    const response = await this.request<TsPlaceOrderResponse>({
+      method: 'POST',
+      path: '/v3/orderexecution/orders',
+      body: payload,
+    });
+
+    const first = response.Orders?.[0];
+    if (!first || first.Error === 'FAILED') {
+      return {
+        orderId: first?.OrderID ?? '',
+        status: 'rejected',
+        message: first?.Message,
+        error: first?.Error ?? response.Errors?.[0]?.Error ?? 'Unknown error',
+      };
+    }
+
+    return {
+      orderId: first.OrderID ?? '',
+      status: mapStatus(first.Status),
+      message: first.Message,
+    };
+  }
+
+  async placeBracketOrder(input: BracketOrderInput): Promise<OrderResult> {
+    // Stop/TP precios calculados con entryLimitPrice como proxy del fill.
+    // Si llena mejor, los offsets terminan asimétricos en cents — aceptado para v1.
+    const cost = round2(input.entryLimitPrice);
+    const exitSide: OrderSide = input.side === 'BUY' ? 'SELL' : 'BUY';
+    const stopPrice =
+      input.side === 'BUY' ? round2(cost - input.stopOffset) : round2(cost + input.stopOffset);
+    const takeProfitPrice =
+      input.side === 'BUY'
+        ? round2(cost + input.takeProfitOffset)
+        : round2(cost - input.takeProfitOffset);
+
+    const exitLeg = {
+      AccountID: this.config.accountId,
+      Symbol: input.symbol,
+      Quantity: String(input.quantity),
+      TradeAction: exitSide,
+      TimeInForce: { Duration: 'GTC' },
+      Route: 'Intelligent',
+    };
+
+    const payload: Record<string, unknown> = {
+      AccountID: this.config.accountId,
+      Symbol: input.symbol,
+      Quantity: String(input.quantity),
+      OrderType: 'Limit',
+      LimitPrice: String(cost),
+      TradeAction: input.side,
+      TimeInForce: { Duration: 'DAY' },
+      Route: 'Intelligent',
+      OSOs: [
+        {
+          Type: 'BRK',
+          Orders: [
+            { ...exitLeg, OrderType: 'StopMarket', StopPrice: String(stopPrice) },
+            { ...exitLeg, OrderType: 'Limit', LimitPrice: String(takeProfitPrice) },
+          ],
+        },
+      ],
+    };
 
     const response = await this.request<TsPlaceOrderResponse>({
       method: 'POST',
@@ -386,6 +451,10 @@ export class TradeStationAdapter implements BrokerPort {
 
     return parsed as T;
   }
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function parseNumber(value: string | number | undefined | null): number {
