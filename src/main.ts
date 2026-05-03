@@ -2,32 +2,16 @@ import { createServer } from './infrastructure/http/server.js';
 import { env } from './infrastructure/config/env.js';
 import type { BrokerPort } from './domain/broker/BrokerPort.js';
 import { TradeStationAdapter } from './infrastructure/tradestation/TradeStationAdapter.js';
-import { PlaceOrder } from './application/broker/PlaceOrder.js';
-import { CancelOrder } from './application/broker/CancelOrder.js';
-import { ReplaceOrder } from './application/broker/ReplaceOrder.js';
-import { GetBalances } from './application/broker/GetBalances.js';
-import { GetPositions } from './application/broker/GetPositions.js';
-import { GetOrders } from './application/broker/GetOrders.js';
-import { GetHistoricalOrders } from './application/broker/GetHistoricalOrders.js';
-import { GetQuote } from './application/broker/GetQuote.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
-import { registerBrokerRoutes } from './infrastructure/http/brokerRoutes.js';
 import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatcherAdapter.js';
 import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
-import { registerWatchlistRoutes } from './infrastructure/http/watchlistRoutes.js';
 import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
 import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
-import { GetEMA } from './application/indicators/GetEMA.js';
-import { GetMACD } from './application/indicators/GetMACD.js';
-import { GetMACDSeries } from './application/indicators/GetMACDSeries.js';
-import { GetVWAP } from './application/indicators/GetVWAP.js';
-import { registerIndicatorRoutes } from './infrastructure/http/indicatorRoutes.js';
 import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
 import { TechnicalDecisionModel } from './infrastructure/decision/TechnicalDecisionModel.js';
 import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
 import { DecisionRunner } from './application/decision/DecisionRunner.js';
-import { registerDecisionRoutes } from './infrastructure/http/decisionRoutes.js';
 
 function buildBroker(): BrokerPort {
   switch (env.BROKER_PROVIDER) {
@@ -147,35 +131,6 @@ async function main() {
     intervalMs: env.DECISION_INTERVAL_MS,
     enabled: env.DECISION_ENABLED,
   });
-
-  registerBrokerRoutes({
-    server,
-    placeOrder: new PlaceOrder(brokerAdapter),
-    cancelOrder: new CancelOrder(brokerAdapter),
-    replaceOrder: new ReplaceOrder(brokerAdapter),
-    getBalances: new GetBalances(brokerAdapter),
-    getPositions: new GetPositions(brokerAdapter),
-    getOrders: new GetOrders(brokerAdapter),
-    getHistoricalOrders: new GetHistoricalOrders(brokerAdapter),
-    getQuote: new GetQuote(brokerAdapter),
-    placeBracketOrder: placeBracketOrderUseCase,
-  });
-
-  registerWatchlistRoutes({
-    server,
-    repository: watchlistRepository,
-    monitor: scannerMonitorUseCase,
-  });
-
-  registerIndicatorRoutes({
-    server,
-    getEMA: new GetEMA(indicatorAdapter),
-    getMACD: new GetMACD(indicatorAdapter),
-    getMACDSeries: new GetMACDSeries(indicatorAdapter),
-    getVWAP: new GetVWAP(indicatorAdapter),
-  });
-
-  registerDecisionRoutes({ server, evaluateDecision: evaluateDecisionUseCase });
 
   try {
     await scannerMonitorUseCase.start();
