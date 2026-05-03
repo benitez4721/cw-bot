@@ -22,4 +22,6 @@ export const env = {
   DECISION_ENTRY_OFFSET: Number(process.env.DECISION_ENTRY_OFFSET) || 0.05,
   DECISION_STOP_OFFSET: Number(process.env.DECISION_STOP_OFFSET) || 0.2,
   DECISION_TP_OFFSET: Number(process.env.DECISION_TP_OFFSET) || 0.35,
+  DECISION_ENABLED: (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
+  DECISION_INTERVAL_MS: Number(process.env.DECISION_INTERVAL_MS) || 60_000,
 };

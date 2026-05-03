@@ -26,6 +26,7 @@ import { registerIndicatorRoutes } from './infrastructure/http/indicatorRoutes.j
 import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
 import { TechnicalDecisionModel } from './infrastructure/decision/TechnicalDecisionModel.js';
 import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
+import { DecisionRunner } from './application/decision/DecisionRunner.js';
 import { registerDecisionRoutes } from './infrastructure/http/decisionRoutes.js';
 
 function buildBroker(): BrokerPort {
@@ -127,6 +128,15 @@ async function main() {
   const indicators = buildIndicatorProvider();
   const decisionModel = buildDecisionModel();
   const evaluateDecision = new EvaluateDecision(decisionModel, indicators, broker);
+  const placeBracketOrderUseCase = new PlaceBracketOrder(broker);
+  const decisionRunner = new DecisionRunner({
+    evaluate: evaluateDecision,
+    placeBracketOrder: placeBracketOrderUseCase,
+    watchlist: watchlistRepository,
+    broker,
+    intervalMs: env.DECISION_INTERVAL_MS,
+    enabled: env.DECISION_ENABLED,
+  });
 
   registerBrokerRoutes({
     server,
@@ -138,7 +148,7 @@ async function main() {
     getOrders: new GetOrders(broker),
     getHistoricalOrders: new GetHistoricalOrders(broker),
     getQuote: new GetQuote(broker),
-    placeBracketOrder: new PlaceBracketOrder(broker),
+    placeBracketOrder: placeBracketOrderUseCase,
   });
 
   registerWatchlistRoutes({ server, repository: watchlistRepository, monitor });
@@ -162,14 +172,17 @@ async function main() {
     );
   }
 
+  decisionRunner.start();
+
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
   console.log(
-    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${monitor.getStatus()})` : 'disabled'} decision=${decisionModel.name}`,
+    `[cw-bot] Listening on :${env.PORT} — broker=${env.BROKER_PROVIDER} cw=${env.CW_ENABLED ? `enabled (${monitor.getStatus()})` : 'disabled'} decision=${env.DECISION_ENABLED ? `${decisionModel.name} (${decisionRunner.getStatus()}, interval=${env.DECISION_INTERVAL_MS}ms)` : 'disabled'}`,
   );
 
   const shutdown = async (signal: string) => {
     console.log(`[cw-bot] ${signal} received, shutting down...`);
     try {
+      decisionRunner.stop();
       monitor.stop();
       await server.close();
     } catch (err) {
