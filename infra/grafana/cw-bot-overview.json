@@ -94,7 +94,10 @@
           {
             "matcher": { "id": "byName", "options": "rejected" },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "red" }
+              }
             ]
           }
         ]
@@ -189,8 +192,14 @@
         "defaults": {
           "color": { "mode": "thresholds" },
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } },
-            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } }
+            {
+              "type": "value",
+              "options": { "0": { "text": "DOWN", "color": "red" } }
+            },
+            {
+              "type": "value",
+              "options": { "1": { "text": "UP", "color": "green" } }
+            }
           ],
           "thresholds": {
             "mode": "absolute",
@@ -207,7 +216,11 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value"
       },
       "targets": [
@@ -241,7 +254,11 @@
       "options": {
         "colorMode": "value",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
       },
       "targets": [
         {
@@ -264,7 +281,10 @@
           {
             "matcher": { "id": "byName", "options": "failure" },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "red" }
+              }
             ]
           }
         ]
@@ -292,7 +312,11 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
         "hide": 0,
         "includeAll": false,
         "label": "Datasource",
