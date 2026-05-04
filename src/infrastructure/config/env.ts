@@ -25,6 +25,8 @@ export const env = {
   ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
   ALPHA_VANTAGE_BASE_URL:
     process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
+  ALPHA_VANTAGE_MIN_INTERVAL_MS:
+    Number(process.env.ALPHA_VANTAGE_MIN_INTERVAL_MS) || 250,
   DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
   DECISION_ENABLED:
     (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',

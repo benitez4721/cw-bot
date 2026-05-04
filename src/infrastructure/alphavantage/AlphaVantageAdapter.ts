@@ -17,6 +17,7 @@ const log = logger.child({ component: 'AlphaVantageAdapter' });
 interface AlphaVantageConfig {
   apiKey: string;
   baseUrl: string;
+  minIntervalMs?: number;
 }
 
 interface AlphaVantageResponse {
@@ -28,7 +29,12 @@ interface AlphaVantageResponse {
 }
 
 export class AlphaVantageAdapter implements IndicatorPort {
-  constructor(private readonly config: AlphaVantageConfig) {}
+  private readonly minIntervalMs: number;
+  private nextSlotAt = 0;
+
+  constructor(private readonly config: AlphaVantageConfig) {
+    this.minIntervalMs = config.minIntervalMs ?? 250;
+  }
 
   async getEMA(input: EMAInput): Promise<EMA> {
     const data = await this.request({
@@ -89,6 +95,24 @@ export class AlphaVantageAdapter implements IndicatorPort {
   }
 
   private async request(
+    params: Record<string, string>,
+  ): Promise<AlphaVantageResponse> {
+    await this.waitForSlot();
+    return this.doRequest(params);
+  }
+
+  // Reserves the next time slot for this request and waits for it. Each call
+  // claims a slot at least minIntervalMs after the previous one, so concurrent
+  // callers get spaced out to stay under Alpha Vantage's 10 req/s burst cap.
+  private async waitForSlot(): Promise<void> {
+    const now = Date.now();
+    const mySlot = Math.max(now, this.nextSlotAt);
+    this.nextSlotAt = mySlot + this.minIntervalMs;
+    const wait = mySlot - now;
+    if (wait > 0) await sleep(wait);
+  }
+
+  private async doRequest(
     params: Record<string, string>,
   ): Promise<AlphaVantageResponse> {
     const url = new URL(this.config.baseUrl);
@@ -174,4 +198,8 @@ function parseNumber(value: string | undefined): number {
   if (value === undefined || value === '') return 0;
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

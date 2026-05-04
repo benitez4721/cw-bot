@@ -121,6 +121,7 @@ function buildIndicatorProvider(): IndicatorPort {
       return new AlphaVantageAdapter({
         apiKey: env.ALPHA_VANTAGE_API_KEY,
         baseUrl: env.ALPHA_VANTAGE_BASE_URL,
+        minIntervalMs: env.ALPHA_VANTAGE_MIN_INTERVAL_MS,
       });
     }
     default:
