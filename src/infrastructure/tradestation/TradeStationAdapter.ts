@@ -600,11 +600,18 @@ function toOrder(o: TsOrder): Order {
     side: mapSide(firstLeg?.BuyOrSell),
     type: mapOrderType(o.OrderType),
     status: mapStatus(o.Status),
-    filledQuantity: o.FilledQuantity
-      ? parseNumber(o.FilledQuantity)
-      : undefined,
+    filledQuantity: pickFilledQuantity(o, firstLeg),
     limitPrice: o.LimitPrice ? parseNumber(o.LimitPrice) : undefined,
     stopPrice: o.StopPrice ? parseNumber(o.StopPrice) : undefined,
     createdAt: o.OpenedDateTime ?? '',
   };
+}
+
+function pickFilledQuantity(
+  o: TsOrder,
+  firstLeg: TsOrderLeg | undefined,
+): number | undefined {
+  if (o.FilledQuantity != null) return parseNumber(o.FilledQuantity);
+  if (firstLeg?.ExecQuantity != null) return parseNumber(firstLeg.ExecQuantity);
+  return undefined;
 }
