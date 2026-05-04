@@ -20,12 +20,12 @@ export const healthRoutes: FastifyPluginAsync<HealthRoutesOptions> = async (
   server,
   opts,
 ) => {
-  server.get('/health', async () => ({
+  server.get('/health', { logLevel: 'silent' }, async () => ({
     status: 'ok',
     uptime: process.uptime(),
   }));
 
-  server.get('/health/ready', async (_req, reply) => {
+  server.get('/health/ready', { logLevel: 'silent' }, async (_req, reply) => {
     const checks: Record<string, { ok: boolean; detail?: string }> = {};
     const open = opts.marketHours.isOpen(new Date());
 
