@@ -1,3 +1,5 @@
+import type { TradeContext } from '../trade/TradeTypes.js';
+
 export type OrderType = 'Market' | 'Limit' | 'StopMarket' | 'StopLimit';
 export type OrderSide = 'BUY' | 'SELL';
 export type OrderStatus =
@@ -75,3 +77,5 @@ export interface BracketOrderInput {
   stopOffset: number;
   takeProfitOffset: number;
 }
+
+export type OrderWithContext = Order & { context?: TradeContext };

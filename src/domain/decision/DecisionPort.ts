@@ -1,14 +1,10 @@
-import type { Quote } from '../broker/BrokerTypes.js';
-import type { MACD, VWAP } from '../indicators/IndicatorTypes.js';
-import type { DecisionSignal, OrderConfig } from './DecisionTypes.js';
+import type {
+  DecisionSignal,
+  MarketSnapshot,
+  OrderConfig,
+} from './DecisionTypes.js';
 
-export interface MarketSnapshot {
-  symbol: string;
-  quote: Quote;
-  macd5min: MACD;
-  macd1minSeries: MACD[];
-  vwap1min: VWAP;
-}
+export type { MarketSnapshot };
 
 export interface EvaluateInput {
   snapshot: MarketSnapshot;

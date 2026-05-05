@@ -6,6 +6,7 @@ import type { WatchlistRepository } from '../../domain/watchlist/WatchlistReposi
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { EvaluateDecision } from './EvaluateDecision.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
+import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'DecisionRunner' });
 
@@ -14,6 +15,7 @@ export type DecisionRunnerStatus = 'idle' | 'running' | 'disabled';
 export interface DecisionRunnerOptions {
   evaluate: EvaluateDecision;
   placeBracketOrder: PlaceBracketOrder;
+  recordTradeContext: RecordTradeContext;
   watchlist: WatchlistRepository;
   broker: BrokerPort;
   marketHours: MarketHours;
@@ -26,6 +28,7 @@ export interface DecisionRunnerOptions {
 export class DecisionRunner {
   private readonly evaluate: EvaluateDecision;
   private readonly placeBracketOrder: PlaceBracketOrder;
+  private readonly recordTradeContext: RecordTradeContext;
   private readonly watchlist: WatchlistRepository;
   private readonly broker: BrokerPort;
   private readonly marketHours: MarketHours;
@@ -42,6 +45,7 @@ export class DecisionRunner {
   constructor(options: DecisionRunnerOptions) {
     this.evaluate = options.evaluate;
     this.placeBracketOrder = options.placeBracketOrder;
+    this.recordTradeContext = options.recordTradeContext;
     this.watchlist = options.watchlist;
     this.broker = options.broker;
     this.marketHours = options.marketHours;
@@ -118,6 +122,7 @@ export class DecisionRunner {
       this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
 
+      const placedAt = new Date().toISOString();
       const result = await this.placeBracketOrder.execute({
         symbol: signal.symbol,
         side: signal.side,
@@ -129,6 +134,27 @@ export class DecisionRunner {
         { symbol, orderId: result.orderId, status: result.status },
         'bracket placed',
       );
+
+      if (
+        result.orderId &&
+        result.status !== 'rejected' &&
+        result.status !== 'cancelled' &&
+        result.status !== 'expired'
+      ) {
+        try {
+          await this.recordTradeContext.execute({
+            orderId: result.orderId,
+            signal,
+            placedAt,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          log.warn(
+            { symbol, orderId: result.orderId, err: message },
+            'failed to persist trade context',
+          );
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       log.error({ symbol, err: message }, 'process failed');

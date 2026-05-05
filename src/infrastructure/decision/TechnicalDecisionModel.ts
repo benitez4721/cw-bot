@@ -1,10 +1,10 @@
 import type {
   DecisionModelPort,
   EvaluateInput,
-  MarketSnapshot,
 } from '../../domain/decision/DecisionPort.js';
 import type {
   DecisionSignal,
+  MarketSnapshot,
   OrderConfig,
   RuleCheck,
 } from '../../domain/decision/DecisionTypes.js';
@@ -45,6 +45,7 @@ export class TechnicalDecisionModel implements DecisionModelPort {
       side: 'BUY',
       entryLimitPrice: round2(snapshot.quote.last + this.params.entryOffset),
       checks,
+      snapshot,
     };
   }
 

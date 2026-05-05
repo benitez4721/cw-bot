@@ -8,6 +8,10 @@ import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatch
 import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import type { WatchlistRepository } from './domain/watchlist/WatchlistRepository.js';
+import type { TradeContextRepository } from './domain/trade/TradeContextRepository.js';
+import { InMemoryTradeContextRepository } from './infrastructure/trade/InMemoryTradeContextRepository.js';
+import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
+import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
 import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
 import { GetOrders } from './application/broker/GetOrders.js';
@@ -145,6 +149,13 @@ function buildWatchlistRepository(redis: Redis | null): WatchlistRepository {
   return new InMemoryWatchlistRepository();
 }
 
+function buildTradeContextRepository(
+  redis: Redis | null,
+): TradeContextRepository {
+  if (redis) return new RedisTradeContextRepository(redis);
+  return new InMemoryTradeContextRepository();
+}
+
 function buildRedis(): Redis | null {
   if (!env.REDIS_URL) return null;
   const redis = new Redis(env.REDIS_URL, {
@@ -174,6 +185,7 @@ async function main() {
   const indicatorAdapter = buildIndicatorProvider();
   const decisionModelAdapter = buildDecisionModel();
   const watchlistRepository = buildWatchlistRepository(redis);
+  const tradeContextRepository = buildTradeContextRepository(redis);
   const marketHours = new UsMarketHours();
 
   const scannerMonitorUseCase = buildScannerMonitor(
@@ -186,11 +198,15 @@ async function main() {
     brokerAdapter,
   );
   const placeBracketOrderUseCase = new PlaceBracketOrder(brokerAdapter);
+  const recordTradeContextUseCase = new RecordTradeContext(
+    tradeContextRepository,
+  );
   const listWatchlistUseCase = new ListWatchlist(watchlistRepository);
-  const getOrdersUseCase = new GetOrders(brokerAdapter);
+  const getOrdersUseCase = new GetOrders(brokerAdapter, tradeContextRepository);
   const decisionRunnerUseCase = new DecisionRunner({
     evaluate: evaluateDecisionUseCase,
     placeBracketOrder: placeBracketOrderUseCase,
+    recordTradeContext: recordTradeContextUseCase,
     watchlist: watchlistRepository,
     broker: brokerAdapter,
     marketHours,

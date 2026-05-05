@@ -1,9 +1,9 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
+import type { DecisionModelPort } from '../../domain/decision/DecisionPort.js';
 import type {
-  DecisionModelPort,
+  DecisionSignal,
   MarketSnapshot,
-} from '../../domain/decision/DecisionPort.js';
-import type { DecisionSignal } from '../../domain/decision/DecisionTypes.js';
+} from '../../domain/decision/DecisionTypes.js';
 import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
 
 export interface EvaluateDecisionInput {
