@@ -84,28 +84,35 @@ export class DecisionRunner {
   }
 
   private async tick(): Promise<void> {
-    const open = this.marketHours.isOpen(new Date());
-    if (this.lastIsOpen !== open) {
-      log.info({ open }, 'market hours transition');
-      this.lastIsOpen = open;
-    }
-    if (!open) {
-      this.metrics.recordTick('market_closed');
-      return;
-    }
+    try {
+      const open = this.marketHours.isOpen(new Date());
+      if (this.lastIsOpen !== open) {
+        log.info({ open }, 'market hours transition');
+        this.lastIsOpen = open;
+      }
+      if (!open) {
+        this.metrics.recordTick('market_closed');
+        return;
+      }
 
-    const items = await this.watchlist.list();
-    const symbols = items.map((s) => s.symbol);
+      const items = await this.watchlist.list();
+      const symbols = items.map((s) => s.symbol);
 
-    if (symbols.length === 0) {
-      this.metrics.recordTick('empty');
+      if (symbols.length === 0) {
+        this.metrics.recordTick('empty');
+        this.lastSuccessfulTick = Date.now();
+        return;
+      }
+
+      await Promise.all(symbols.map((symbol) => this.processSymbol(symbol)));
+      this.metrics.recordTick('ok');
       this.lastSuccessfulTick = Date.now();
-      return;
+    } catch (err) {
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'tick failed',
+      );
     }
-
-    await Promise.all(symbols.map((symbol) => this.processSymbol(symbol)));
-    this.metrics.recordTick('ok');
-    this.lastSuccessfulTick = Date.now();
   }
 
   private async processSymbol(symbol: string): Promise<void> {

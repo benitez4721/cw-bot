@@ -267,6 +267,7 @@ async function main() {
     {
       port: env.PORT,
       broker: env.BROKER_PROVIDER,
+      indicators: env.INDICATOR_PROVIDER,
       cw: env.CW_ENABLED ? scannerMonitorUseCase.getStatus() : 'disabled',
       decision: env.DECISION_ENABLED
         ? `${decisionModelAdapter.name} (${decisionRunnerUseCase.getStatus()})`

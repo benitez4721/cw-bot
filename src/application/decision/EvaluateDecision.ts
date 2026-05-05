@@ -5,6 +5,9 @@ import type {
   MarketSnapshot,
 } from '../../domain/decision/DecisionTypes.js';
 import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
+import { logger } from '../../infrastructure/logging/logger.js';
+
+const log = logger.child({ component: 'EvaluateDecision' });
 
 export interface EvaluateDecisionInput {
   symbol: string;
@@ -21,6 +24,7 @@ export class EvaluateDecision {
     if (!symbol) throw new Error('symbol is required');
 
     const snapshot = await this.buildSnapshot(symbol);
+    log.info({ snapshot }, 'evaluating snapshot');
     return this.model.evaluate({ snapshot });
   }
 
