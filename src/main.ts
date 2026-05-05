@@ -18,6 +18,7 @@ import { metricsRoutes } from './infrastructure/http/metricsRoutes.js';
 import { registerAuthMiddleware } from './infrastructure/http/authMiddleware.js';
 import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
 import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
+import { TwelveDataAdapter } from './infrastructure/twelvedata/TwelveDataAdapter.js';
 import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
 import { TechnicalDecisionModel } from './infrastructure/decision/TechnicalDecisionModel.js';
 import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
@@ -122,6 +123,16 @@ function buildIndicatorProvider(): IndicatorPort {
         apiKey: env.ALPHA_VANTAGE_API_KEY,
         baseUrl: env.ALPHA_VANTAGE_BASE_URL,
         minIntervalMs: env.ALPHA_VANTAGE_MIN_INTERVAL_MS,
+      });
+    }
+    case 'twelvedata': {
+      if (!env.TWELVEDATA_API_KEY) {
+        throw new Error('Missing required env var: TWELVEDATA_API_KEY');
+      }
+      return new TwelveDataAdapter({
+        apiKey: env.TWELVEDATA_API_KEY,
+        baseUrl: env.TWELVEDATA_BASE_URL,
+        minIntervalMs: env.TWELVEDATA_MIN_INTERVAL_MS,
       });
     }
     default:

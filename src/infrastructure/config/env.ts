@@ -27,6 +27,11 @@ export const env = {
     process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
   ALPHA_VANTAGE_MIN_INTERVAL_MS:
     Number(process.env.ALPHA_VANTAGE_MIN_INTERVAL_MS) || 250,
+  TWELVEDATA_API_KEY: process.env.TWELVEDATA_API_KEY,
+  TWELVEDATA_BASE_URL:
+    process.env.TWELVEDATA_BASE_URL || 'https://api.twelvedata.com',
+  TWELVEDATA_MIN_INTERVAL_MS:
+    Number(process.env.TWELVEDATA_MIN_INTERVAL_MS) || 7500,
   DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
   DECISION_ENABLED:
     (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
