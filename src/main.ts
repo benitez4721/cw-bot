@@ -9,8 +9,11 @@ import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemory
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import type { WatchlistRepository } from './domain/watchlist/WatchlistRepository.js';
 import type { TradeContextRepository } from './domain/trade/TradeContextRepository.js';
+import type { TradedSymbolsRepository } from './domain/trade/TradedSymbolsRepository.js';
 import { InMemoryTradeContextRepository } from './infrastructure/trade/InMemoryTradeContextRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
+import { InMemoryTradedSymbolsRepository } from './infrastructure/trade/InMemoryTradedSymbolsRepository.js';
+import { RedisTradedSymbolsRepository } from './infrastructure/trade/RedisTradedSymbolsRepository.js';
 import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
 import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
@@ -156,6 +159,13 @@ function buildTradeContextRepository(
   return new InMemoryTradeContextRepository();
 }
 
+function buildTradedSymbolsRepository(
+  redis: Redis | null,
+): TradedSymbolsRepository {
+  if (redis) return new RedisTradedSymbolsRepository(redis);
+  return new InMemoryTradedSymbolsRepository();
+}
+
 function buildRedis(): Redis | null {
   if (!env.REDIS_URL) return null;
   const redis = new Redis(env.REDIS_URL, {
@@ -186,6 +196,7 @@ async function main() {
   const decisionModelAdapter = buildDecisionModel();
   const watchlistRepository = buildWatchlistRepository(redis);
   const tradeContextRepository = buildTradeContextRepository(redis);
+  const tradedSymbolsRepository = buildTradedSymbolsRepository(redis);
   const marketHours = new UsMarketHours();
 
   const scannerMonitorUseCase = buildScannerMonitor(
@@ -208,7 +219,7 @@ async function main() {
     placeBracketOrder: placeBracketOrderUseCase,
     recordTradeContext: recordTradeContextUseCase,
     watchlist: watchlistRepository,
-    broker: brokerAdapter,
+    tradedSymbols: tradedSymbolsRepository,
     marketHours,
     metrics: metricsAdapter,
     orderConfig: decisionModelAdapter.orderConfig,

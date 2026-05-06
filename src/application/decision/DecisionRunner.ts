@@ -1,7 +1,7 @@
-import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type { OrderConfig } from '../../domain/decision/DecisionTypes.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
+import type { TradedSymbolsRepository } from '../../domain/trade/TradedSymbolsRepository.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { EvaluateDecision } from './EvaluateDecision.js';
@@ -17,7 +17,7 @@ export interface DecisionRunnerOptions {
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
   watchlist: WatchlistRepository;
-  broker: BrokerPort;
+  tradedSymbols: TradedSymbolsRepository;
   marketHours: MarketHours;
   metrics: MetricsPort;
   orderConfig: OrderConfig;
@@ -35,7 +35,7 @@ export class DecisionRunner {
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
   private readonly watchlist: WatchlistRepository;
-  private readonly broker: BrokerPort;
+  private readonly tradedSymbols: TradedSymbolsRepository;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly orderConfig: OrderConfig;
@@ -56,7 +56,7 @@ export class DecisionRunner {
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
     this.watchlist = options.watchlist;
-    this.broker = options.broker;
+    this.tradedSymbols = options.tradedSymbols;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
     this.orderConfig = options.orderConfig;
@@ -150,7 +150,7 @@ export class DecisionRunner {
     }
     this.inFlight.add(symbol);
     try {
-      if (await this.hasOpenExposure(symbol)) {
+      if (await this.tradedSymbols.has(symbol)) {
         return;
       }
       const signal = await this.evaluate.execute({ symbol });
@@ -190,6 +190,7 @@ export class DecisionRunner {
         result.status !== 'cancelled' &&
         result.status !== 'expired'
       ) {
+        await this.tradedSymbols.add(symbol);
         try {
           await this.recordTradeContext.execute({
             orderId: result.orderId,
@@ -211,22 +212,5 @@ export class DecisionRunner {
     } finally {
       this.inFlight.delete(symbol);
     }
-  }
-
-  private async hasOpenExposure(symbol: string): Promise<boolean> {
-    const [positions, orders] = await Promise.all([
-      this.broker.getPositions(),
-      this.broker.getOrders({ symbol }),
-    ]);
-
-    if (positions.some((p) => p.symbol === symbol && p.quantity !== 0))
-      return true;
-    return orders.some(
-      (o) =>
-        o.symbol === symbol &&
-        (o.status === 'open' ||
-          o.status === 'pending' ||
-          o.status === 'partiallyFilled'),
-    );
   }
 }
