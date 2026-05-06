@@ -29,4 +29,4 @@ export type DecisionSignal =
       checks: RuleCheck[];
       snapshot: MarketSnapshot;
     }
-  | { action: 'hold'; checks: RuleCheck[] };
+  | { action: 'hold'; checks: RuleCheck[]; snapshot: MarketSnapshot };

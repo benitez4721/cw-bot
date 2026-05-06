@@ -212,7 +212,6 @@ async function main() {
     marketHours,
     metrics: metricsAdapter,
     orderConfig: decisionModelAdapter.orderConfig,
-    intervalMs: 60_000,
     enabled: env.DECISION_ENABLED,
   });
 

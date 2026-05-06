@@ -21,9 +21,14 @@ export interface DecisionRunnerOptions {
   marketHours: MarketHours;
   metrics: MetricsPort;
   orderConfig: OrderConfig;
-  intervalMs: number;
   enabled?: boolean;
+  // Injected for tests; defaults to Date.now / global setTimeout.
+  now?: () => number;
+  schedule?: (cb: () => void, ms: number) => NodeJS.Timeout;
+  cancel?: (handle: NodeJS.Timeout) => void;
 }
+
+const MINUTE_MS = 60_000;
 
 export class DecisionRunner {
   private readonly evaluate: EvaluateDecision;
@@ -34,10 +39,14 @@ export class DecisionRunner {
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly orderConfig: OrderConfig;
-  private readonly intervalMs: number;
   private readonly enabled: boolean;
+  private readonly now: () => number;
+  private readonly schedule: (cb: () => void, ms: number) => NodeJS.Timeout;
+  private readonly cancel: (handle: NodeJS.Timeout) => void;
   private readonly inFlight = new Set<string>();
+  private readonly lastBarTs = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
+  private running = false;
   private status: DecisionRunnerStatus;
   private lastIsOpen: boolean | null = null;
   private lastSuccessfulTick = 0;
@@ -51,8 +60,10 @@ export class DecisionRunner {
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
     this.orderConfig = options.orderConfig;
-    this.intervalMs = options.intervalMs;
     this.enabled = options.enabled ?? true;
+    this.now = options.now ?? (() => Date.now());
+    this.schedule = options.schedule ?? ((cb, ms) => setTimeout(cb, ms));
+    this.cancel = options.cancel ?? ((h) => clearTimeout(h));
     this.status = this.enabled ? 'idle' : 'disabled';
   }
 
@@ -61,18 +72,34 @@ export class DecisionRunner {
       log.info('disabled by config — skipping loop');
       return;
     }
-    if (this.timer) return;
+    if (this.running) return;
+    this.running = true;
     this.status = 'running';
-    this.timer = setInterval(() => void this.tick(), this.intervalMs);
-    log.info({ intervalMs: this.intervalMs }, 'started');
+    log.info('started');
+    this.scheduleNext();
   }
 
   stop(): void {
+    this.running = false;
     if (this.timer) {
-      clearInterval(this.timer);
+      this.cancel(this.timer);
       this.timer = null;
     }
     if (this.enabled) this.status = 'idle';
+  }
+
+  // Sleeps until the next minute boundary (HH:MM:00.000), then runs tick().
+  // Recomputed from wall-clock after each tick so a slow tick doesn't drift
+  // and we transparently skip missed minutes (no stacked back-to-back ticks).
+  private scheduleNext(): void {
+    if (!this.running) return;
+    const now = this.now();
+    const target = Math.floor(now / MINUTE_MS) * MINUTE_MS + MINUTE_MS;
+    const delay = Math.max(0, target - now);
+    this.timer = this.schedule(() => {
+      this.timer = null;
+      void this.tick().finally(() => this.scheduleNext());
+    }, delay);
   }
 
   getStatus(): DecisionRunnerStatus {
@@ -126,6 +153,20 @@ export class DecisionRunner {
         return;
       }
       const signal = await this.evaluate.execute({ symbol });
+
+      // If the 1m bar didn't advance since the previous tick, the REST feed
+      // hasn't published the new bar yet — log it (so we can quantify how
+      // often this happens) and skip to avoid acting on a stale signal.
+      const currentBarTs = signal.snapshot.macd1minSeries[0]?.timestamp;
+      if (currentBarTs && this.lastBarTs.get(symbol) === currentBarTs) {
+        log.warn(
+          { symbol, barTimestamp: currentBarTs },
+          '1min bar unchanged since last tick — feed may be lagging, skipping',
+        );
+        return;
+      }
+      if (currentBarTs) this.lastBarTs.set(symbol, currentBarTs);
+
       this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
 

@@ -37,7 +37,7 @@ export class TechnicalDecisionModel implements DecisionModelPort {
   evaluate({ snapshot }: EvaluateInput): DecisionSignal {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
-      return { action: 'hold', checks };
+      return { action: 'hold', checks, snapshot };
     }
     return {
       action: 'buy',
