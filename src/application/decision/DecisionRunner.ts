@@ -29,6 +29,11 @@ export interface DecisionRunnerOptions {
 }
 
 const MINUTE_MS = 60_000;
+// Wait this long past each minute boundary before firing the tick. Twelve Data
+// publishes the just-closed 1m bar with up to ~1-2min lag, so firing at :00
+// often reads a stale snapshot. :10 trades a bit of latency for a much higher
+// chance the indicator endpoints have caught up.
+const TICK_OFFSET_MS = 10_000;
 
 export class DecisionRunner {
   private readonly evaluate: EvaluateDecision;
@@ -88,13 +93,17 @@ export class DecisionRunner {
     if (this.enabled) this.status = 'idle';
   }
 
-  // Sleeps until the next minute boundary (HH:MM:00.000), then runs tick().
-  // Recomputed from wall-clock after each tick so a slow tick doesn't drift
-  // and we transparently skip missed minutes (no stacked back-to-back ticks).
+  // Sleeps until the next HH:MM:OFFSET (offset past the minute boundary), then
+  // runs tick(). Recomputed from wall-clock after each tick so a slow tick
+  // doesn't drift and we transparently skip missed minutes (no stacked
+  // back-to-back ticks).
   private scheduleNext(): void {
     if (!this.running) return;
     const now = this.now();
-    const target = Math.floor(now / MINUTE_MS) * MINUTE_MS + MINUTE_MS;
+    const target =
+      Math.floor((now - TICK_OFFSET_MS) / MINUTE_MS) * MINUTE_MS +
+      MINUTE_MS +
+      TICK_OFFSET_MS;
     const delay = Math.max(0, target - now);
     this.timer = this.schedule(() => {
       this.timer = null;
