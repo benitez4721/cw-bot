@@ -31,9 +31,9 @@ export interface DecisionRunnerOptions {
 const MINUTE_MS = 60_000;
 // Wait this long past each minute boundary before firing the tick. Twelve Data
 // publishes the just-closed 1m bar with variable lag (observed 10s–70s after
-// close), so firing too early reads a stale snapshot. :20 trades a bit of
+// close), so firing too early reads a stale snapshot. :30 trades a bit of
 // latency for a much higher chance the indicator endpoints have caught up.
-const TICK_OFFSET_MS = 20_000;
+const TICK_OFFSET_MS = 30_000;
 
 export class DecisionRunner {
   private readonly evaluate: EvaluateDecision;
