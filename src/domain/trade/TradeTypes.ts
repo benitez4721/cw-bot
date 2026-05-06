@@ -17,7 +17,8 @@ export interface TradeContext {
   symbol: string;
   side: OrderSide;
   entryLimitPrice: number;
-  placedAt: string;
+  evalStart: string;
+  evalEnd: string;
   indicators: TradeIndicatorSnapshot;
   checks: RuleCheck[];
   status: TradeContextStatus;

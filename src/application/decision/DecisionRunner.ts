@@ -143,6 +143,7 @@ export class DecisionRunner {
   }
 
   private async processSymbol(symbol: string): Promise<void> {
+    const evalStart = new Date().toISOString();
     if (this.inFlight.has(symbol)) {
       log.debug({ symbol }, 'still in-flight — skipping tick');
       return;
@@ -153,6 +154,7 @@ export class DecisionRunner {
         return;
       }
       const signal = await this.evaluate.execute({ symbol });
+      const evalEnd = new Date().toISOString();
 
       // If the 1m bar didn't advance since the previous tick, the REST feed
       // hasn't published the new bar yet — log it (so we can quantify how
@@ -170,7 +172,6 @@ export class DecisionRunner {
       this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
 
-      const placedAt = new Date().toISOString();
       const result = await this.placeBracketOrder.execute({
         symbol: signal.symbol,
         side: signal.side,
@@ -193,7 +194,8 @@ export class DecisionRunner {
           await this.recordTradeContext.execute({
             orderId: result.orderId,
             signal,
-            placedAt,
+            evalStart,
+            evalEnd,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';

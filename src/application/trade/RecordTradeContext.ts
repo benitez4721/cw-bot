@@ -10,7 +10,8 @@ type BuySignal = Extract<DecisionSignal, { action: 'buy' }>;
 export interface RecordTradeContextInput {
   orderId: string;
   signal: BuySignal;
-  placedAt: string;
+  evalStart: string;
+  evalEnd: string;
 }
 
 export class RecordTradeContext {
@@ -19,7 +20,8 @@ export class RecordTradeContext {
   async execute({
     orderId,
     signal,
-    placedAt,
+    evalStart,
+    evalEnd,
   }: RecordTradeContextInput): Promise<void> {
     if (!orderId) throw new Error('orderId is required');
 
@@ -36,7 +38,8 @@ export class RecordTradeContext {
       symbol: signal.symbol,
       side: signal.side,
       entryLimitPrice: signal.entryLimitPrice,
-      placedAt,
+      evalStart,
+      evalEnd,
       indicators,
       checks: signal.checks,
       status: 'active',
