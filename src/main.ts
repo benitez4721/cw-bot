@@ -23,10 +23,17 @@ import { registerAuthMiddleware } from './infrastructure/http/authMiddleware.js'
 import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
 import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
 import { TwelveDataAdapter } from './infrastructure/twelvedata/TwelveDataAdapter.js';
+import { LocalIndicatorAdapter } from './infrastructure/local-indicators/LocalIndicatorAdapter.js';
 import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
 import { TechnicalDecisionModel } from './infrastructure/decision/TechnicalDecisionModel.js';
 import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
 import { DecisionRunner } from './application/decision/DecisionRunner.js';
+import { BarStreamManager } from './application/marketdata/BarStreamManager.js';
+import { RedisBarRepository } from './infrastructure/marketdata/RedisBarRepository.js';
+import { PolygonAdapter } from './infrastructure/polygon/PolygonAdapter.js';
+import type { BarRepository } from './domain/marketdata/BarRepository.js';
+import type { MarketFeedPort } from './domain/marketdata/MarketFeedPort.js';
+import type { HistoricalBarsPort } from './domain/marketdata/HistoricalBarsPort.js';
 import { UsMarketHours } from './infrastructure/market/UsMarketHours.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
 import { GrafanaCloudWriter } from './infrastructure/metrics/GrafanaCloudWriter.js';
@@ -117,7 +124,7 @@ function buildDecisionModel(): DecisionModelPort {
   }
 }
 
-function buildIndicatorProvider(): IndicatorPort {
+function buildIndicatorProvider(barRepo: BarRepository | null): IndicatorPort {
   switch (env.INDICATOR_PROVIDER) {
     case 'alphavantage': {
       if (!env.ALPHA_VANTAGE_API_KEY) {
@@ -139,9 +146,58 @@ function buildIndicatorProvider(): IndicatorPort {
         minIntervalMs: env.TWELVEDATA_MIN_INTERVAL_MS,
       });
     }
+    case 'local': {
+      if (!barRepo) {
+        throw new Error(
+          'INDICATOR_PROVIDER=local requires REDIS_URL (BarRepository unavailable)',
+        );
+      }
+      return new LocalIndicatorAdapter({ bars: barRepo });
+    }
     default:
       throw new Error(`Unknown INDICATOR_PROVIDER: ${env.INDICATOR_PROVIDER}`);
   }
+}
+
+function buildBarRepository(redis: Redis | null): BarRepository | null {
+  if (env.INDICATOR_PROVIDER !== 'local' && env.MARKET_FEED !== 'polygon') {
+    return null;
+  }
+  if (!redis) {
+    throw new Error(
+      'REDIS_URL is required when INDICATOR_PROVIDER=local or MARKET_FEED=polygon',
+    );
+  }
+  return new RedisBarRepository(redis);
+}
+
+function buildMarketFeed(): MarketFeedPort | null {
+  if (env.MARKET_FEED === 'none') return null;
+  if (env.MARKET_FEED !== 'polygon') {
+    throw new Error(`Unknown MARKET_FEED: ${env.MARKET_FEED}`);
+  }
+  if (!env.POLYGON_API_KEY) {
+    throw new Error('Missing required env var: POLYGON_API_KEY');
+  }
+  return new PolygonAdapter({
+    apiKey: env.POLYGON_API_KEY,
+    wsUrl: env.POLYGON_WS_URL,
+  });
+}
+
+// Historical bootstrap is always Twelve Data (independent of INDICATOR_PROVIDER
+// since 'local' indicators read from cache, not from a remote indicator API).
+function buildHistoricalBars(): HistoricalBarsPort {
+  if (!env.TWELVEDATA_API_KEY) {
+    throw new Error(
+      'MARKET_FEED=polygon requires TWELVEDATA_API_KEY for historical bootstrap',
+    );
+  }
+  return new TwelveDataAdapter({
+    apiKey: env.TWELVEDATA_API_KEY,
+    baseUrl: env.TWELVEDATA_BASE_URL,
+    minIntervalMs: env.TWELVEDATA_MIN_INTERVAL_MS,
+  });
 }
 
 function buildWatchlistRepository(redis: Redis | null): WatchlistRepository {
@@ -182,11 +238,13 @@ async function main() {
   const redis = buildRedis();
 
   const brokerAdapter = buildBroker(metricsAdapter);
-  const indicatorAdapter = buildIndicatorProvider();
+  const barRepository = buildBarRepository(redis);
+  const indicatorAdapter = buildIndicatorProvider(barRepository);
   const decisionModelAdapter = buildDecisionModel();
   const watchlistRepository = buildWatchlistRepository(redis);
   const tradeContextRepository = buildTradeContextRepository(redis);
   const marketHours = new UsMarketHours();
+  const marketFeedAdapter = buildMarketFeed();
 
   const scannerMonitorUseCase = buildScannerMonitor(
     watchlistRepository,
@@ -203,17 +261,41 @@ async function main() {
   );
   const listWatchlistUseCase = new ListWatchlist(watchlistRepository);
   const getOrdersUseCase = new GetOrders(brokerAdapter, tradeContextRepository);
-  const decisionRunnerUseCase = new DecisionRunner({
-    evaluate: evaluateDecisionUseCase,
-    placeBracketOrder: placeBracketOrderUseCase,
-    recordTradeContext: recordTradeContextUseCase,
-    watchlist: watchlistRepository,
-    broker: brokerAdapter,
-    marketHours,
-    metrics: metricsAdapter,
-    orderConfig: decisionModelAdapter.orderConfig,
-    enabled: env.DECISION_ENABLED,
-  });
+
+  // Mutually exclusive runtime modes. With MARKET_FEED=polygon the evaluation
+  // is event-driven on each AM bar close; otherwise the legacy DecisionRunner
+  // ticks once per minute.
+  const usingMarketFeed = marketFeedAdapter !== null;
+  const decisionRunnerUseCase = usingMarketFeed
+    ? null
+    : new DecisionRunner({
+        evaluate: evaluateDecisionUseCase,
+        placeBracketOrder: placeBracketOrderUseCase,
+        recordTradeContext: recordTradeContextUseCase,
+        watchlist: watchlistRepository,
+        broker: brokerAdapter,
+        marketHours,
+        metrics: metricsAdapter,
+        orderConfig: decisionModelAdapter.orderConfig,
+        enabled: env.DECISION_ENABLED,
+      });
+  const barStreamManagerUseCase =
+    usingMarketFeed && barRepository
+      ? new BarStreamManager({
+          feed: marketFeedAdapter,
+          historicalBars: buildHistoricalBars(),
+          barRepo: barRepository,
+          watchlist: watchlistRepository,
+          evaluate: evaluateDecisionUseCase,
+          placeBracketOrder: placeBracketOrderUseCase,
+          recordTradeContext: recordTradeContextUseCase,
+          broker: brokerAdapter,
+          marketHours,
+          metrics: metricsAdapter,
+          orderConfig: decisionModelAdapter.orderConfig,
+          bootstrapBars: env.BOOTSTRAP_BARS,
+        })
+      : null;
 
   const grafanaWriter =
     env.GRAFANA_CLOUD_PROM_URL &&
@@ -227,13 +309,15 @@ async function main() {
         })
       : null;
 
-  const heartbeat = env.BETTERSTACK_HEARTBEAT_URL
-    ? new Heartbeat({
-        url: env.BETTERSTACK_HEARTBEAT_URL,
-        decisionRunner: decisionRunnerUseCase,
-        marketHours,
-      })
-    : null;
+  const tickProvider = decisionRunnerUseCase ?? barStreamManagerUseCase;
+  const heartbeat =
+    env.BETTERSTACK_HEARTBEAT_URL && tickProvider
+      ? new Heartbeat({
+          url: env.BETTERSTACK_HEARTBEAT_URL,
+          tickProvider,
+          marketHours,
+        })
+      : null;
 
   try {
     await scannerMonitorUseCase.start();
@@ -244,7 +328,17 @@ async function main() {
     );
   }
 
-  decisionRunnerUseCase.start();
+  decisionRunnerUseCase?.start();
+  if (barStreamManagerUseCase) {
+    try {
+      await barStreamManagerUseCase.start();
+    } catch (err) {
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'bar stream manager start failed (will keep retrying via reconnect)',
+      );
+    }
+  }
   grafanaWriter?.start();
   heartbeat?.start();
 
@@ -262,15 +356,24 @@ async function main() {
   await server.register(brokerRoutes, { getOrders: getOrdersUseCase });
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
+  const decisionStatus = (() => {
+    if (!env.DECISION_ENABLED) return 'disabled';
+    if (barStreamManagerUseCase) {
+      return `${decisionModelAdapter.name} via barStream (${barStreamManagerUseCase.getStatus()})`;
+    }
+    if (decisionRunnerUseCase) {
+      return `${decisionModelAdapter.name} via runner (${decisionRunnerUseCase.getStatus()})`;
+    }
+    return 'unknown';
+  })();
   log.info(
     {
       port: env.PORT,
       broker: env.BROKER_PROVIDER,
       indicators: env.INDICATOR_PROVIDER,
+      marketFeed: env.MARKET_FEED,
       cw: env.CW_ENABLED ? scannerMonitorUseCase.getStatus() : 'disabled',
-      decision: env.DECISION_ENABLED
-        ? `${decisionModelAdapter.name} (${decisionRunnerUseCase.getStatus()})`
-        : 'disabled',
+      decision: decisionStatus,
       redis: redis ? 'connected' : 'in-memory',
       grafana: grafanaWriter ? 'enabled' : 'disabled',
       heartbeat: heartbeat ? 'enabled' : 'disabled',
@@ -283,7 +386,8 @@ async function main() {
     try {
       heartbeat?.stop();
       grafanaWriter?.stop();
-      decisionRunnerUseCase.stop();
+      decisionRunnerUseCase?.stop();
+      barStreamManagerUseCase?.stop();
       scannerMonitorUseCase.stop();
       await server.close();
       if (redis) await redis.quit();

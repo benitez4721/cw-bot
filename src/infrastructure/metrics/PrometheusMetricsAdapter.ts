@@ -24,6 +24,10 @@ export class PrometheusMetricsAdapter implements MetricsPort {
   private readonly oauthRefresh: Counter<'result'>;
   private readonly watchlistSize: Gauge;
   private readonly scannerConnected: Gauge;
+  private readonly barsReceived: Counter;
+  private readonly barDedupSkips: Counter;
+  private readonly bootstrapFailures: Counter;
+  private readonly marketFeedConnected: Gauge;
 
   constructor() {
     this.registry = new Registry();
@@ -76,6 +80,26 @@ export class PrometheusMetricsAdapter implements MetricsPort {
       help: 'ChartWatcher WebSocket state (0 disconnected / 1 connected)',
       registers: [this.registry],
     });
+    this.barsReceived = new Counter({
+      name: 'bars_received_total',
+      help: 'Realtime AM bars received from the market feed',
+      registers: [this.registry],
+    });
+    this.barDedupSkips = new Counter({
+      name: 'bar_dedup_skips_total',
+      help: 'Bars skipped because their timestamp matched the last cached one',
+      registers: [this.registry],
+    });
+    this.bootstrapFailures = new Counter({
+      name: 'bootstrap_failures_total',
+      help: 'Symbol bootstraps that failed (Twelve Data fetchHistoricalBars)',
+      registers: [this.registry],
+    });
+    this.marketFeedConnected = new Gauge({
+      name: 'market_feed_ws_connected',
+      help: 'Polygon WebSocket state (0 disconnected / 1 connected)',
+      registers: [this.registry],
+    });
   }
 
   recordDecision(symbol: string, action: DecisionAction): void {
@@ -105,5 +129,21 @@ export class PrometheusMetricsAdapter implements MetricsPort {
 
   setScannerConnected(connected: boolean): void {
     this.scannerConnected.set(connected ? 1 : 0);
+  }
+
+  recordBarReceived(): void {
+    this.barsReceived.inc();
+  }
+
+  recordBarDedupSkip(): void {
+    this.barDedupSkips.inc();
+  }
+
+  recordBootstrapFailure(): void {
+    this.bootstrapFailures.inc();
+  }
+
+  setMarketFeedConnected(connected: boolean): void {
+    this.marketFeedConnected.set(connected ? 1 : 0);
   }
 }

@@ -141,7 +141,9 @@ function createInMemoryBarRepo(): BarRepository {
   };
 }
 
-function createWatchlist(initial: WatchedSymbol[] = []): WatchlistRepository {
+type TestWatchlist = WatchlistRepository & { _remove: (symbol: string) => void };
+
+function createWatchlist(initial: WatchedSymbol[] = []): TestWatchlist {
   let items = [...initial];
   return {
     async insert(s) {
@@ -156,6 +158,9 @@ function createWatchlist(initial: WatchedSymbol[] = []): WatchlistRepository {
     async list() {
       return [...items];
     },
+    _remove(symbol) {
+      items = items.filter((it) => it.symbol !== symbol);
+    },
   };
 }
 
@@ -163,7 +168,7 @@ interface Setup {
   manager: BarStreamManager;
   feed: FakeFeed;
   barRepo: BarRepository;
-  watchlist: WatchlistRepository;
+  watchlist: TestWatchlist;
   fetchHistorical: ReturnType<typeof vi.fn>;
   evaluate: { execute: ReturnType<typeof vi.fn> };
   placeBracket: { execute: ReturnType<typeof vi.fn> };
@@ -227,6 +232,10 @@ function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
     recordOauthRefresh: vi.fn(),
     setWatchlistSize: vi.fn(),
     setScannerConnected: vi.fn(),
+    recordBarReceived: vi.fn(),
+    recordBarDedupSkip: vi.fn(),
+    recordBootstrapFailure: vi.fn(),
+    setMarketFeedConnected: vi.fn(),
   };
 
   const manager = new BarStreamManager({
@@ -265,7 +274,7 @@ describe('BarStreamManager', () => {
     vi.useRealTimers();
   });
 
-  it('start() bootstraps active watchlist symbols and subscribes them', async () => {
+  it('start() bootstraps every watchlist symbol (active and stale) and subscribes them', async () => {
     const s = setup({
       initial: [
         { symbol: 'AAPL', status: 'active', createdAt: 1 },
@@ -273,11 +282,11 @@ describe('BarStreamManager', () => {
       ],
     });
     await s.manager.start();
-    expect(s.fetchHistorical).toHaveBeenCalledTimes(2); // 1m + 5m for AAPL only
+    expect(s.fetchHistorical).toHaveBeenCalledTimes(4); // 1m + 5m × 2 symbols
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
-    expect(s.feed.subscribed.has('TSLA')).toBe(false);
+    expect(s.feed.subscribed.has('TSLA')).toBe(true);
     expect((await s.barRepo.get('AAPL', '1min')).length).toBe(5);
-    expect((await s.barRepo.get('AAPL', '5min')).length).toBe(5);
+    expect((await s.barRepo.get('TSLA', '5min')).length).toBe(5);
     s.manager.stop();
   });
 
@@ -399,21 +408,30 @@ describe('BarStreamManager', () => {
     s.manager.stop();
   });
 
-  it('unsubscribes and clears cache when a symbol leaves the watchlist', async () => {
+  it('unsubscribes and clears cache when a symbol disappears from the watchlist', async () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
     await s.manager.start();
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
-    // Mark stale
-    await s.watchlist.update({ symbol: 'AAPL', status: 'stale', createdAt: 1 });
-    // Trigger another sync manually via the public path: stop + start uses
-    // start()'s internal sync.
-    s.manager.stop();
-    s.feed.subscribed.clear();
-    await s.manager.start();
+    // Symbol fully removed from the watchlist (e.g. TTL expired in Redis).
+    s.watchlist._remove('AAPL');
+    await s.manager.forceSync();
     expect(s.feed.subscribed.has('AAPL')).toBe(false);
     expect((await s.barRepo.get('AAPL', '1min')).length).toBe(0);
+    s.manager.stop();
+  });
+
+  it('keeps a symbol monitored when it transitions from active to stale', async () => {
+    const s = setup({
+      initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+    });
+    await s.manager.start();
+    expect(s.feed.subscribed.has('AAPL')).toBe(true);
+    await s.watchlist.update({ symbol: 'AAPL', status: 'stale', createdAt: 1 });
+    await s.manager.forceSync();
+    expect(s.feed.subscribed.has('AAPL')).toBe(true);
+    expect((await s.barRepo.get('AAPL', '1min')).length).toBeGreaterThan(0);
     s.manager.stop();
   });
 });

@@ -67,6 +67,7 @@ export class BarStreamManager {
   private syncTimer: NodeJS.Timeout | null = null;
   private status: BarStreamManagerStatus = 'idle';
   private handlersRegistered = false;
+  private lastSuccessfulTick = 0;
 
   constructor(options: BarStreamManagerOptions) {
     this.feed = options.feed;
@@ -91,6 +92,20 @@ export class BarStreamManager {
     return this.status;
   }
 
+  lastSuccessfulTickAt(): number {
+    return this.lastSuccessfulTick;
+  }
+
+  subscribedCount(): number {
+    return this.subscribed.size;
+  }
+
+  // Public hook that forces an immediate watchlist sync without waiting for
+  // the periodic timer. Useful for tests and ad-hoc reconciliation.
+  async forceSync(): Promise<void> {
+    return this.syncWatchlist();
+  }
+
   async start(): Promise<void> {
     if (this.status === 'running') return;
 
@@ -105,6 +120,7 @@ export class BarStreamManager {
       });
       this.feed.onConnectionChange((connected) => {
         log.info({ connected }, 'feed connection');
+        this.metrics.setMarketFeedConnected(connected);
       });
       this.handlersRegistered = true;
     }
@@ -124,6 +140,10 @@ export class BarStreamManager {
       this.syncTimer = null;
     }
     this.feed.disconnect();
+    // Clear local trackers so a subsequent start() rebuilds subscriptions
+    // from the watchlist (the feed lost its session on disconnect).
+    this.subscribed.clear();
+    this.inFlight.clear();
   }
 
   private scheduleNextSync(): void {
@@ -147,6 +167,7 @@ export class BarStreamManager {
       try {
         await this.bootstrapAndSubscribe(symbol);
       } catch (err) {
+        this.metrics.recordBootstrapFailure();
         log.error(
           { symbol, err: errMsg(err) },
           'bootstrap failed — will retry on next sync',
@@ -198,10 +219,12 @@ export class BarStreamManager {
     const cached1m = await this.barRepo.get(symbol, '1min');
     const lastTs = cached1m[cached1m.length - 1]?.timestamp;
     if (lastTs === bar.timestamp) {
+      this.metrics.recordBarDedupSkip();
       log.debug({ symbol, ts: bar.timestamp }, 'dedupe skip');
       return;
     }
 
+    this.metrics.recordBarReceived();
     await this.barRepo.append(symbol, '1min', bar);
 
     // A 1m bar with minute === :04, :09, :14, ... closes a 5m bucket.
@@ -212,6 +235,7 @@ export class BarStreamManager {
 
     if (!this.subscribed.has(symbol)) return;
     await this.processSymbol(symbol);
+    this.lastSuccessfulTick = this.now();
   }
 
   private async maybeAppendFiveMinute(symbol: string): Promise<void> {

@@ -1,28 +1,32 @@
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import { logger } from '../../infrastructure/logging/logger.js';
-import type { DecisionRunner } from '../decision/DecisionRunner.js';
 
 const log = logger.child({ component: 'Heartbeat' });
 
 const STALE_TICK_MS = 3 * 60 * 1000;
 
+// Structural type — both DecisionRunner and BarStreamManager satisfy it.
+export interface TickProvider {
+  lastSuccessfulTickAt(): number;
+}
+
 export interface HeartbeatOptions {
   url: string;
-  decisionRunner: DecisionRunner;
+  tickProvider: TickProvider;
   marketHours: MarketHours;
   intervalMs?: number;
 }
 
 export class Heartbeat {
   private readonly url: string;
-  private readonly decisionRunner: DecisionRunner;
+  private readonly tickProvider: TickProvider;
   private readonly marketHours: MarketHours;
   private readonly intervalMs: number;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(options: HeartbeatOptions) {
     this.url = options.url;
-    this.decisionRunner = options.decisionRunner;
+    this.tickProvider = options.tickProvider;
     this.marketHours = options.marketHours;
     this.intervalMs = options.intervalMs ?? 60_000;
   }
@@ -41,7 +45,7 @@ export class Heartbeat {
   }
 
   private async ping(): Promise<void> {
-    const lastTick = this.decisionRunner.lastSuccessfulTickAt();
+    const lastTick = this.tickProvider.lastSuccessfulTickAt();
     const open = this.marketHours.isOpen(new Date());
 
     if (open && lastTick > 0 && Date.now() - lastTick > STALE_TICK_MS) {

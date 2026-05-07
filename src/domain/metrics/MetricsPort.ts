@@ -19,4 +19,9 @@ export interface MetricsPort {
   recordOauthRefresh(result: OauthRefreshResult): void;
   setWatchlistSize(size: number): void;
   setScannerConnected(connected: boolean): void;
+  // Realtime feed (Polygon AM channel) — populated by BarStreamManager.
+  recordBarReceived(): void;
+  recordBarDedupSkip(): void;
+  recordBootstrapFailure(): void;
+  setMarketFeedConnected(connected: boolean): void;
 }
