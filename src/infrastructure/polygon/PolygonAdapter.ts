@@ -113,9 +113,7 @@ export class PolygonAdapter implements MarketFeedPort {
 
       ws.on('open', () => {
         log.info('ws open — sending auth');
-        ws.send(
-          JSON.stringify({ action: 'auth', params: this.config.apiKey }),
-        );
+        ws.send(JSON.stringify({ action: 'auth', params: this.config.apiKey }));
       });
 
       ws.on('message', (data) => {

@@ -144,7 +144,9 @@ function createInMemoryBarRepo(): BarRepository {
   };
 }
 
-type TestWatchlist = WatchlistRepository & { _remove: (symbol: string) => void };
+type TestWatchlist = WatchlistRepository & {
+  _remove: (symbol: string) => void;
+};
 
 function createWatchlist(initial: WatchedSymbol[] = []): TestWatchlist {
   let items = [...initial];
@@ -190,17 +192,15 @@ function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
       // Default: 5 ascending bars ending well before "now" so the
       // dropOpenBucket filter keeps all of them.
       const stepMs = interval === '1min' ? 60_000 : 5 * 60_000;
-      const lastClosed =
-        Math.floor(Date.now() / stepMs) * stepMs - stepMs; // last fully-closed bucket
+      const lastClosed = Math.floor(Date.now() / stepMs) * stepMs - stepMs; // last fully-closed bucket
       return Array.from({ length: 5 }, (_, i) =>
-        bar(
-          new Date(lastClosed - (4 - i) * stepMs).toISOString(),
-          100 + i,
-        ),
+        bar(new Date(lastClosed - (4 - i) * stepMs).toISOString(), 100 + i),
       );
     },
   );
-  const historicalBars: HistoricalBarsPort = { fetchHistoricalBars: fetchHistorical };
+  const historicalBars: HistoricalBarsPort = {
+    fetchHistoricalBars: fetchHistorical,
+  };
 
   const evaluate = { execute: vi.fn(async () => makeHoldSignal()) };
   const placeBracket = {

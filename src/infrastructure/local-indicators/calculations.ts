@@ -14,7 +14,9 @@ export interface MACDPoint {
 export function calcEMA(values: number[], period: number): number[] {
   const result: number[] = new Array(values.length).fill(NaN);
   if (period <= 0 || !Number.isFinite(period)) {
-    throw new Error(`calcEMA: period must be a positive integer, got ${period}`);
+    throw new Error(
+      `calcEMA: period must be a positive integer, got ${period}`,
+    );
   }
   if (values.length < period) return result;
 
@@ -36,7 +38,9 @@ export function calcMACD(
   signal = 9,
 ): MACDPoint[] {
   if (fast >= slow) {
-    throw new Error(`calcMACD: fast (${fast}) must be less than slow (${slow})`);
+    throw new Error(
+      `calcMACD: fast (${fast}) must be less than slow (${slow})`,
+    );
   }
 
   const fastEMA = calcEMA(closes, fast);

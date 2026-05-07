@@ -28,7 +28,14 @@ describe('TwelveDataAdapter.fetchHistoricalBars', () => {
       ok({
         status: 'ok',
         values: [
-          { datetime: '2026-05-07 13:30:00', open: '100', high: '101', low: '99', close: '100.5', volume: '1000' },
+          {
+            datetime: '2026-05-07 13:30:00',
+            open: '100',
+            high: '101',
+            low: '99',
+            close: '100.5',
+            volume: '1000',
+          },
         ],
       }),
     );
@@ -51,9 +58,30 @@ describe('TwelveDataAdapter.fetchHistoricalBars', () => {
       ok({
         status: 'ok',
         values: [
-          { datetime: '2026-05-07 13:32:00', open: '102', high: '103', low: '101', close: '102.5', volume: '1500' },
-          { datetime: '2026-05-07 13:31:00', open: '101', high: '102', low: '100', close: '101.5', volume: '1200' },
-          { datetime: '2026-05-07 13:30:00', open: '100', high: '101', low: '99', close: '100.5', volume: '1000' },
+          {
+            datetime: '2026-05-07 13:32:00',
+            open: '102',
+            high: '103',
+            low: '101',
+            close: '102.5',
+            volume: '1500',
+          },
+          {
+            datetime: '2026-05-07 13:31:00',
+            open: '101',
+            high: '102',
+            low: '100',
+            close: '101.5',
+            volume: '1200',
+          },
+          {
+            datetime: '2026-05-07 13:30:00',
+            open: '100',
+            high: '101',
+            low: '99',
+            close: '100.5',
+            volume: '1000',
+          },
         ],
       }),
     );

@@ -6,7 +6,9 @@ import type {
 } from '../../domain/marketdata/MarketDataTypes.js';
 import { LocalIndicatorAdapter } from './LocalIndicatorAdapter.js';
 
-function createBarRepoStub(): BarRepository & { _set: (s: string, i: BarInterval, b: Bar[]) => void } {
+function createBarRepoStub(): BarRepository & {
+  _set: (s: string, i: BarInterval, b: Bar[]) => void;
+} {
   const data = new Map<string, { '1min': Bar[]; '5min': Bar[] }>();
   const ensure = (s: string) => {
     let entry = data.get(s);
@@ -143,8 +145,22 @@ describe('LocalIndicatorAdapter', () => {
     it('returns session VWAP for the current ET date', async () => {
       // Two 1m bars in the same ET session as the fixed clock (2026-05-07).
       const bars: Bar[] = [
-        { timestamp: '2026-05-07T13:30:00Z', open: 100, high: 105, low: 99, close: 103, volume: 1000 },
-        { timestamp: '2026-05-07T13:31:00Z', open: 103, high: 107, low: 102, close: 106, volume: 2000 },
+        {
+          timestamp: '2026-05-07T13:30:00Z',
+          open: 100,
+          high: 105,
+          low: 99,
+          close: 103,
+          volume: 1000,
+        },
+        {
+          timestamp: '2026-05-07T13:31:00Z',
+          open: 103,
+          high: 107,
+          low: 102,
+          close: 106,
+          volume: 2000,
+        },
       ];
       repo._set('AAPL', '1min', bars);
       const vwap = await adapter.getVWAP({ symbol: 'AAPL', interval: '1min' });
@@ -155,7 +171,14 @@ describe('LocalIndicatorAdapter', () => {
     it('throws when no bars match the current session', async () => {
       // Bar from previous session
       repo._set('AAPL', '1min', [
-        { timestamp: '2026-05-06T19:30:00Z', open: 1, high: 1, low: 1, close: 1, volume: 1000 },
+        {
+          timestamp: '2026-05-06T19:30:00Z',
+          open: 1,
+          high: 1,
+          low: 1,
+          close: 1,
+          volume: 1000,
+        },
       ]);
       await expect(
         adapter.getVWAP({ symbol: 'AAPL', interval: '1min' }),

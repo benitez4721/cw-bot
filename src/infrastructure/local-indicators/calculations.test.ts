@@ -78,11 +78,46 @@ describe('calcMACD', () => {
 describe('aggregateOneFiveMinuteBucket', () => {
   it('aggregates 5 1m bars to OHLCV correctly', () => {
     const bars: Bar[] = [
-      { timestamp: '2026-05-07T13:30:00Z', open: 100, high: 105, low: 99, close: 103, volume: 1000 },
-      { timestamp: '2026-05-07T13:31:00Z', open: 103, high: 107, low: 102, close: 106, volume: 2000 },
-      { timestamp: '2026-05-07T13:32:00Z', open: 106, high: 108, low: 104, close: 107, volume: 1500 },
-      { timestamp: '2026-05-07T13:33:00Z', open: 107, high: 110, low: 106, close: 109, volume: 1800 },
-      { timestamp: '2026-05-07T13:34:00Z', open: 109, high: 111, low: 107, close: 108, volume: 1200 },
+      {
+        timestamp: '2026-05-07T13:30:00Z',
+        open: 100,
+        high: 105,
+        low: 99,
+        close: 103,
+        volume: 1000,
+      },
+      {
+        timestamp: '2026-05-07T13:31:00Z',
+        open: 103,
+        high: 107,
+        low: 102,
+        close: 106,
+        volume: 2000,
+      },
+      {
+        timestamp: '2026-05-07T13:32:00Z',
+        open: 106,
+        high: 108,
+        low: 104,
+        close: 107,
+        volume: 1500,
+      },
+      {
+        timestamp: '2026-05-07T13:33:00Z',
+        open: 107,
+        high: 110,
+        low: 106,
+        close: 109,
+        volume: 1800,
+      },
+      {
+        timestamp: '2026-05-07T13:34:00Z',
+        open: 109,
+        high: 111,
+        low: 107,
+        close: 108,
+        volume: 1200,
+      },
     ];
     const result = aggregateOneFiveMinuteBucket(bars);
     expect(result).toEqual({
@@ -96,11 +131,22 @@ describe('aggregateOneFiveMinuteBucket', () => {
   });
 
   it('throws if not exactly 5 bars', () => {
-    const bar: Bar = { timestamp: 't', open: 1, high: 1, low: 1, close: 1, volume: 1 };
+    const bar: Bar = {
+      timestamp: 't',
+      open: 1,
+      high: 1,
+      low: 1,
+      close: 1,
+      volume: 1,
+    };
     expect(() => aggregateOneFiveMinuteBucket([])).toThrow();
     expect(() => aggregateOneFiveMinuteBucket([bar])).toThrow();
-    expect(() => aggregateOneFiveMinuteBucket(new Array(4).fill(bar))).toThrow();
-    expect(() => aggregateOneFiveMinuteBucket(new Array(6).fill(bar))).toThrow();
+    expect(() =>
+      aggregateOneFiveMinuteBucket(new Array(4).fill(bar)),
+    ).toThrow();
+    expect(() =>
+      aggregateOneFiveMinuteBucket(new Array(6).fill(bar)),
+    ).toThrow();
   });
 });
 
@@ -108,8 +154,22 @@ describe('calcSessionVWAP', () => {
   it('returns volume-weighted typical price', () => {
     // 13:30Z -> 09:30 ET (May, EDT/UTC-4) on 2026-05-07
     const bars: Bar[] = [
-      { timestamp: '2026-05-07T13:30:00Z', open: 100, high: 105, low: 99, close: 103, volume: 1000 },
-      { timestamp: '2026-05-07T13:31:00Z', open: 103, high: 107, low: 102, close: 106, volume: 2000 },
+      {
+        timestamp: '2026-05-07T13:30:00Z',
+        open: 100,
+        high: 105,
+        low: 99,
+        close: 103,
+        volume: 1000,
+      },
+      {
+        timestamp: '2026-05-07T13:31:00Z',
+        open: 103,
+        high: 107,
+        low: 102,
+        close: 106,
+        volume: 2000,
+      },
     ];
     // typical_0 = (105+99+103)/3 = 102.3333..
     // typical_1 = (107+102+106)/3 = 105
@@ -122,8 +182,22 @@ describe('calcSessionVWAP', () => {
 
   it('filters out bars from other sessions', () => {
     const bars: Bar[] = [
-      { timestamp: '2026-05-06T19:30:00Z', open: 1, high: 1, low: 1, close: 1, volume: 999 },
-      { timestamp: '2026-05-07T13:30:00Z', open: 100, high: 100, low: 100, close: 100, volume: 1000 },
+      {
+        timestamp: '2026-05-06T19:30:00Z',
+        open: 1,
+        high: 1,
+        low: 1,
+        close: 1,
+        volume: 999,
+      },
+      {
+        timestamp: '2026-05-07T13:30:00Z',
+        open: 100,
+        high: 100,
+        low: 100,
+        close: 100,
+        volume: 1000,
+      },
     ];
     const vwap = calcSessionVWAP(bars, '2026-05-07');
     expect(vwap).toBeCloseTo(100, 6);
@@ -132,7 +206,14 @@ describe('calcSessionVWAP', () => {
   it('returns NaN when no matching bars / zero volume', () => {
     expect(Number.isNaN(calcSessionVWAP([], '2026-05-07'))).toBe(true);
     const bars: Bar[] = [
-      { timestamp: '2026-05-07T13:30:00Z', open: 1, high: 1, low: 1, close: 1, volume: 0 },
+      {
+        timestamp: '2026-05-07T13:30:00Z',
+        open: 1,
+        high: 1,
+        low: 1,
+        close: 1,
+        volume: 0,
+      },
     ];
     expect(Number.isNaN(calcSessionVWAP(bars, '2026-05-07'))).toBe(true);
   });

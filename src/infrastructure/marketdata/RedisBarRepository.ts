@@ -43,11 +43,7 @@ export class RedisBarRepository implements BarRepository {
     return bars;
   }
 
-  async set(
-    symbol: string,
-    interval: BarInterval,
-    bars: Bar[],
-  ): Promise<void> {
+  async set(symbol: string, interval: BarInterval, bars: Bar[]): Promise<void> {
     await this.redis.set(
       this.key(symbol, interval),
       JSON.stringify(bars),
@@ -56,11 +52,7 @@ export class RedisBarRepository implements BarRepository {
     );
   }
 
-  async append(
-    symbol: string,
-    interval: BarInterval,
-    bar: Bar,
-  ): Promise<void> {
+  async append(symbol: string, interval: BarInterval, bar: Bar): Promise<void> {
     const existing = await this.get(symbol, interval);
     existing.push(bar);
     await this.set(symbol, interval, existing);
