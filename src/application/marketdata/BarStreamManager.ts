@@ -254,14 +254,28 @@ export class BarStreamManager {
         limit: this.bootstrapBars,
       }),
     ]);
+    // Twelve Data returns the bucket in progress with partial values when the
+    // query lands mid-period. Drop it — only buckets whose period has fully
+    // elapsed are safe to use; anything else biases MACD/EMA against an
+    // incomplete close. The realtime WS will fill it in once it actually
+    // closes (Polygon AM emits closed bars only).
+    const now = this.now();
+    const closed1m = dropOpenBucket(bars1m, 60_000, now);
+    const closed5m = dropOpenBucket(bars5m, 5 * 60_000, now);
     await Promise.all([
-      this.barRepo.set(symbol, '1min', bars1m),
-      this.barRepo.set(symbol, '5min', bars5m),
+      this.barRepo.set(symbol, '1min', closed1m),
+      this.barRepo.set(symbol, '5min', closed5m),
     ]);
     this.feed.subscribe(symbol);
     this.subscribed.add(symbol);
     log.info(
-      { symbol, bars1m: bars1m.length, bars5m: bars5m.length },
+      {
+        symbol,
+        bars1m: closed1m.length,
+        bars5m: closed5m.length,
+        dropped1m: bars1m.length - closed1m.length,
+        dropped5m: bars5m.length - closed5m.length,
+      },
       'bootstrapped + subscribed',
     );
   }
@@ -386,4 +400,11 @@ export class BarStreamManager {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function dropOpenBucket(bars: Bar[], bucketMs: number, nowMs: number): Bar[] {
+  return bars.filter((b) => {
+    const closeMs = new Date(b.timestamp).getTime() + bucketMs;
+    return closeMs <= nowMs;
+  });
 }

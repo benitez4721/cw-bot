@@ -186,14 +186,15 @@ function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
   const barRepo = createInMemoryBarRepo();
   const watchlist = createWatchlist(opts.initial ?? []);
   const fetchHistorical = vi.fn(
-    async ({ symbol, interval }: { symbol: string; interval: BarInterval }) => {
-      // Default: return 5 ascending bars so 5m bucket logic works
-      const startMs = Date.UTC(2026, 4, 7, 13, 30);
+    async ({ interval }: { symbol: string; interval: BarInterval }) => {
+      // Default: 5 ascending bars ending well before "now" so the
+      // dropOpenBucket filter keeps all of them.
+      const stepMs = interval === '1min' ? 60_000 : 5 * 60_000;
+      const lastClosed =
+        Math.floor(Date.now() / stepMs) * stepMs - stepMs; // last fully-closed bucket
       return Array.from({ length: 5 }, (_, i) =>
         bar(
-          new Date(
-            startMs + i * (interval === '1min' ? 60_000 : 5 * 60_000),
-          ).toISOString(),
+          new Date(lastClosed - (4 - i) * stepMs).toISOString(),
           100 + i,
         ),
       );
@@ -425,6 +426,65 @@ describe('BarStreamManager', () => {
     expect(s.evaluate.execute).toHaveBeenCalledOnce();
     expect(s.placeBracket.execute).not.toHaveBeenCalled();
     s.manager.stop();
+  });
+
+  it('drops the in-progress bucket from the bootstrap (1min and 5min)', async () => {
+    // Wall clock pinned at 13:38:00 (mid-period for the 5m bucket that opened
+    // at 13:35, and just past the close of the 1m bucket that opened at 13:37).
+    const nowMs = Date.UTC(2026, 4, 7, 13, 38, 0);
+    const s = setup({
+      initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+    });
+    // Replace setup()'s manager with one whose now() is pinned for deterministic
+    // gating against fixed-timestamp Twelve Data fixtures.
+    const manager = new BarStreamManager({
+      feed: s.feed,
+      historicalBars: { fetchHistoricalBars: s.fetchHistorical },
+      barRepo: s.barRepo,
+      watchlist: s.watchlist,
+      evaluate: s.evaluate as unknown as EvaluateDecision,
+      placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
+      recordTradeContext: s.recordContext as unknown as RecordTradeContext,
+      broker: s.broker,
+      marketHours: { isOpen: () => true },
+      metrics: s.metrics,
+      orderConfig: { quantity: 100, stopOffset: 0.2, takeProfitOffset: 0.35 },
+      bootstrapBars: 5,
+      syncIntervalMs: 60_000,
+      now: () => nowMs,
+    });
+    s.fetchHistorical.mockImplementation(
+      async ({ interval }: { symbol: string; interval: BarInterval }) => {
+        if (interval === '1min') {
+          // bars at 13:35..13:38 — the 13:38 bar (closes 13:39) is partial at now=13:38:00
+          return [
+            bar('2026-05-07T13:35:00.000Z', 100),
+            bar('2026-05-07T13:36:00.000Z', 101),
+            bar('2026-05-07T13:37:00.000Z', 102),
+            bar('2026-05-07T13:38:00.000Z', 103), // partial
+          ];
+        }
+        // 5min: 13:25, 13:30, 13:35 — the 13:35 bucket (closes 13:40) is partial
+        return [
+          bar('2026-05-07T13:25:00.000Z', 100),
+          bar('2026-05-07T13:30:00.000Z', 101),
+          bar('2026-05-07T13:35:00.000Z', 102), // partial
+        ];
+      },
+    );
+    await manager.start();
+    const cached1m = await s.barRepo.get('AAPL', '1min');
+    const cached5m = await s.barRepo.get('AAPL', '5min');
+    expect(cached1m.map((b) => b.timestamp)).toEqual([
+      '2026-05-07T13:35:00.000Z',
+      '2026-05-07T13:36:00.000Z',
+      '2026-05-07T13:37:00.000Z',
+    ]);
+    expect(cached5m.map((b) => b.timestamp)).toEqual([
+      '2026-05-07T13:25:00.000Z',
+      '2026-05-07T13:30:00.000Z',
+    ]);
+    manager.stop();
   });
 
   it('continues subscribing the next sync if bootstrap fails', async () => {
