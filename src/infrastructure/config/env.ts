@@ -32,6 +32,11 @@ export const env = {
     process.env.TWELVEDATA_BASE_URL || 'https://api.twelvedata.com',
   TWELVEDATA_MIN_INTERVAL_MS:
     Number(process.env.TWELVEDATA_MIN_INTERVAL_MS) || 7500,
+  POLYGON_API_KEY: process.env.POLYGON_API_KEY,
+  POLYGON_WS_URL:
+    process.env.POLYGON_WS_URL || 'wss://socket.polygon.io/stocks',
+  BOOTSTRAP_BARS: Number(process.env.BOOTSTRAP_BARS) || 200,
+  MARKET_FEED: process.env.MARKET_FEED || 'none',
   DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
   DECISION_ENABLED:
     (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',

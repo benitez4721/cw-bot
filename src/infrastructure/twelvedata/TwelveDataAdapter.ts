@@ -10,6 +10,11 @@ import type {
   MACD,
   VWAP,
 } from '../../domain/indicators/IndicatorTypes.js';
+import type {
+  FetchHistoricalBarsInput,
+  HistoricalBarsPort,
+} from '../../domain/marketdata/HistoricalBarsPort.js';
+import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child({ component: 'TwelveDataAdapter' });
@@ -33,7 +38,7 @@ interface TwelveDataResponse {
   values?: TwelveDataValue[];
 }
 
-export class TwelveDataAdapter implements IndicatorPort {
+export class TwelveDataAdapter implements IndicatorPort, HistoricalBarsPort {
   private readonly minIntervalMs: number;
   private nextSlotAt = 0;
 
@@ -76,6 +81,27 @@ export class TwelveDataAdapter implements IndicatorPort {
     });
     const latest = pickLatest(data);
     return { value: parseNumber(latest['vwap']), timestamp: latest.datetime };
+  }
+
+  // Bootstrap OHLCV series for the local-indicators path. Twelve Data returns
+  // values DESC (most recent first); we reverse to ASC to match the cache
+  // contract. timezone=UTC keeps datetimes unambiguous (default is exchange
+  // local).
+  async fetchHistoricalBars(input: FetchHistoricalBarsInput): Promise<Bar[]> {
+    if (!Number.isInteger(input.limit) || input.limit <= 0) {
+      throw new Error('limit must be a positive integer');
+    }
+    const data = await this.request('time_series', {
+      symbol: input.symbol,
+      interval: input.interval,
+      outputsize: String(input.limit),
+      timezone: 'UTC',
+    });
+    const values = data.values ?? [];
+    if (values.length === 0) {
+      throw new Error(`Twelve Data: empty time_series for ${input.symbol}`);
+    }
+    return values.map(toBar).reverse();
   }
 
   private async requestMACD(
@@ -171,6 +197,23 @@ function toMACD(v: TwelveDataValue): MACD {
     histogram: parseNumber(v['macd_hist']),
     timestamp: v.datetime,
   };
+}
+
+function toBar(v: TwelveDataValue): Bar {
+  return {
+    timestamp: parseUtcDatetime(v.datetime),
+    open: parseNumber(v['open']),
+    high: parseNumber(v['high']),
+    low: parseNumber(v['low']),
+    close: parseNumber(v['close']),
+    volume: parseNumber(v['volume']),
+  };
+}
+
+// Twelve Data with timezone=UTC returns 'YYYY-MM-DD HH:MM:SS' (no offset).
+// Treat as UTC explicitly so downstream comparisons are unambiguous.
+function parseUtcDatetime(s: string): string {
+  return new Date(`${s.replace(' ', 'T')}Z`).toISOString();
 }
 
 function parseNumber(value: string | undefined): number {

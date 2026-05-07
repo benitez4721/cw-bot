@@ -1,16 +1,12 @@
-import type { Bar, BarInterval } from './MarketDataTypes.js';
-
-export interface FetchHistoricalBarsInput {
-  symbol: string;
-  interval: BarInterval;
-  limit: number;
-}
+import type { Bar } from './MarketDataTypes.js';
 
 export type BarHandler = (symbol: string, bar: Bar) => void;
 export type ConnectionHandler = (connected: boolean) => void;
 
+// Realtime feed only. Historical bootstrap lives in HistoricalBarsPort
+// (currently backed by Twelve Data). Polygon implements this port via the
+// stocks WS, channel AM (1-minute aggregates published at minute close).
 export interface MarketFeedPort {
-  fetchHistoricalBars(input: FetchHistoricalBarsInput): Promise<Bar[]>;
   connect(): Promise<void>;
   disconnect(): void;
   subscribe(symbol: string): void;
