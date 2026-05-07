@@ -87,6 +87,9 @@ function createFakeFeed(): FakeFeed {
       connHandler?.(true);
     },
     disconnect() {
+      // Emulate real adapter: closing the WS drops the server-side
+      // subscription set.
+      subscribed.clear();
       connHandler?.(false);
     },
     subscribe(symbol) {
@@ -339,15 +342,41 @@ describe('BarStreamManager', () => {
     s.manager.stop();
   });
 
-  it('skips evaluation when market is closed', async () => {
+  it('does not connect the feed nor bootstrap when market is closed', async () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
     s.marketOpen.value = false;
     await s.manager.start();
-    await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
+    expect(s.fetchHistorical).not.toHaveBeenCalled();
+    expect(s.feed.subscribed.has('AAPL')).toBe(false);
     expect(s.evaluate.execute).not.toHaveBeenCalled();
-    expect((await s.barRepo.get('AAPL', '1min')).length).toBe(6); // bootstrap 5 + 1 appended
+    s.manager.stop();
+  });
+
+  it('connects and bootstraps when market opens on a later tick', async () => {
+    const s = setup({
+      initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+    });
+    s.marketOpen.value = false;
+    await s.manager.start();
+    expect(s.feed.subscribed.has('AAPL')).toBe(false);
+    s.marketOpen.value = true;
+    await s.manager.forceSync();
+    expect(s.fetchHistorical).toHaveBeenCalledTimes(2); // 1m + 5m for AAPL
+    expect(s.feed.subscribed.has('AAPL')).toBe(true);
+    s.manager.stop();
+  });
+
+  it('disconnects feed and drops subscriptions when market closes', async () => {
+    const s = setup({
+      initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+    });
+    await s.manager.start();
+    expect(s.feed.subscribed.has('AAPL')).toBe(true);
+    s.marketOpen.value = false;
+    await s.manager.forceSync();
+    expect(s.feed.subscribed.has('AAPL')).toBe(false);
     s.manager.stop();
   });
 

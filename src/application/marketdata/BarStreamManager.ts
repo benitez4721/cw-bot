@@ -64,10 +64,11 @@ export class BarStreamManager {
 
   private readonly subscribed = new Set<string>();
   private readonly inFlight = new Set<string>();
-  private syncTimer: NodeJS.Timeout | null = null;
+  private tickTimer: NodeJS.Timeout | null = null;
   private status: BarStreamManagerStatus = 'idle';
   private handlersRegistered = false;
   private lastSuccessfulTick = 0;
+  private feedConnected = false;
 
   constructor(options: BarStreamManagerOptions) {
     this.feed = options.feed;
@@ -100,10 +101,11 @@ export class BarStreamManager {
     return this.subscribed.size;
   }
 
-  // Public hook that forces an immediate watchlist sync without waiting for
-  // the periodic timer. Useful for tests and ad-hoc reconciliation.
+  // Public hook that forces an immediate tick without waiting for the timer.
+  // Useful for tests and ad-hoc reconciliation. Goes through full tick
+  // logic (market-hours gating + watchlist sync), not just the watchlist diff.
   async forceSync(): Promise<void> {
-    return this.syncWatchlist();
+    return this.tick();
   }
 
   async start(): Promise<void> {
@@ -125,37 +127,88 @@ export class BarStreamManager {
       this.handlersRegistered = true;
     }
 
-    await this.feed.connect();
-    await this.syncWatchlist();
     this.status = 'running';
-    this.scheduleNextSync();
-    log.info({ subscribed: this.subscribed.size }, 'started');
+    // First tick is synchronous — connects the feed and bootstraps if the
+    // market is already open, or just waits otherwise.
+    await this.tick();
+    this.scheduleNextTick();
+    log.info(
+      {
+        subscribed: this.subscribed.size,
+        marketOpen: this.feedConnected,
+      },
+      'started',
+    );
   }
 
   stop(): void {
     if (this.status === 'idle') return;
     this.status = 'idle';
-    if (this.syncTimer) {
-      this.cancel(this.syncTimer);
-      this.syncTimer = null;
+    if (this.tickTimer) {
+      this.cancel(this.tickTimer);
+      this.tickTimer = null;
     }
-    this.feed.disconnect();
+    if (this.feedConnected) {
+      this.feed.disconnect();
+      this.feedConnected = false;
+    }
     // Clear local trackers so a subsequent start() rebuilds subscriptions
     // from the watchlist (the feed lost its session on disconnect).
     this.subscribed.clear();
     this.inFlight.clear();
   }
 
-  private scheduleNextSync(): void {
+  private scheduleNextTick(): void {
     if (this.status !== 'running') return;
-    this.syncTimer = this.schedule(() => {
-      this.syncTimer = null;
-      void this.syncWatchlist()
+    this.tickTimer = this.schedule(() => {
+      this.tickTimer = null;
+      void this.tick()
         .catch((err) => {
-          log.error({ err: errMsg(err) }, 'watchlist sync failed');
+          log.error({ err: errMsg(err) }, 'tick failed');
         })
-        .finally(() => this.scheduleNextSync());
+        .finally(() => this.scheduleNextTick());
     }, this.syncIntervalMs);
+  }
+
+  // Coordinates market-hours gating with feed lifecycle. Called on every
+  // periodic tick (and once synchronously during start()).
+  //
+  // - market open + feed not connected → connect feed + sync watchlist
+  // - market open + feed connected     → sync watchlist
+  // - market closed + feed connected   → disconnect feed + drop subscriptions
+  // - market closed + feed not connected → idle (just keep ticking)
+  private async tick(): Promise<void> {
+    const open = this.marketHours.isOpen(new Date(this.now()));
+
+    if (open && !this.feedConnected) {
+      log.info('market open — connecting feed');
+      try {
+        await this.feed.connect();
+        this.feedConnected = true;
+      } catch (err) {
+        log.error(
+          { err: errMsg(err) },
+          'feed connect failed — will retry on next tick',
+        );
+        return;
+      }
+      await this.syncWatchlist();
+      return;
+    }
+
+    if (!open && this.feedConnected) {
+      log.info('market closed — disconnecting feed');
+      this.feed.disconnect();
+      this.feedConnected = false;
+      this.subscribed.clear();
+      this.inFlight.clear();
+      return;
+    }
+
+    if (open && this.feedConnected) {
+      await this.syncWatchlist();
+    }
+    // !open && !feedConnected: nothing to do until market opens
   }
 
   private async syncWatchlist(): Promise<void> {
