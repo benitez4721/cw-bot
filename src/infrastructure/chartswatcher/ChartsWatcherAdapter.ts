@@ -111,19 +111,6 @@ export class ChartsWatcherAdapter implements ScannerFeedPort {
     }
   }
 
-  unsubscribe(configId: string): void {
-    delete this.subscribedConfigs[configId];
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          '@type': 'Toplist',
-          config_id: configId,
-          action: 'unsubscribe',
-        }),
-      );
-    }
-  }
-
   onUpdate(callback: (configId: string, rows: ScannerRow[]) => void): void {
     this.updateCallbacks.push(callback);
   }

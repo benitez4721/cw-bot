@@ -1,12 +1,10 @@
 import type {
-  EMAInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
-  EMA,
   IndicatorInterval,
   MACD,
   SeriesType,
@@ -17,12 +15,7 @@ import type {
   Bar,
   BarInterval,
 } from '../../domain/marketdata/MarketDataTypes.js';
-import {
-  calcEMA,
-  calcMACD,
-  calcSessionVWAP,
-  toEasternDate,
-} from './calculations.js';
+import { calcMACD, calcSessionVWAP, toEasternDate } from './calculations.js';
 
 export interface LocalIndicatorAdapterOptions {
   bars: BarRepository;
@@ -42,21 +35,6 @@ export class LocalIndicatorAdapter implements IndicatorPort {
   constructor(options: LocalIndicatorAdapterOptions) {
     this.bars = options.bars;
     this.now = options.now ?? (() => new Date());
-  }
-
-  async getEMA(input: EMAInput): Promise<EMA> {
-    const interval = mapToBarInterval(input.interval);
-    const seriesType: SeriesType = input.seriesType ?? 'close';
-    const bars = await this.loadBars(input.symbol, interval);
-    const values = bars.map((b) => readSeriesValue(b, seriesType));
-    const ema = calcEMA(values, input.period);
-    const last = lastValidIndex(ema);
-    if (last === -1) {
-      throw new Error(
-        `LocalIndicator: insufficient data for EMA(${input.period}) on ${input.symbol}`,
-      );
-    }
-    return { value: ema[last], timestamp: bars[last].timestamp };
   }
 
   async getMACD(input: MACDInput): Promise<MACD> {
@@ -145,13 +123,6 @@ function readSeriesValue(bar: Bar, seriesType: SeriesType): number {
     case 'close':
       return bar.close;
   }
-}
-
-function lastValidIndex(series: number[]): number {
-  for (let i = series.length - 1; i >= 0; i--) {
-    if (!Number.isNaN(series[i])) return i;
-  }
-  return -1;
 }
 
 function findLastValidMACD(series: MACD[]): MACD | null {

@@ -8,10 +8,6 @@ export class InMemoryTradeContextRepository implements TradeContextRepository {
     this.contexts.set(ctx.orderId, ctx);
   }
 
-  async getByOrderId(orderId: string): Promise<TradeContext | undefined> {
-    return this.contexts.get(orderId);
-  }
-
   async getByOrderIds(orderIds: string[]): Promise<Map<string, TradeContext>> {
     const result = new Map<string, TradeContext>();
     for (const id of orderIds) {

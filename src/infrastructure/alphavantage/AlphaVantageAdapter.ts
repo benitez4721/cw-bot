@@ -1,15 +1,10 @@
 import type {
-  EMAInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
-import type {
-  EMA,
-  MACD,
-  VWAP,
-} from '../../domain/indicators/IndicatorTypes.js';
+import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child({ component: 'AlphaVantageAdapter' });
@@ -34,19 +29,6 @@ export class AlphaVantageAdapter implements IndicatorPort {
 
   constructor(private readonly config: AlphaVantageConfig) {
     this.minIntervalMs = config.minIntervalMs ?? 250;
-  }
-
-  async getEMA(input: EMAInput): Promise<EMA> {
-    const data = await this.request({
-      function: 'EMA',
-      symbol: input.symbol,
-      interval: input.interval,
-      time_period: String(input.period),
-      series_type: input.seriesType ?? 'close',
-    });
-    const series = pickSeries(data, 'Technical Analysis: EMA');
-    const [timestamp, latest] = pickLatest(series);
-    return { value: parseNumber(latest['EMA']), timestamp };
   }
 
   async getMACD(input: MACDInput): Promise<MACD> {

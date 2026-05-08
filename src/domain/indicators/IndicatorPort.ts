@@ -1,18 +1,10 @@
 import type {
-  EMA,
   IndicatorInterval,
   IntradayInterval,
   MACD,
   SeriesType,
   VWAP,
 } from './IndicatorTypes.js';
-
-export interface EMAInput {
-  symbol: string;
-  interval: IndicatorInterval;
-  period: number;
-  seriesType?: SeriesType;
-}
 
 export interface MACDInput {
   symbol: string;
@@ -33,7 +25,6 @@ export interface VWAPInput {
 }
 
 export interface IndicatorPort {
-  getEMA(input: EMAInput): Promise<EMA>;
   getMACD(input: MACDInput): Promise<MACD>;
   getMACDSeries(input: MACDSeriesInput): Promise<MACD[]>;
   getVWAP(input: VWAPInput): Promise<VWAP>;

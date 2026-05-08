@@ -1,15 +1,10 @@
 import type {
-  EMAInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
-import type {
-  EMA,
-  MACD,
-  VWAP,
-} from '../../domain/indicators/IndicatorTypes.js';
+import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
 import type {
   FetchHistoricalBarsInput,
   HistoricalBarsPort,
@@ -44,18 +39,6 @@ export class TwelveDataAdapter implements IndicatorPort, HistoricalBarsPort {
 
   constructor(private readonly config: TwelveDataConfig) {
     this.minIntervalMs = config.minIntervalMs ?? 7500;
-  }
-
-  async getEMA(input: EMAInput): Promise<EMA> {
-    const data = await this.request('ema', {
-      symbol: input.symbol,
-      interval: input.interval,
-      time_period: String(input.period),
-      series_type: input.seriesType ?? 'close',
-      outputsize: '1',
-    });
-    const latest = pickLatest(data);
-    return { value: parseNumber(latest['ema']), timestamp: latest.datetime };
   }
 
   async getMACD(input: MACDInput): Promise<MACD> {

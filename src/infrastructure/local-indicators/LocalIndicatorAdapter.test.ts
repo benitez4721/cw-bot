@@ -62,40 +62,6 @@ describe('LocalIndicatorAdapter', () => {
     });
   });
 
-  describe('getEMA', () => {
-    it('returns last EMA value and timestamp from the cache', async () => {
-      // [10,20,30,40,50] period=3 → ema = [NaN,NaN,20,30,40] (see calculations test)
-      repo._set('AAPL', '1min', makeBars([10, 20, 30, 40, 50]));
-      const ema = await adapter.getEMA({
-        symbol: 'AAPL',
-        interval: '1min',
-        period: 3,
-      });
-      expect(ema.value).toBeCloseTo(40, 10);
-      expect(ema.timestamp).toBe('2026-05-07T13:34:00.000Z');
-    });
-
-    it('throws when insufficient data', async () => {
-      repo._set('AAPL', '1min', makeBars([1, 2]));
-      await expect(
-        adapter.getEMA({ symbol: 'AAPL', interval: '1min', period: 5 }),
-      ).rejects.toThrow(/insufficient data/);
-    });
-
-    it('throws when no bars in cache', async () => {
-      await expect(
-        adapter.getEMA({ symbol: 'AAPL', interval: '1min', period: 3 }),
-      ).rejects.toThrow(/no cached bars/);
-    });
-
-    it('rejects unsupported intervals', async () => {
-      repo._set('AAPL', '1min', makeBars([1, 2, 3]));
-      await expect(
-        adapter.getEMA({ symbol: 'AAPL', interval: '15min', period: 3 }),
-      ).rejects.toThrow(/not supported/);
-    });
-  });
-
   describe('getMACD', () => {
     it('returns MACD~0 on flat series', async () => {
       repo._set('AAPL', '1min', makeBars(new Array(50).fill(7)));

@@ -42,12 +42,6 @@ export class RedisTradeContextRepository implements TradeContextRepository {
       .exec();
   }
 
-  async getByOrderId(orderId: string): Promise<TradeContext | undefined> {
-    const raw = await this.redis.get(this.itemKey(orderId));
-    if (!raw) return undefined;
-    return parseItem(raw);
-  }
-
   async getByOrderIds(orderIds: string[]): Promise<Map<string, TradeContext>> {
     const result = new Map<string, TradeContext>();
     if (orderIds.length === 0) return result;

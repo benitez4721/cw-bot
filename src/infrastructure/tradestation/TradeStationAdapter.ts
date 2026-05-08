@@ -3,15 +3,12 @@ import type {
   GetQuoteInput,
 } from '../../domain/broker/BrokerPort.js';
 import type {
-  Balance,
   BracketOrderInput,
-  HistoricalOrder,
   Order,
   OrderResult,
   OrderSide,
   OrderStatus,
   OrderType,
-  PlaceOrderInput,
   Position,
   Quote,
 } from '../../domain/broker/BrokerTypes.js';
@@ -42,15 +39,6 @@ interface TradeStationConfig {
 interface TokenCache {
   accessToken: string;
   expiresAt: number;
-}
-
-interface TsBalance {
-  AccountID: string;
-  CashBalance?: string;
-  BuyingPower?: string;
-  Equity?: string;
-  MarketValue?: string;
-  TodaysProfitLoss?: string;
 }
 
 interface TsPosition {
@@ -131,48 +119,6 @@ export class TradeStationAdapter implements BrokerPort {
     };
   }
 
-  async placeOrder(input: PlaceOrderInput): Promise<OrderResult> {
-    const payload: Record<string, unknown> = {
-      AccountID: this.config.accountId,
-      Symbol: input.symbol,
-      Quantity: String(input.quantity),
-      OrderType: input.type,
-      TradeAction: input.side,
-      TimeInForce: { Duration: '1' },
-      Route: 'Intelligent',
-    };
-
-    if (input.type === 'Limit' || input.type === 'StopLimit') {
-      const adjusted = Math.round(input.limitPrice! * 0.999 * 100) / 100;
-      payload.LimitPrice = String(adjusted);
-    }
-    if (input.type === 'StopMarket' || input.type === 'StopLimit') {
-      payload.StopPrice = String(input.stopPrice);
-    }
-
-    const response = await this.request<TsPlaceOrderResponse>({
-      method: 'POST',
-      path: '/v3/orderexecution/orders',
-      body: payload,
-    });
-
-    const first = response.Orders?.[0];
-    if (!first || first.Error === 'FAILED') {
-      return {
-        orderId: first?.OrderID ?? '',
-        status: 'rejected',
-        message: first?.Message,
-        error: first?.Error ?? response.Errors?.[0]?.Error ?? 'Unknown error',
-      };
-    }
-
-    return {
-      orderId: first.OrderID ?? '',
-      status: mapStatus(first.Status),
-      message: first.Message,
-    };
-  }
-
   async placeBracketOrder(input: BracketOrderInput): Promise<OrderResult> {
     // Stop/TP precios calculados con entryLimitPrice como proxy del fill.
     // Si llena mejor, los offsets terminan asimétricos en cents — aceptado para v1.
@@ -247,85 +193,6 @@ export class TradeStationAdapter implements BrokerPort {
     };
   }
 
-  async cancelOrder({ orderId }: { orderId: string }): Promise<OrderResult> {
-    const response = await this.request<TsPlaceOrderResponse>({
-      method: 'DELETE',
-      path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
-    });
-
-    const first = response.Orders?.[0];
-    if (!first || first.Error === 'FAILED') {
-      return {
-        orderId,
-        status: 'rejected',
-        message: first?.Message,
-        error: first?.Error ?? response.Errors?.[0]?.Error ?? 'Unknown error',
-      };
-    }
-
-    return {
-      orderId: first.OrderID ?? orderId,
-      status: 'cancelled',
-      message: first.Message,
-    };
-  }
-
-  async replaceOrder({
-    orderId,
-    order,
-  }: {
-    orderId: string;
-    order: PlaceOrderInput;
-  }): Promise<OrderResult> {
-    const payload: Record<string, unknown> = {
-      Quantity: String(order.quantity),
-      OrderType: order.type,
-    };
-    if (order.limitPrice !== undefined)
-      payload.LimitPrice = String(order.limitPrice);
-    if (order.stopPrice !== undefined)
-      payload.StopPrice = String(order.stopPrice);
-
-    const response = await this.request<TsPlaceOrderResponse>({
-      method: 'PUT',
-      path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
-      body: payload,
-    });
-
-    const first = response.Orders?.[0];
-    if (!first || first.Error === 'FAILED') {
-      return {
-        orderId,
-        status: 'rejected',
-        message: first?.Message,
-        error: first?.Error ?? response.Errors?.[0]?.Error ?? 'Unknown error',
-      };
-    }
-
-    return {
-      orderId: first.OrderID ?? orderId,
-      status: mapStatus(first.Status),
-      message: first.Message,
-    };
-  }
-
-  async getBalances(): Promise<Balance> {
-    const account = encodeURIComponent(this.config.accountId);
-    const response = await this.request<{ Balances?: TsBalance[] }>({
-      method: 'GET',
-      path: `/v3/brokerage/accounts/${account}/balances`,
-    });
-
-    const b = response.Balances?.[0];
-    return {
-      cashBalance: parseNumber(b?.CashBalance),
-      buyingPower: parseNumber(b?.BuyingPower),
-      equity: parseNumber(b?.Equity),
-      marketValue: parseNumber(b?.MarketValue),
-      todaysProfitLoss: parseNumber(b?.TodaysProfitLoss),
-    };
-  }
-
   async getPositions(): Promise<Position[]> {
     const account = encodeURIComponent(this.config.accountId);
     const response = await this.request<{ Positions?: TsPosition[] }>({
@@ -379,30 +246,6 @@ export class TradeStationAdapter implements BrokerPort {
       ask: first.Ask !== undefined ? parseNumber(first.Ask) : undefined,
       timestamp: first.TradeTime ?? new Date().toISOString(),
     };
-  }
-
-  async getHistoricalOrders({
-    since,
-  }: {
-    since: string;
-  }): Promise<HistoricalOrder[]> {
-    const account = encodeURIComponent(this.config.accountId);
-    const response = await this.request<{ Orders?: TsOrder[] }>({
-      method: 'GET',
-      path: `/v3/brokerage/accounts/${account}/historicalorders?since=${encodeURIComponent(since)}`,
-    });
-
-    return (response.Orders ?? []).map((o) => {
-      const base = toOrder(o);
-      const firstLeg = o.Legs?.[0];
-      return {
-        ...base,
-        filledAt: o.ClosedDateTime,
-        filledPrice: firstLeg?.ExecutionPrice
-          ? parseNumber(firstLeg.ExecutionPrice)
-          : undefined,
-      };
-    });
   }
 
   private apiBase(): string {
