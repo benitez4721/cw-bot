@@ -45,6 +45,6 @@ export class RecordTradeContext {
       status: 'active',
     };
 
-    await this.repository.insert(ctx);
+    await this.repository.put(ctx);
   }
 }

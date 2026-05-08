@@ -4,7 +4,7 @@ import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 export class InMemoryTradeContextRepository implements TradeContextRepository {
   private readonly contexts = new Map<string, TradeContext>();
 
-  async insert(ctx: TradeContext): Promise<void> {
+  async put(ctx: TradeContext): Promise<void> {
     this.contexts.set(ctx.orderId, ctx);
   }
 

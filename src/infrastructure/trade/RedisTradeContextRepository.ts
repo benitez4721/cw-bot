@@ -23,13 +23,7 @@ export class RedisTradeContextRepository implements TradeContextRepository {
     this.itemTtlSeconds = options.itemTtlSeconds ?? DEFAULT_TTL_SECONDS;
   }
 
-  async insert(ctx: TradeContext): Promise<void> {
-    const exists = await this.redis.exists(this.itemKey(ctx.orderId));
-    if (exists) {
-      throw new Error(
-        `TradeContext already exists for orderId: ${ctx.orderId}`,
-      );
-    }
+  async put(ctx: TradeContext): Promise<void> {
     await this.redis
       .multi()
       .sadd(this.indexKey, ctx.orderId)
