@@ -11,6 +11,7 @@ import type {
 
 export interface TechnicalDecisionModelAdapterParams extends OrderConfig {
   entryOffsetBps: number;
+  minHistogram1minCrossoverDelta: number;
 }
 
 const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
@@ -18,6 +19,7 @@ const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
   entryOffsetBps: 10,
   stopOffset: 0.2,
   takeProfitOffset: 0.35,
+  minHistogram1minCrossoverDelta: 0.002,
 };
 
 export class TechnicalDecisionModelAdapter implements DecisionModelPort {
@@ -56,6 +58,7 @@ export class TechnicalDecisionModelAdapter implements DecisionModelPort {
     const m1 = s.macd1minSeries;
     const current = m1[0];
     const previous = m1[1];
+    const minDelta = this.params.minHistogram1minCrossoverDelta;
 
     return [
       { name: '5min MACD > 0', passed: m5.macd > 0 },
@@ -68,6 +71,13 @@ export class TechnicalDecisionModelAdapter implements DecisionModelPort {
           !!previous &&
           current.histogram > 0 &&
           previous.histogram < 0,
+      },
+      {
+        name: `1min histogram crossover magnitude >= ${minDelta}`,
+        passed:
+          !!current &&
+          !!previous &&
+          current.histogram - previous.histogram >= minDelta,
       },
       { name: 'price > VWAP (1min)', passed: s.quote.last > s.vwap1min.value },
     ];

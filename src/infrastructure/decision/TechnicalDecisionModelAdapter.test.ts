@@ -7,6 +7,7 @@ const PARAMS = {
   entryOffsetBps: 10,
   stopOffset: 0.2,
   takeProfitOffset: 0.35,
+  minHistogram1minCrossoverDelta: 0.002,
 };
 
 function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
@@ -24,7 +25,7 @@ function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
 }
 
 describe('TechnicalDecisionModelAdapter', () => {
-  it('emits buy with symbol, side and entry price when all five rules pass', () => {
+  it('emits buy with symbol, side and entry price when all rules pass', () => {
     const model = new TechnicalDecisionModelAdapter(PARAMS);
     const result = model.evaluate({ snapshot: snapshot() });
 
@@ -154,6 +155,31 @@ describe('TechnicalDecisionModelAdapter', () => {
     expect(
       result.checks.find((c) => c.name === 'price > VWAP (1min)')?.passed,
     ).toBe(false);
+  });
+
+  it('holds when crossover magnitude is below the configured threshold', () => {
+    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    // current - previous = 0.001 - (-0.0005) = 0.0015 < 0.002 threshold.
+    // Sign-based crossover still passes (current>0, previous<0), so this
+    // exercises the magnitude check in isolation.
+    const result = model.evaluate({
+      snapshot: snapshot({
+        macd1minSeries: [
+          { macd: 0.4, signal: 0.399, histogram: 0.001, timestamp: 't0' },
+          { macd: 0.3, signal: 0.3005, histogram: -0.0005, timestamp: 't-1' },
+        ],
+      }),
+    });
+
+    expect(result.action).toBe('hold');
+    expect(
+      result.checks.find((c) => c.name.startsWith('1min histogram crossover'))
+        ?.passed,
+    ).toBe(false);
+    expect(
+      result.checks.find((c) => c.name === '1min histogram bullish crossover')
+        ?.passed,
+    ).toBe(true);
   });
 
   it('holds when 1min series has fewer than 2 points', () => {
