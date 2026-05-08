@@ -6,10 +6,7 @@ import { logger } from '../../infrastructure/logging/logger.js';
 
 const log = logger.child({ component: 'ScannerMonitor' });
 
-export type ScannerMonitorStatus =
-  | 'connected'
-  | 'connecting'
-  | 'disconnected';
+export type ScannerMonitorStatus = 'connected' | 'connecting' | 'disconnected';
 
 export interface ScannerMonitorOptions {
   feed: ScannerFeedPort;
