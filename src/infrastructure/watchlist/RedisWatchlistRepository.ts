@@ -23,20 +23,14 @@ export class RedisWatchlistRepository implements WatchlistRepository {
     this.itemTtlSeconds = options.itemTtlSeconds ?? DEFAULT_TTL_SECONDS;
   }
 
-  async insert(symbol: WatchedSymbol): Promise<void> {
-    const exists = await this.redis.exists(this.itemKey(symbol.symbol));
-    if (exists) {
-      throw new Error(`Symbol already in watchlist: ${symbol.symbol}`);
-    }
-    await this.put(symbol);
-  }
-
-  async update(symbol: WatchedSymbol): Promise<void> {
-    const exists = await this.redis.exists(this.itemKey(symbol.symbol));
-    if (!exists) {
-      throw new Error(`Symbol not in watchlist: ${symbol.symbol}`);
-    }
-    await this.put(symbol);
+  async put(symbol: WatchedSymbol): Promise<void> {
+    const itemKey = this.itemKey(symbol.symbol);
+    const payload = JSON.stringify(symbol);
+    await this.redis
+      .multi()
+      .sadd(this.indexKey, symbol.symbol)
+      .set(itemKey, payload, 'EX', this.itemTtlSeconds)
+      .exec();
   }
 
   async getBySymbol(symbol: string): Promise<WatchedSymbol | undefined> {
@@ -65,16 +59,6 @@ export class RedisWatchlistRepository implements WatchlistRepository {
       await this.redis.srem(this.indexKey, ...expired);
     }
     return items;
-  }
-
-  private async put(symbol: WatchedSymbol): Promise<void> {
-    const itemKey = this.itemKey(symbol.symbol);
-    const payload = JSON.stringify(symbol);
-    await this.redis
-      .multi()
-      .sadd(this.indexKey, symbol.symbol)
-      .set(itemKey, payload, 'EX', this.itemTtlSeconds)
-      .exec();
   }
 
   private itemKey(symbol: string): string {

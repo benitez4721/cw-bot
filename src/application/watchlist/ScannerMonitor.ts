@@ -104,10 +104,10 @@ export class ScannerMonitor {
       if (existing) {
         if (existing.status === 'stale') {
           existing.status = 'active';
-          await this.repository.update(existing);
+          await this.repository.put(existing);
         }
       } else {
-        await this.repository.insert({
+        await this.repository.put({
           symbol: row.symbol,
           status: 'active',
           createdAt: now,
@@ -120,7 +120,7 @@ export class ScannerMonitor {
       if (item.status !== 'active') continue;
       if (incoming.has(item.symbol)) continue;
       item.status = 'stale';
-      await this.repository.update(item);
+      await this.repository.put(item);
     }
 
     this.metrics.setWatchlistSize(watched.length);

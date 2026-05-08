@@ -13,8 +13,8 @@ describe('RedisWatchlistRepository', () => {
     repo = new RedisWatchlistRepository(redis);
   });
 
-  it('insert + getBySymbol round-trip', async () => {
-    await repo.insert({ symbol: 'AAPL', status: 'active', createdAt: 1000 });
+  it('put + getBySymbol round-trip', async () => {
+    await repo.put({ symbol: 'AAPL', status: 'active', createdAt: 1000 });
     const found = await repo.getBySymbol('AAPL');
     expect(found).toEqual({
       symbol: 'AAPL',
@@ -23,29 +23,16 @@ describe('RedisWatchlistRepository', () => {
     });
   });
 
-  it('insert throws when symbol already exists', async () => {
-    await repo.insert({ symbol: 'AAPL', status: 'active', createdAt: 1000 });
-    await expect(
-      repo.insert({ symbol: 'AAPL', status: 'active', createdAt: 2000 }),
-    ).rejects.toThrow(/already in watchlist/);
-  });
-
-  it('update mutates existing entry', async () => {
-    await repo.insert({ symbol: 'AAPL', status: 'active', createdAt: 1000 });
-    await repo.update({ symbol: 'AAPL', status: 'stale', createdAt: 1000 });
+  it('put overwrites existing entry', async () => {
+    await repo.put({ symbol: 'AAPL', status: 'active', createdAt: 1000 });
+    await repo.put({ symbol: 'AAPL', status: 'stale', createdAt: 1000 });
     const found = await repo.getBySymbol('AAPL');
     expect(found?.status).toBe('stale');
   });
 
-  it('update throws when symbol not found', async () => {
-    await expect(
-      repo.update({ symbol: 'TSLA', status: 'active', createdAt: 1000 }),
-    ).rejects.toThrow(/not in watchlist/);
-  });
-
   it('list returns all entries', async () => {
-    await repo.insert({ symbol: 'AAPL', status: 'active', createdAt: 1 });
-    await repo.insert({ symbol: 'TSLA', status: 'active', createdAt: 2 });
+    await repo.put({ symbol: 'AAPL', status: 'active', createdAt: 1 });
+    await repo.put({ symbol: 'TSLA', status: 'active', createdAt: 2 });
     const items = await repo.list();
     expect(items).toHaveLength(2);
     const symbols = items.map((i) => i.symbol).sort();

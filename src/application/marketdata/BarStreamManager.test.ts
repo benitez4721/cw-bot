@@ -151,19 +151,21 @@ type TestWatchlist = WatchlistRepository & {
 function createWatchlist(initial: WatchedSymbol[] = []): TestWatchlist {
   let items = [...initial];
   return {
-    async insert(s) {
-      items.push(s);
+    async put(s: WatchedSymbol) {
+      const idx = items.findIndex((it) => it.symbol === s.symbol);
+      if (idx >= 0) {
+        items[idx] = s;
+      } else {
+        items.push(s);
+      }
     },
-    async update(s) {
-      items = items.map((it) => (it.symbol === s.symbol ? s : it));
-    },
-    async getBySymbol(s) {
+    async getBySymbol(s: string) {
       return items.find((it) => it.symbol === s);
     },
     async list() {
       return [...items];
     },
-    _remove(symbol) {
+    _remove(symbol: string) {
       items = items.filter((it) => it.symbol !== symbol);
     },
   };
@@ -517,7 +519,7 @@ describe('BarStreamManager', () => {
     });
     await s.manager.start();
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
-    await s.watchlist.update({ symbol: 'AAPL', status: 'stale', createdAt: 1 });
+    await s.watchlist.put({ symbol: 'AAPL', status: 'stale', createdAt: 1 });
     await s.manager.forceSync();
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
     expect((await s.barRepo.get('AAPL', '1min')).length).toBeGreaterThan(0);
