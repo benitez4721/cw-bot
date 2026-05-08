@@ -9,23 +9,23 @@ import type {
   RuleCheck,
 } from '../../domain/decision/DecisionTypes.js';
 
-export interface TechnicalDecisionModelParams extends OrderConfig {
+export interface TechnicalDecisionModelAdapterParams extends OrderConfig {
   entryOffset: number;
 }
 
-const DEFAULT_PARAMS: TechnicalDecisionModelParams = {
+const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
   quantity: 2000,
   entryOffset: 0.05,
   stopOffset: 0.2,
   takeProfitOffset: 0.35,
 };
 
-export class TechnicalDecisionModel implements DecisionModelPort {
+export class TechnicalDecisionModelAdapter implements DecisionModelPort {
   readonly name = 'technical';
   readonly orderConfig: OrderConfig;
-  private readonly params: TechnicalDecisionModelParams;
+  private readonly params: TechnicalDecisionModelAdapterParams;
 
-  constructor(params: Partial<TechnicalDecisionModelParams> = {}) {
+  constructor(params: Partial<TechnicalDecisionModelAdapterParams> = {}) {
     this.params = { ...DEFAULT_PARAMS, ...params };
     this.orderConfig = {
       quantity: this.params.quantity,

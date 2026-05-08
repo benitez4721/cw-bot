@@ -12,7 +12,7 @@ const formatter = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
 });
 
-export class UsMarketHours implements MarketHours {
+export class UsMarketHoursAdapter implements MarketHours {
   isOpen(at: Date): boolean {
     const parts = formatter.formatToParts(at);
     const weekday = parts.find((p) => p.type === 'weekday')?.value;

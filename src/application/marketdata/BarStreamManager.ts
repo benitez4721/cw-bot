@@ -7,7 +7,7 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
-import { aggregateOneFiveMinuteBucket } from '../../infrastructure/local-indicators/calculations.js';
+import { aggregateOneFiveMinuteBucket } from '../../infrastructure/indicators/calculations.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { EvaluateDecision } from '../decision/EvaluateDecision.js';

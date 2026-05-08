@@ -18,7 +18,7 @@ import type {
 } from '../../domain/metrics/MetricsPort.js';
 import { logger } from '../logging/logger.js';
 
-const log = logger.child({ component: 'TradeStationAdapter' });
+const log = logger.child({ component: 'TradeStationBrokerAdapter' });
 
 export interface TokenStatus {
   cached: boolean;
@@ -100,7 +100,7 @@ interface TsPlaceOrderResponse {
 
 const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
 
-export class TradeStationAdapter implements BrokerPort {
+export class TradeStationBrokerAdapter implements BrokerPort {
   private readonly config: TradeStationConfig;
   private readonly metrics?: MetricsPort;
   private tokenCache: TokenCache | null = null;

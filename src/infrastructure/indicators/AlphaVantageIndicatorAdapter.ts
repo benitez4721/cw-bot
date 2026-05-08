@@ -7,7 +7,7 @@ import type {
 import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
 import { logger } from '../logging/logger.js';
 
-const log = logger.child({ component: 'AlphaVantageAdapter' });
+const log = logger.child({ component: 'AlphaVantageIndicatorAdapter' });
 
 interface AlphaVantageConfig {
   apiKey: string;
@@ -23,7 +23,7 @@ interface AlphaVantageResponse {
   [key: string]: unknown;
 }
 
-export class AlphaVantageAdapter implements IndicatorPort {
+export class AlphaVantageIndicatorAdapter implements IndicatorPort {
   private readonly minIntervalMs: number;
   private nextSlotAt = 0;
 

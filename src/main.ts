@@ -2,9 +2,9 @@ import Redis from 'ioredis';
 import { createServer } from './infrastructure/http/server.js';
 import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
-import { TradeStationAdapter } from './infrastructure/tradestation/TradeStationAdapter.js';
+import { TradeStationBrokerAdapter } from './infrastructure/broker/TradeStationBrokerAdapter.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
-import { ChartsWatcherAdapter } from './infrastructure/chartswatcher/ChartsWatcherAdapter.js';
+import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
 import { InMemoryWatchlistRepository } from './infrastructure/watchlist/InMemoryWatchlistRepository.js';
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import type { WatchlistRepository } from './domain/watchlist/WatchlistRepository.js';
@@ -21,20 +21,22 @@ import { healthRoutes } from './infrastructure/http/healthRoutes.js';
 import { metricsRoutes } from './infrastructure/http/metricsRoutes.js';
 import { registerAuthMiddleware } from './infrastructure/http/authMiddleware.js';
 import type { IndicatorPort } from './domain/indicators/IndicatorPort.js';
-import { AlphaVantageAdapter } from './infrastructure/alphavantage/AlphaVantageAdapter.js';
-import { TwelveDataAdapter } from './infrastructure/twelvedata/TwelveDataAdapter.js';
-import { LocalIndicatorAdapter } from './infrastructure/local-indicators/LocalIndicatorAdapter.js';
+import { AlphaVantageIndicatorAdapter } from './infrastructure/indicators/AlphaVantageIndicatorAdapter.js';
+import { TwelveDataIndicatorAdapter } from './infrastructure/indicators/TwelveDataIndicatorAdapter.js';
+import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/TwelveDataHistoricalBarsAdapter.js';
+import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
+import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
 import type { DecisionModelPort } from './domain/decision/DecisionPort.js';
-import { TechnicalDecisionModel } from './infrastructure/decision/TechnicalDecisionModel.js';
+import { TechnicalDecisionModelAdapter } from './infrastructure/decision/TechnicalDecisionModelAdapter.js';
 import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
 import { DecisionRunner } from './application/decision/DecisionRunner.js';
 import { BarStreamManager } from './application/marketdata/BarStreamManager.js';
 import { RedisBarRepository } from './infrastructure/marketdata/RedisBarRepository.js';
-import { PolygonAdapter } from './infrastructure/polygon/PolygonAdapter.js';
+import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import type { BarRepository } from './domain/marketdata/BarRepository.js';
 import type { MarketFeedPort } from './domain/marketdata/MarketFeedPort.js';
 import type { HistoricalBarsPort } from './domain/marketdata/HistoricalBarsPort.js';
-import { UsMarketHours } from './infrastructure/market/UsMarketHours.js';
+import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
 import { GrafanaCloudWriter } from './infrastructure/metrics/GrafanaCloudWriter.js';
 import { Heartbeat } from './application/heartbeat/Heartbeat.js';
@@ -42,7 +44,7 @@ import type { MetricsPort } from './domain/metrics/MetricsPort.js';
 
 const log = logger.child({ component: 'main' });
 
-function buildBroker(metrics: MetricsPort): TradeStationAdapter {
+function buildBroker(metrics: MetricsPort): TradeStationBrokerAdapter {
   switch (env.BROKER_PROVIDER) {
     case 'tradestation': {
       const missing: string[] = [];
@@ -55,7 +57,7 @@ function buildBroker(metrics: MetricsPort): TradeStationAdapter {
           `Missing required env vars for TradeStation: ${missing.join(', ')}`,
         );
       }
-      return new TradeStationAdapter({
+      return new TradeStationBrokerAdapter({
         clientId: env.TRADESTATION_CLIENT_ID!,
         clientSecret: env.TRADESTATION_CLIENT_SECRET || '',
         refreshToken: env.TRADESTATION_REFRESH_TOKEN!,
@@ -76,7 +78,7 @@ function buildScannerMonitor(
   metrics: MetricsPort,
 ): ScannerMonitor {
   if (!env.CW_ENABLED) {
-    const noop = new ChartsWatcherAdapter({
+    const noop = new ChartsWatcherScannerFeedAdapter({
       wsUrl: '',
       userId: '',
       apiKey: '',
@@ -100,7 +102,7 @@ function buildScannerMonitor(
     );
   }
 
-  const adapter = new ChartsWatcherAdapter({
+  const adapter = new ChartsWatcherScannerFeedAdapter({
     wsUrl: env.CW_WS_URL,
     userId: env.CW_USER_ID!,
     apiKey: env.CW_API_KEY!,
@@ -118,33 +120,44 @@ function buildScannerMonitor(
 function buildDecisionModel(): DecisionModelPort {
   switch (env.DECISION_MODEL) {
     case 'technical':
-      return new TechnicalDecisionModel();
+      return new TechnicalDecisionModelAdapter();
     default:
       throw new Error(`Unknown DECISION_MODEL: ${env.DECISION_MODEL}`);
   }
 }
 
-function buildIndicatorProvider(barRepo: BarRepository | null): IndicatorPort {
+// Single TwelveDataClient instance shared by both adapters (indicators +
+// historical bars) — its rate limiter must be unique to stay under the 8 req/min
+// free-tier cap.
+function buildTwelveDataClient(): TwelveDataClient | null {
+  if (!env.TWELVEDATA_API_KEY) return null;
+  return new TwelveDataClient({
+    apiKey: env.TWELVEDATA_API_KEY,
+    baseUrl: env.TWELVEDATA_BASE_URL,
+    minIntervalMs: env.TWELVEDATA_MIN_INTERVAL_MS,
+  });
+}
+
+function buildIndicatorProvider(
+  barRepo: BarRepository | null,
+  twelveDataClient: TwelveDataClient | null,
+): IndicatorPort {
   switch (env.INDICATOR_PROVIDER) {
     case 'alphavantage': {
       if (!env.ALPHA_VANTAGE_API_KEY) {
         throw new Error('Missing required env var: ALPHA_VANTAGE_API_KEY');
       }
-      return new AlphaVantageAdapter({
+      return new AlphaVantageIndicatorAdapter({
         apiKey: env.ALPHA_VANTAGE_API_KEY,
         baseUrl: env.ALPHA_VANTAGE_BASE_URL,
         minIntervalMs: env.ALPHA_VANTAGE_MIN_INTERVAL_MS,
       });
     }
     case 'twelvedata': {
-      if (!env.TWELVEDATA_API_KEY) {
+      if (!twelveDataClient) {
         throw new Error('Missing required env var: TWELVEDATA_API_KEY');
       }
-      return new TwelveDataAdapter({
-        apiKey: env.TWELVEDATA_API_KEY,
-        baseUrl: env.TWELVEDATA_BASE_URL,
-        minIntervalMs: env.TWELVEDATA_MIN_INTERVAL_MS,
-      });
+      return new TwelveDataIndicatorAdapter(twelveDataClient);
     }
     case 'local': {
       if (!barRepo) {
@@ -179,7 +192,7 @@ function buildMarketFeed(): MarketFeedPort | null {
   if (!env.POLYGON_API_KEY) {
     throw new Error('Missing required env var: POLYGON_API_KEY');
   }
-  return new PolygonAdapter({
+  return new PolygonMarketFeedAdapter({
     apiKey: env.POLYGON_API_KEY,
     wsUrl: env.POLYGON_WS_URL,
   });
@@ -187,17 +200,15 @@ function buildMarketFeed(): MarketFeedPort | null {
 
 // Historical bootstrap is always Twelve Data (independent of INDICATOR_PROVIDER
 // since 'local' indicators read from cache, not from a remote indicator API).
-function buildHistoricalBars(): HistoricalBarsPort {
-  if (!env.TWELVEDATA_API_KEY) {
+function buildHistoricalBars(
+  twelveDataClient: TwelveDataClient | null,
+): HistoricalBarsPort {
+  if (!twelveDataClient) {
     throw new Error(
       'MARKET_FEED=polygon requires TWELVEDATA_API_KEY for historical bootstrap',
     );
   }
-  return new TwelveDataAdapter({
-    apiKey: env.TWELVEDATA_API_KEY,
-    baseUrl: env.TWELVEDATA_BASE_URL,
-    minIntervalMs: env.TWELVEDATA_MIN_INTERVAL_MS,
-  });
+  return new TwelveDataHistoricalBarsAdapter(twelveDataClient);
 }
 
 function buildWatchlistRepository(redis: Redis | null): WatchlistRepository {
@@ -239,11 +250,15 @@ async function main() {
 
   const brokerAdapter = buildBroker(metricsAdapter);
   const barRepository = buildBarRepository(redis);
-  const indicatorAdapter = buildIndicatorProvider(barRepository);
+  const twelveDataClient = buildTwelveDataClient();
+  const indicatorAdapter = buildIndicatorProvider(
+    barRepository,
+    twelveDataClient,
+  );
   const decisionModelAdapter = buildDecisionModel();
   const watchlistRepository = buildWatchlistRepository(redis);
   const tradeContextRepository = buildTradeContextRepository(redis);
-  const marketHours = new UsMarketHours();
+  const marketHours = new UsMarketHoursAdapter();
   const marketFeedAdapter = buildMarketFeed();
 
   const scannerMonitorUseCase = buildScannerMonitor(
@@ -283,7 +298,7 @@ async function main() {
     usingMarketFeed && barRepository
       ? new BarStreamManager({
           feed: marketFeedAdapter,
-          historicalBars: buildHistoricalBars(),
+          historicalBars: buildHistoricalBars(twelveDataClient),
           barRepo: barRepository,
           watchlist: watchlistRepository,
           evaluate: evaluateDecisionUseCase,

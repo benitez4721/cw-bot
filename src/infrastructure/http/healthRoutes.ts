@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type Redis from 'ioredis';
 import type { ScannerMonitor } from '../../application/watchlist/ScannerMonitor.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
-import type { TradeStationAdapter } from '../tradestation/TradeStationAdapter.js';
+import type { TradeStationBrokerAdapter } from '../broker/TradeStationBrokerAdapter.js';
 
 const STALE_SCANNER_MS = 3 * 60 * 1000;
 const STALE_TOKEN_MS = 5 * 60 * 1000;
@@ -12,7 +12,7 @@ export interface HealthRoutesOptions {
   scannerMonitor: ScannerMonitor;
   marketHours: MarketHours;
   redis: Redis | null;
-  broker: TradeStationAdapter | null;
+  broker: TradeStationBrokerAdapter | null;
   startedAt: number;
 }
 

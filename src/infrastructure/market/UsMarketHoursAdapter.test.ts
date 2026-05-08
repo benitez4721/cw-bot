@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { UsMarketHours } from './UsMarketHours.js';
+import { UsMarketHoursAdapter } from './UsMarketHoursAdapter.js';
 
-describe('UsMarketHours', () => {
-  const market = new UsMarketHours();
+describe('UsMarketHoursAdapter', () => {
+  const market = new UsMarketHoursAdapter();
 
   it('open during regular session in EST winter', () => {
     // 2026-01-15 (Thursday) 14:30 UTC = 09:30 EST → open boundary

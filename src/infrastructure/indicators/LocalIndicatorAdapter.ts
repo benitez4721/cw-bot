@@ -23,8 +23,9 @@ export interface LocalIndicatorAdapterOptions {
 }
 
 // Implementation of IndicatorPort backed by a local BarRepository (Polygon
-// realtime feed). Keeps the same shape as TwelveDataAdapter so the existing
-// EvaluateDecision / TechnicalDecisionModel can consume it without changes.
+// realtime feed). Keeps the same shape as TwelveDataIndicatorAdapter so the
+// existing EvaluateDecision / TechnicalDecisionModelAdapter can consume it
+// without changes.
 //
 // Series are stored in the cache in chronological order (oldest first). The
 // MACD series is returned descending (most recent first) to match Twelve Data.

@@ -7,9 +7,9 @@ import type {
 import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import { logger } from '../logging/logger.js';
 
-const log = logger.child({ component: 'PolygonAdapter' });
+const log = logger.child({ component: 'PolygonMarketFeedAdapter' });
 
-export interface PolygonAdapterConfig {
+export interface PolygonMarketFeedAdapterConfig {
   apiKey: string;
   wsUrl: string;
   authTimeoutMs?: number;
@@ -41,9 +41,9 @@ const DEFAULT_RECONNECT_DELAY_MS = 5_000;
 
 // Realtime feed via Polygon's stocks WS. Subscribes to `AM.{symbol}` (1-minute
 // aggregates published at minute close). Historical bootstrap is NOT here —
-// see HistoricalBarsPort (TwelveDataAdapter).
-export class PolygonAdapter implements MarketFeedPort {
-  private readonly config: PolygonAdapterConfig;
+// see HistoricalBarsPort (TwelveDataHistoricalBarsAdapter).
+export class PolygonMarketFeedAdapter implements MarketFeedPort {
+  private readonly config: PolygonMarketFeedAdapterConfig;
   private ws: WebSocket | null = null;
   private subscribed: Record<string, true> = {};
   private barHandlers: BarHandler[] = [];
@@ -54,7 +54,7 @@ export class PolygonAdapter implements MarketFeedPort {
   private authReject: ((err: Error) => void) | null = null;
   private authTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(config: PolygonAdapterConfig) {
+  constructor(config: PolygonMarketFeedAdapterConfig) {
     this.config = config;
   }
 

@@ -1,18 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TwelveDataAdapter } from './TwelveDataAdapter.js';
+import { TwelveDataClient } from '../twelvedata/TwelveDataClient.js';
+import { TwelveDataHistoricalBarsAdapter } from './TwelveDataHistoricalBarsAdapter.js';
 
-describe('TwelveDataAdapter.fetchHistoricalBars', () => {
-  let adapter: TwelveDataAdapter;
+describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
+  let adapter: TwelveDataHistoricalBarsAdapter;
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
     fetchSpy.mockReset();
     vi.stubGlobal('fetch', fetchSpy);
-    adapter = new TwelveDataAdapter({
+    const client = new TwelveDataClient({
       apiKey: 'test-key',
       baseUrl: 'https://api.twelvedata.com',
       minIntervalMs: 0,
     });
+    adapter = new TwelveDataHistoricalBarsAdapter(client);
   });
 
   afterEach(() => {

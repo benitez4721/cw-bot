@@ -6,7 +6,7 @@ import type {
 } from '../../domain/scanner/ScannerTypes.js';
 import { logger } from '../logging/logger.js';
 
-const log = logger.child({ component: 'ChartsWatcherAdapter' });
+const log = logger.child({ component: 'ChartsWatcherScannerFeedAdapter' });
 
 export interface ChartsWatcherConfig {
   wsUrl: string;
@@ -43,7 +43,7 @@ interface CWError {
 
 type CWMessage = CWToplistConfirm | CWToplistUpdate | CWKeepAlive | CWError;
 
-export class ChartsWatcherAdapter implements ScannerFeedPort {
+export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
   private ws: WebSocket | null = null;
   private readonly config: ChartsWatcherConfig;
   private updateCallbacks: ((configId: string, rows: ScannerRow[]) => void)[] =
