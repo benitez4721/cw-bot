@@ -4,7 +4,7 @@ import { TechnicalDecisionModelAdapter } from './TechnicalDecisionModelAdapter.j
 
 const PARAMS = {
   quantity: 2000,
-  entryOffset: 0.05,
+  entryOffsetBps: 10,
   stopOffset: 0.2,
   takeProfitOffset: 0.35,
 };
@@ -32,8 +32,23 @@ describe('TechnicalDecisionModelAdapter', () => {
     if (result.action !== 'buy') return;
     expect(result.symbol).toBe('AAPL');
     expect(result.side).toBe('BUY');
-    expect(result.entryLimitPrice).toBe(101.05);
+    // last=101, no ask → base=101, cushion=101 * 10/10000 = 0.101 → 101.10
+    expect(result.entryLimitPrice).toBe(101.1);
     expect(result.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('uses ask as base when present, falling back to last only if missing', () => {
+    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const result = model.evaluate({
+      snapshot: snapshot({
+        quote: { symbol: 'AAPL', last: 101, ask: 101.5, timestamp: 't' },
+      }),
+    });
+
+    expect(result.action).toBe('buy');
+    if (result.action !== 'buy') return;
+    // ask=101.5, cushion=101.5 * 10/10000 = 0.1015 → 101.60
+    expect(result.entryLimitPrice).toBe(101.6);
   });
 
   it('exposes orderConfig derived from constructor params', () => {

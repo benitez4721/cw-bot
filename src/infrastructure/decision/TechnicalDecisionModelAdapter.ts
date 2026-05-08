@@ -10,12 +10,12 @@ import type {
 } from '../../domain/decision/DecisionTypes.js';
 
 export interface TechnicalDecisionModelAdapterParams extends OrderConfig {
-  entryOffset: number;
+  entryOffsetBps: number;
 }
 
 const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
   quantity: 2000,
-  entryOffset: 0.05,
+  entryOffsetBps: 10,
   stopOffset: 0.2,
   takeProfitOffset: 0.35,
 };
@@ -39,11 +39,13 @@ export class TechnicalDecisionModelAdapter implements DecisionModelPort {
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
     }
+    const base = snapshot.quote.ask ?? snapshot.quote.last;
+    const cushion = base * (this.params.entryOffsetBps / 10000);
     return {
       action: 'buy',
       symbol: snapshot.symbol,
       side: 'BUY',
-      entryLimitPrice: round2(snapshot.quote.last + this.params.entryOffset),
+      entryLimitPrice: round2(base + cushion),
       checks,
       snapshot,
     };
