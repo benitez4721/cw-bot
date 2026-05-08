@@ -31,7 +31,7 @@ export const healthRoutes: FastifyPluginAsync<HealthRoutesOptions> = async (
 
     const scannerStatus = opts.scannerMonitor.getStatus();
     checks.scanner = {
-      ok: scannerStatus === 'connected' || scannerStatus === 'disabled',
+      ok: scannerStatus === 'connected',
       detail: scannerStatus,
     };
 

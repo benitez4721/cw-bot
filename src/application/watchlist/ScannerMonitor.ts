@@ -9,15 +9,13 @@ const log = logger.child({ component: 'ScannerMonitor' });
 export type ScannerMonitorStatus =
   | 'connected'
   | 'connecting'
-  | 'disconnected'
-  | 'disabled';
+  | 'disconnected';
 
 export interface ScannerMonitorOptions {
   feed: ScannerFeedPort;
   repository: WatchlistRepository;
   metrics: MetricsPort;
   configId: string;
-  enabled?: boolean;
   clock?: () => number;
 }
 
@@ -26,9 +24,8 @@ export class ScannerMonitor {
   private readonly repository: WatchlistRepository;
   private readonly metrics: MetricsPort;
   private readonly configId: string;
-  private readonly enabled: boolean;
   private readonly now: () => number;
-  private status: ScannerMonitorStatus;
+  private status: ScannerMonitorStatus = 'disconnected';
   private lastTickAt = 0;
 
   constructor(options: ScannerMonitorOptions) {
@@ -36,9 +33,7 @@ export class ScannerMonitor {
     this.repository = options.repository;
     this.metrics = options.metrics;
     this.configId = options.configId;
-    this.enabled = options.enabled ?? true;
     this.now = options.clock ?? Date.now;
-    this.status = this.enabled ? 'disconnected' : 'disabled';
 
     this.feed.onUpdate((_configId, rows) => {
       this.handleUpdate(rows).catch((err) => {
@@ -60,10 +55,6 @@ export class ScannerMonitor {
   }
 
   async start(): Promise<void> {
-    if (!this.enabled) {
-      log.info('disabled by config — skipping connect');
-      return;
-    }
     this.status = 'connecting';
     try {
       await this.feed.connect();
@@ -79,7 +70,6 @@ export class ScannerMonitor {
   }
 
   stop(): void {
-    if (!this.enabled) return;
     this.feed.disconnect();
     this.status = 'disconnected';
     this.metrics.setScannerConnected(false);

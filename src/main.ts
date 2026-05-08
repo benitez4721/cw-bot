@@ -40,11 +40,9 @@ function requireEnv(): void {
   if (!env.TRADESTATION_ACCOUNT_ID) missing.push('TRADESTATION_ACCOUNT_ID');
   if (!env.POLYGON_API_KEY) missing.push('POLYGON_API_KEY');
   if (!env.TWELVEDATA_API_KEY) missing.push('TWELVEDATA_API_KEY');
-  if (env.CW_ENABLED) {
-    if (!env.CW_USER_ID) missing.push('CW_USER_ID');
-    if (!env.CW_API_KEY) missing.push('CW_API_KEY');
-    if (!env.CW_CONFIG_ID) missing.push('CW_CONFIG_ID');
-  }
+  if (!env.CW_USER_ID) missing.push('CW_USER_ID');
+  if (!env.CW_API_KEY) missing.push('CW_API_KEY');
+  if (!env.CW_CONFIG_ID) missing.push('CW_CONFIG_ID');
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
   }
@@ -104,29 +102,16 @@ async function main() {
   });
   const historicalBars = new TwelveDataHistoricalBarsAdapter(twelveDataClient);
 
-  const scanner = env.CW_ENABLED
-    ? new ScannerMonitor({
-        feed: new ChartsWatcherScannerFeedAdapter({
-          wsUrl: env.CW_WS_URL,
-          userId: env.CW_USER_ID!,
-          apiKey: env.CW_API_KEY!,
-        }),
-        repository: watchlistRepo,
-        metrics,
-        configId: env.CW_CONFIG_ID!,
-        enabled: true,
-      })
-    : new ScannerMonitor({
-        feed: new ChartsWatcherScannerFeedAdapter({
-          wsUrl: '',
-          userId: '',
-          apiKey: '',
-        }),
-        repository: watchlistRepo,
-        metrics,
-        configId: '',
-        enabled: false,
-      });
+  const scanner = new ScannerMonitor({
+    feed: new ChartsWatcherScannerFeedAdapter({
+      wsUrl: env.CW_WS_URL,
+      userId: env.CW_USER_ID!,
+      apiKey: env.CW_API_KEY!,
+    }),
+    repository: watchlistRepo,
+    metrics,
+    configId: env.CW_CONFIG_ID!,
+  });
 
   const evaluate = new EvaluateDecision(decisionModel, indicators, broker);
   const placeBracketOrder = new PlaceBracketOrder(broker);
@@ -207,7 +192,7 @@ async function main() {
   log.info(
     {
       port: env.PORT,
-      cw: env.CW_ENABLED ? scanner.getStatus() : 'disabled',
+      cw: scanner.getStatus(),
       decision: decisionStatus,
       grafana: grafana ? 'enabled' : 'disabled',
       heartbeat: heartbeat ? 'enabled' : 'disabled',
