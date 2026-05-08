@@ -4,7 +4,6 @@ export const env = {
   PORT: Number(process.env.PORT) || 3000,
   HOST: process.env.HOST,
   TZ: process.env.TZ,
-  BROKER_PROVIDER: process.env.BROKER_PROVIDER || 'tradestation',
   TRADESTATION_CLIENT_ID: process.env.TRADESTATION_CLIENT_ID,
   TRADESTATION_CLIENT_SECRET: process.env.TRADESTATION_CLIENT_SECRET,
   TRADESTATION_REFRESH_TOKEN: process.env.TRADESTATION_REFRESH_TOKEN,
@@ -21,7 +20,6 @@ export const env = {
   CW_USER_ID: process.env.CW_USER_ID,
   CW_API_KEY: process.env.CW_API_KEY,
   CW_CONFIG_ID: process.env.CW_CONFIG_ID,
-  INDICATOR_PROVIDER: process.env.INDICATOR_PROVIDER || 'alphavantage',
   ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
   ALPHA_VANTAGE_BASE_URL:
     process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',
@@ -36,8 +34,6 @@ export const env = {
   POLYGON_WS_URL:
     process.env.POLYGON_WS_URL || 'wss://socket.polygon.io/stocks',
   BOOTSTRAP_BARS: Number(process.env.BOOTSTRAP_BARS) || 200,
-  MARKET_FEED: process.env.MARKET_FEED || 'none',
-  DECISION_MODEL: process.env.DECISION_MODEL || 'technical',
   DECISION_ENABLED:
     (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
   REDIS_URL: process.env.REDIS_URL,

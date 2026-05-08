@@ -5,7 +5,7 @@ const log = logger.child({ component: 'Heartbeat' });
 
 const STALE_TICK_MS = 3 * 60 * 1000;
 
-// Structural type — both DecisionRunner and BarStreamManager satisfy it.
+// Structural type — BarStreamManager satisfies it.
 export interface TickProvider {
   lastSuccessfulTickAt(): number;
 }

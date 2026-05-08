@@ -40,10 +40,9 @@ export interface BarStreamManagerOptions {
   cancel?: (handle: NodeJS.Timeout) => void;
 }
 
-// Event-driven counterpart to DecisionRunner. Subscribes to the realtime feed,
-// keeps the bar cache fresh, and triggers EvaluateDecision on each AM bar
-// close. Symbols are added/removed by polling the watchlist on a fixed
-// interval — same source-of-truth as DecisionRunner, just a different trigger.
+// Event-driven runtime: subscribes to the realtime feed, keeps the bar cache
+// fresh, and triggers EvaluateDecision on each AM bar close. Symbols are
+// added/removed by polling the watchlist on a fixed interval.
 export class BarStreamManager {
   private readonly feed: MarketFeedPort;
   private readonly historicalBars: HistoricalBarsPort;

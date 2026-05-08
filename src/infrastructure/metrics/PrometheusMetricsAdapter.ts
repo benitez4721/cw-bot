@@ -42,7 +42,7 @@ export class PrometheusMetricsAdapter implements MetricsPort {
     });
     this.ticks = new Counter({
       name: 'decision_runner_ticks_total',
-      help: 'DecisionRunner ticks by outcome',
+      help: 'BarStreamManager ticks by outcome',
       labelNames: ['outcome'],
       registers: [this.registry],
     });
