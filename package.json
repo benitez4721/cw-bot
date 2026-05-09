@@ -13,7 +13,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "oauth:refresh-token": "tsx --env-file=.env scripts/get-refresh-token.ts"
+    "oauth:refresh-token": "tsx --env-file=.env scripts/get-refresh-token.ts",
+    "redis:flush": "tsx --env-file=.env scripts/flush-redis.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
