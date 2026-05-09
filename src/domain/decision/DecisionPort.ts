@@ -1,17 +1,16 @@
-import type {
-  DecisionSignal,
-  MarketSnapshot,
-  OrderConfig,
-} from './DecisionTypes.js';
+import type { DecisionSignal, OrderConfig } from './DecisionTypes.js';
 
-export type { MarketSnapshot };
-
-export interface EvaluateInput {
-  snapshot: MarketSnapshot;
+export interface BuildSnapshotInput {
+  symbol: string;
 }
 
-export interface DecisionModelPort {
+export interface EvaluateInput<TSnapshot> {
+  snapshot: TSnapshot;
+}
+
+export interface DecisionModelPort<TSnapshot = unknown> {
   readonly name: string;
   readonly orderConfig: OrderConfig;
-  evaluate(input: EvaluateInput): DecisionSignal;
+  buildSnapshot(input: BuildSnapshotInput): Promise<TSnapshot>;
+  evaluate(input: EvaluateInput<TSnapshot>): DecisionSignal<TSnapshot>;
 }

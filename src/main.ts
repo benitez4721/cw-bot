@@ -48,7 +48,6 @@ async function main() {
     watchlistRepo,
     tradeRepo,
     barRepo,
-    indicators,
     decisionModel,
     marketHours,
     marketFeed,
@@ -68,7 +67,7 @@ async function main() {
     configId: env.CW_CONFIG_ID!,
   });
 
-  const evaluate = new EvaluateDecision(decisionModel, indicators, broker);
+  const evaluate = new EvaluateDecision(decisionModel);
   const placeBracketOrder = new PlaceBracketOrder(broker);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
   const listWatchlist = new ListWatchlist(watchlistRepo);

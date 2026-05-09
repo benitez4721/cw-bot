@@ -1,17 +1,34 @@
+import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
+import type { Quote } from '../../domain/broker/BrokerTypes.js';
 import type {
+  BuildSnapshotInput,
   DecisionModelPort,
   EvaluateInput,
 } from '../../domain/decision/DecisionPort.js';
 import type {
   DecisionSignal,
-  MarketSnapshot,
   OrderConfig,
   RuleCheck,
 } from '../../domain/decision/DecisionTypes.js';
+import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
+import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
+
+export interface TechnicalSnapshot {
+  symbol: string;
+  quote: Quote;
+  macd5min: MACD;
+  macd1minSeries: MACD[];
+  vwap1min: VWAP;
+}
 
 export interface TechnicalDecisionModelAdapterParams extends OrderConfig {
   entryOffsetBps: number;
   minHistogram1minCrossoverDelta: number;
+}
+
+export interface TechnicalDecisionModelAdapterDeps {
+  broker: BrokerPort;
+  indicators: IndicatorPort;
 }
 
 const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
@@ -22,12 +39,21 @@ const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
   minHistogram1minCrossoverDelta: 0.002,
 };
 
-export class TechnicalDecisionModelAdapter implements DecisionModelPort {
+export class TechnicalDecisionModelAdapter
+  implements DecisionModelPort<TechnicalSnapshot>
+{
   readonly name = 'technical';
   readonly orderConfig: OrderConfig;
   private readonly params: TechnicalDecisionModelAdapterParams;
+  private readonly broker: BrokerPort;
+  private readonly indicators: IndicatorPort;
 
-  constructor(params: Partial<TechnicalDecisionModelAdapterParams> = {}) {
+  constructor(
+    deps: TechnicalDecisionModelAdapterDeps,
+    params: Partial<TechnicalDecisionModelAdapterParams> = {},
+  ) {
+    this.broker = deps.broker;
+    this.indicators = deps.indicators;
     this.params = { ...DEFAULT_PARAMS, ...params };
     this.orderConfig = {
       quantity: this.params.quantity,
@@ -36,7 +62,21 @@ export class TechnicalDecisionModelAdapter implements DecisionModelPort {
     };
   }
 
-  evaluate({ snapshot }: EvaluateInput): DecisionSignal {
+  async buildSnapshot({
+    symbol,
+  }: BuildSnapshotInput): Promise<TechnicalSnapshot> {
+    const [quote, macd5min, macd1minSeries, vwap1min] = await Promise.all([
+      this.broker.getQuote({ symbol }),
+      this.indicators.getMACD({ symbol, interval: '5min' }),
+      this.indicators.getMACDSeries({ symbol, interval: '1min', limit: 2 }),
+      this.indicators.getVWAP({ symbol, interval: '1min' }),
+    ]);
+    return { symbol, quote, macd5min, macd1minSeries, vwap1min };
+  }
+
+  evaluate({
+    snapshot,
+  }: EvaluateInput<TechnicalSnapshot>): DecisionSignal<TechnicalSnapshot> {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
@@ -53,7 +93,7 @@ export class TechnicalDecisionModelAdapter implements DecisionModelPort {
     };
   }
 
-  private runChecks(s: MarketSnapshot): RuleCheck[] {
+  private runChecks(s: TechnicalSnapshot): RuleCheck[] {
     const m5 = s.macd5min;
     const m1 = s.macd1minSeries;
     const current = m1[0];

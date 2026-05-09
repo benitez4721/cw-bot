@@ -68,7 +68,10 @@ export function setupAdapters(): Adapters {
   });
 
   const indicators = new LocalIndicatorAdapter({ bars: barRepo });
-  const decisionModel = new TechnicalDecisionModelAdapter();
+  const decisionModel = new TechnicalDecisionModelAdapter({
+    broker,
+    indicators,
+  });
   const marketHours = new UsMarketHoursAdapter();
   const marketFeed = new PolygonMarketFeedAdapter({
     apiKey: env.POLYGON_API_KEY!,

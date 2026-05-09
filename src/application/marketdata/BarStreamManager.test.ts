@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type { OrderResult } from '../../domain/broker/BrokerTypes.js';
-import type {
-  DecisionSignal,
-  MarketSnapshot,
-} from '../../domain/decision/DecisionTypes.js';
+import type { DecisionSignal } from '../../domain/decision/DecisionTypes.js';
+import type { TechnicalSnapshot } from '../../infrastructure/decision/TechnicalDecisionModelAdapter.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
 import type {
@@ -36,8 +34,8 @@ function bar(timestampUtc: string, close = 100, volume = 1000): Bar {
   };
 }
 
-function makeBuySignal(symbol = 'AAPL'): DecisionSignal {
-  const snapshot: MarketSnapshot = {
+function makeBuySignal(symbol = 'AAPL'): DecisionSignal<TechnicalSnapshot> {
+  const snapshot: TechnicalSnapshot = {
     symbol,
     quote: { symbol, last: 100, bid: 99.9, ask: 100.1, timestamp: 't' },
     macd5min: { macd: 0.1, signal: 0.05, histogram: 0.05, timestamp: 't' },
@@ -57,8 +55,8 @@ function makeBuySignal(symbol = 'AAPL'): DecisionSignal {
   };
 }
 
-function makeHoldSignal(symbol = 'AAPL'): DecisionSignal {
-  const snapshot: MarketSnapshot = {
+function makeHoldSignal(symbol = 'AAPL'): DecisionSignal<TechnicalSnapshot> {
+  const snapshot: TechnicalSnapshot = {
     symbol,
     quote: { symbol, last: 100, bid: 99.9, ask: 100.1, timestamp: 't' },
     macd5min: { macd: 0, signal: 0, histogram: 0, timestamp: 't' },

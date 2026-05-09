@@ -1,11 +1,8 @@
 import type { DecisionSignal } from '../../domain/decision/DecisionTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
-import type {
-  TradeContext,
-  TradeIndicatorSnapshot,
-} from '../../domain/trade/TradeTypes.js';
+import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 
-type BuySignal = Extract<DecisionSignal, { action: 'buy' }>;
+type BuySignal = Extract<DecisionSignal<unknown>, { action: 'buy' }>;
 
 export interface RecordTradeContextInput {
   orderId: string;
@@ -25,14 +22,6 @@ export class RecordTradeContext {
   }: RecordTradeContextInput): Promise<void> {
     if (!orderId) throw new Error('orderId is required');
 
-    const indicators: TradeIndicatorSnapshot = {
-      quote: signal.snapshot.quote,
-      macd5min: signal.snapshot.macd5min,
-      macd1min: signal.snapshot.macd1minSeries[0],
-      macd1minPrevious: signal.snapshot.macd1minSeries[1],
-      vwap1min: signal.snapshot.vwap1min,
-    };
-
     const ctx: TradeContext = {
       orderId,
       symbol: signal.symbol,
@@ -40,7 +29,7 @@ export class RecordTradeContext {
       entryLimitPrice: signal.entryLimitPrice,
       evalStart,
       evalEnd,
-      indicators,
+      indicators: signal.snapshot,
       checks: signal.checks,
       status: 'active',
     };

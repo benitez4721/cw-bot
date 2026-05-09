@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { MarketSnapshot } from '../../domain/decision/DecisionPort.js';
-import { TechnicalDecisionModelAdapter } from './TechnicalDecisionModelAdapter.js';
+import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
+import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
+import {
+  TechnicalDecisionModelAdapter,
+  type TechnicalSnapshot,
+} from './TechnicalDecisionModelAdapter.js';
 
 const PARAMS = {
   quantity: 2000,
@@ -10,7 +14,14 @@ const PARAMS = {
   minHistogram1minCrossoverDelta: 0.002,
 };
 
-function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
+const DEPS = {
+  broker: {} as BrokerPort,
+  indicators: {} as IndicatorPort,
+};
+
+function snapshot(
+  overrides: Partial<TechnicalSnapshot> = {},
+): TechnicalSnapshot {
   return {
     symbol: 'AAPL',
     quote: { symbol: 'AAPL', last: 101, timestamp: 't' },
@@ -26,7 +37,7 @@ function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
 
 describe('TechnicalDecisionModelAdapter', () => {
   it('emits buy with symbol, side and entry price when all rules pass', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({ snapshot: snapshot() });
 
     expect(result.action).toBe('buy');
@@ -39,7 +50,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('uses ask as base when present, falling back to last only if missing', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         quote: { symbol: 'AAPL', last: 101, ask: 101.5, timestamp: 't' },
@@ -53,7 +64,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('exposes orderConfig derived from constructor params', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     expect(model.orderConfig).toEqual({
       quantity: 2000,
       stopOffset: 0.2,
@@ -62,7 +73,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when 5min MACD is not positive', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         macd5min: { macd: -0.1, signal: 0, histogram: 0.3, timestamp: 't' },
@@ -76,7 +87,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when 5min histogram is not positive', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         macd5min: { macd: 0.5, signal: 0.4, histogram: -0.05, timestamp: 't' },
@@ -90,7 +101,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when 1min MACD is not positive', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         macd1minSeries: [
@@ -107,7 +118,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when histogram already positive in previous bar (no crossover)', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         macd1minSeries: [
@@ -125,7 +136,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when current histogram is negative (bearish crossover)', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         macd1minSeries: [
@@ -143,7 +154,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when price is below VWAP', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         quote: { symbol: 'AAPL', last: 99.5, timestamp: 't' },
@@ -158,7 +169,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when crossover magnitude is below the configured threshold', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     // current - previous = 0.001 - (-0.0005) = 0.0015 < 0.002 threshold.
     // Sign-based crossover still passes (current>0, previous<0), so this
     // exercises the magnitude check in isolation.
@@ -183,7 +194,7 @@ describe('TechnicalDecisionModelAdapter', () => {
   });
 
   it('holds when 1min series has fewer than 2 points', () => {
-    const model = new TechnicalDecisionModelAdapter(PARAMS);
+    const model = new TechnicalDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
         macd1minSeries: [

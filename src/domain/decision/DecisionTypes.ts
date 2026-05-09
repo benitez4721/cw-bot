@@ -1,5 +1,4 @@
-import type { OrderSide, Quote } from '../broker/BrokerTypes.js';
-import type { MACD, VWAP } from '../indicators/IndicatorTypes.js';
+import type { OrderSide } from '../broker/BrokerTypes.js';
 
 export interface RuleCheck {
   name: string;
@@ -12,21 +11,13 @@ export interface OrderConfig {
   takeProfitOffset: number;
 }
 
-export interface MarketSnapshot {
-  symbol: string;
-  quote: Quote;
-  macd5min: MACD;
-  macd1minSeries: MACD[];
-  vwap1min: VWAP;
-}
-
-export type DecisionSignal =
+export type DecisionSignal<TSnapshot = unknown> =
   | {
       action: 'buy';
       symbol: string;
       side: OrderSide;
       entryLimitPrice: number;
       checks: RuleCheck[];
-      snapshot: MarketSnapshot;
+      snapshot: TSnapshot;
     }
-  | { action: 'hold'; checks: RuleCheck[]; snapshot: MarketSnapshot };
+  | { action: 'hold'; checks: RuleCheck[]; snapshot: TSnapshot };

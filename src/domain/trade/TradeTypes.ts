@@ -1,16 +1,7 @@
-import type { OrderSide, Quote } from '../broker/BrokerTypes.js';
+import type { OrderSide } from '../broker/BrokerTypes.js';
 import type { RuleCheck } from '../decision/DecisionTypes.js';
-import type { MACD, VWAP } from '../indicators/IndicatorTypes.js';
 
 export type TradeContextStatus = 'active' | 'closed';
-
-export interface TradeIndicatorSnapshot {
-  quote: Quote;
-  macd5min: MACD;
-  macd1min: MACD;
-  macd1minPrevious?: MACD;
-  vwap1min: VWAP;
-}
 
 export interface TradeContext {
   orderId: string;
@@ -19,7 +10,9 @@ export interface TradeContext {
   entryLimitPrice: number;
   evalStart: string;
   evalEnd: string;
-  indicators: TradeIndicatorSnapshot;
+  // Opaque snapshot owned by whichever decision model produced the signal.
+  // Persisted as-is for postmortem; not read back by application code.
+  indicators: unknown;
   checks: RuleCheck[];
   status: TradeContextStatus;
 }
