@@ -1,16 +1,16 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { OrderConfig } from '../../domain/decision/DecisionTypes.js';
+import type { Order } from '../../domain/broker/BrokerTypes.js';
+import type { DecisionStrategy } from '../../domain/decision/DecisionStrategy.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
 import type { HistoricalBarsPort } from '../../domain/marketdata/HistoricalBarsPort.js';
 import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
-import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
+import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import { aggregateOneFiveMinuteBucket } from '../../infrastructure/indicators/calculations.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
-import type { EvaluateDecision } from '../decision/EvaluateDecision.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
@@ -24,14 +24,13 @@ export interface BarStreamManagerOptions {
   feed: MarketFeedPort;
   historicalBars: HistoricalBarsPort;
   barRepo: BarRepository;
-  watchlist: WatchlistRepository;
-  evaluate: EvaluateDecision;
+  strategies: DecisionStrategy[];
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
+  tradeRepo: TradeContextRepository;
   broker: BrokerPort;
   marketHours: MarketHours;
   metrics: MetricsPort;
-  orderConfig: OrderConfig;
   bootstrapBars?: number;
   syncIntervalMs?: number;
   // Injected for tests
@@ -41,20 +40,21 @@ export interface BarStreamManagerOptions {
 }
 
 // Event-driven runtime: subscribes to the realtime feed, keeps the bar cache
-// fresh, and triggers EvaluateDecision on each AM bar close. Symbols are
-// added/removed by polling the watchlist on a fixed interval.
+// fresh, and triggers each strategy's evaluation on every AM bar close.
+// Symbols are added/removed by polling the union of strategy watchlists on a
+// fixed interval. Each strategy carries its own watchlist and order config;
+// exposure is tracked per (model, symbol) via the trade context repo.
 export class BarStreamManager {
   private readonly feed: MarketFeedPort;
   private readonly historicalBars: HistoricalBarsPort;
   private readonly barRepo: BarRepository;
-  private readonly watchlist: WatchlistRepository;
-  private readonly evaluate: EvaluateDecision;
+  private readonly strategies: DecisionStrategy[];
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
+  private readonly tradeRepo: TradeContextRepository;
   private readonly broker: BrokerPort;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
-  private readonly orderConfig: OrderConfig;
   private readonly bootstrapBars: number;
   private readonly syncIntervalMs: number;
   private readonly now: () => number;
@@ -62,6 +62,8 @@ export class BarStreamManager {
   private readonly cancel: (handle: NodeJS.Timeout) => void;
 
   private readonly subscribed = new Set<string>();
+  // Keyed by `${model}:${symbol}` so two strategies can evaluate the same
+  // symbol concurrently without blocking each other.
   private readonly inFlight = new Set<string>();
   private tickTimer: NodeJS.Timeout | null = null;
   private status: BarStreamManagerStatus = 'idle';
@@ -73,14 +75,13 @@ export class BarStreamManager {
     this.feed = options.feed;
     this.historicalBars = options.historicalBars;
     this.barRepo = options.barRepo;
-    this.watchlist = options.watchlist;
-    this.evaluate = options.evaluate;
+    this.strategies = options.strategies;
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
+    this.tradeRepo = options.tradeRepo;
     this.broker = options.broker;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
-    this.orderConfig = options.orderConfig;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
     this.now = options.now ?? (() => Date.now());
@@ -100,9 +101,6 @@ export class BarStreamManager {
     return this.subscribed.size;
   }
 
-  // Public hook that forces an immediate tick without waiting for the timer.
-  // Useful for tests and ad-hoc reconciliation. Goes through full tick
-  // logic (market-hours gating + watchlist sync), not just the watchlist diff.
   async forceSync(): Promise<void> {
     return this.tick();
   }
@@ -127,14 +125,13 @@ export class BarStreamManager {
     }
 
     this.status = 'running';
-    // First tick is synchronous — connects the feed and bootstraps if the
-    // market is already open, or just waits otherwise.
     await this.tick();
     this.scheduleNextTick();
     log.info(
       {
         subscribed: this.subscribed.size,
         marketOpen: this.feedConnected,
+        strategies: this.strategies.map((s) => s.name),
       },
       'started',
     );
@@ -151,8 +148,6 @@ export class BarStreamManager {
       this.feed.disconnect();
       this.feedConnected = false;
     }
-    // Clear local trackers so a subsequent start() rebuilds subscriptions
-    // from the watchlist (the feed lost its session on disconnect).
     this.subscribed.clear();
     this.inFlight.clear();
   }
@@ -169,13 +164,6 @@ export class BarStreamManager {
     }, this.syncIntervalMs);
   }
 
-  // Coordinates market-hours gating with feed lifecycle. Called on every
-  // periodic tick (and once synchronously during start()).
-  //
-  // - market open + feed not connected → connect feed + sync watchlist
-  // - market open + feed connected     → sync watchlist
-  // - market closed + feed connected   → disconnect feed + drop subscriptions
-  // - market closed + feed not connected → idle (just keep ticking)
   private async tick(): Promise<void> {
     const open = this.marketHours.isOpen(new Date(this.now()));
 
@@ -207,12 +195,10 @@ export class BarStreamManager {
     if (open && this.feedConnected) {
       await this.syncWatchlist();
     }
-    // !open && !feedConnected: nothing to do until market opens
   }
 
   private async syncWatchlist(): Promise<void> {
-    const items = await this.watchlist.list();
-    const wanted = new Set(items.map((i) => i.symbol));
+    const wanted = await this.unionWatchlist();
 
     for (const symbol of wanted) {
       if (this.subscribed.has(symbol)) continue;
@@ -239,6 +225,17 @@ export class BarStreamManager {
     }
   }
 
+  private async unionWatchlist(): Promise<Set<string>> {
+    const lists = await Promise.all(
+      this.strategies.map((s) => s.watchlist.list()),
+    );
+    const wanted = new Set<string>();
+    for (const list of lists) {
+      for (const item of list) wanted.add(item.symbol);
+    }
+    return wanted;
+  }
+
   private async bootstrapAndSubscribe(symbol: string): Promise<void> {
     log.info({ symbol, bars: this.bootstrapBars }, 'bootstrapping');
     const [bars1m, bars5m] = await Promise.all([
@@ -253,11 +250,6 @@ export class BarStreamManager {
         limit: this.bootstrapBars,
       }),
     ]);
-    // Twelve Data returns the bucket in progress with partial values when the
-    // query lands mid-period. Drop it — only buckets whose period has fully
-    // elapsed are safe to use; anything else biases MACD/EMA against an
-    // incomplete close. The realtime WS will fill it in once it actually
-    // closes (Polygon AM emits closed bars only).
     const now = this.now();
     const closed1m = dropOpenBucket(bars1m, 60_000, now);
     const closed5m = dropOpenBucket(bars5m, 5 * 60_000, now);
@@ -280,8 +272,6 @@ export class BarStreamManager {
   }
 
   private async handleBar(symbol: string, bar: Bar): Promise<void> {
-    // Polygon may resend a corrected AM for the same minute — dedupe by
-    // timestamp against the last cached 1m bar to avoid double-appending.
     const cached1m = await this.barRepo.get(symbol, '1min');
     const lastTs = cached1m[cached1m.length - 1]?.timestamp;
     if (lastTs === bar.timestamp) {
@@ -293,7 +283,6 @@ export class BarStreamManager {
     this.metrics.recordBarReceived();
     await this.barRepo.append(symbol, '1min', bar);
 
-    // A 1m bar with minute === :04, :09, :14, ... closes a 5m bucket.
     const minute = new Date(bar.timestamp).getUTCMinutes();
     if (minute % 5 === 4) {
       await this.maybeAppendFiveMinute(symbol);
@@ -322,19 +311,39 @@ export class BarStreamManager {
     }
   }
 
+  // Iterates strategies sequentially: each one independently checks its own
+  // watchlist membership and exposure, then evaluates and (optionally) places.
   private async processSymbol(symbol: string): Promise<void> {
-    if (this.inFlight.has(symbol)) {
-      log.debug({ symbol }, 'in-flight skip');
+    if (!this.marketHours.isOpen(new Date(this.now()))) return;
+
+    for (const strategy of this.strategies) {
+      const watched = await strategy.watchlist.getBySymbol(symbol);
+      if (!watched) continue;
+      await this.processStrategy(strategy, symbol);
+    }
+  }
+
+  private async processStrategy(
+    strategy: DecisionStrategy,
+    symbol: string,
+  ): Promise<void> {
+    const inFlightKey = `${strategy.name}:${symbol}`;
+    if (this.inFlight.has(inFlightKey)) {
+      log.debug({ model: strategy.name, symbol }, 'in-flight skip');
       return;
     }
-    this.inFlight.add(symbol);
+    this.inFlight.add(inFlightKey);
 
     const evalStart = new Date(this.now()).toISOString();
     try {
-      if (!this.marketHours.isOpen(new Date(this.now()))) return;
-      if (await this.hasOpenExposure(symbol)) return;
+      if (await this.hasOpenExposure(strategy.name, symbol)) return;
 
-      const signal = await this.evaluate.execute({ symbol });
+      const snapshot = await strategy.model.buildSnapshot({ symbol });
+      log.info(
+        { model: strategy.name, snapshot },
+        'evaluating snapshot',
+      );
+      const signal = strategy.model.evaluate({ snapshot });
       const evalEnd = new Date(this.now()).toISOString();
 
       this.metrics.recordDecision(symbol, signal.action);
@@ -344,11 +353,12 @@ export class BarStreamManager {
         symbol: signal.symbol,
         side: signal.side,
         entryLimitPrice: signal.entryLimitPrice,
-        ...this.orderConfig,
+        ...strategy.orderConfig,
       });
       this.metrics.recordOrderResult(result.status);
       log.info(
         {
+          model: strategy.name,
           symbol,
           entryOrderId: result.entryOrderId,
           stopOrderId: result.stopOrderId,
@@ -366,7 +376,7 @@ export class BarStreamManager {
       ) {
         try {
           await this.recordTradeContext.execute({
-            model: 'technical',
+            model: strategy.name,
             bracket: {
               entryOrderId: result.entryOrderId,
               stopOrderId: result.stopOrderId,
@@ -379,6 +389,7 @@ export class BarStreamManager {
         } catch (err) {
           log.warn(
             {
+              model: strategy.name,
               symbol,
               entryOrderId: result.entryOrderId,
               err: errMsg(err),
@@ -388,28 +399,69 @@ export class BarStreamManager {
         }
       }
     } catch (err) {
-      log.error({ symbol, err: errMsg(err) }, 'process failed');
+      log.error(
+        { model: strategy.name, symbol, err: errMsg(err) },
+        'process failed',
+      );
     } finally {
-      this.inFlight.delete(symbol);
+      this.inFlight.delete(inFlightKey);
     }
   }
 
-  private async hasOpenExposure(symbol: string): Promise<boolean> {
-    const [positions, orders] = await Promise.all([
-      this.broker.getPositions(),
-      this.broker.getOrders({ symbol }),
-    ]);
-    if (positions.some((p) => p.symbol === symbol && p.quantity !== 0)) {
-      return true;
-    }
-    return orders.some(
-      (o) =>
-        o.symbol === symbol &&
-        (o.status === 'open' ||
-          o.status === 'pending' ||
-          o.status === 'partiallyFilled'),
+  // Reconciles the trade context repo against the broker. Any context whose
+  // bracket has no order still active (entry/stop/tp) is lazily marked closed.
+  // Returns true if at least one context for (model, symbol) is still live.
+  private async hasOpenExposure(
+    model: string,
+    symbol: string,
+  ): Promise<boolean> {
+    const contexts = await this.tradeRepo.listActiveByModelAndSymbol(
+      model,
+      symbol,
     );
+    if (contexts.length === 0) return false;
+
+    const orders = await this.broker.getOrders({ symbol });
+    const activeOrderIds = new Set(
+      orders.filter(isOrderActive).map((o) => o.id),
+    );
+
+    let stillExposed = false;
+    for (const ctx of contexts) {
+      const bracketIds = [
+        ctx.bracket.entryOrderId,
+        ctx.bracket.stopOrderId,
+        ctx.bracket.takeProfitOrderId,
+      ];
+      const hasActive = bracketIds.some((id) => activeOrderIds.has(id));
+      if (hasActive) {
+        stillExposed = true;
+        continue;
+      }
+      try {
+        await this.tradeRepo.markClosed(ctx.bracket.entryOrderId);
+      } catch (err) {
+        log.warn(
+          {
+            model,
+            symbol,
+            entryOrderId: ctx.bracket.entryOrderId,
+            err: errMsg(err),
+          },
+          'failed to mark trade context closed',
+        );
+      }
+    }
+    return stillExposed;
   }
+}
+
+function isOrderActive(o: Order): boolean {
+  return (
+    o.status === 'open' ||
+    o.status === 'pending' ||
+    o.status === 'partiallyFilled'
+  );
 }
 
 function errMsg(err: unknown): string {

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type { BracketOrderResult } from '../../domain/broker/BrokerTypes.js';
-import type { DecisionSignal } from '../../domain/decision/DecisionTypes.js';
+import type { DecisionModelPort } from '../../domain/decision/DecisionPort.js';
+import type { DecisionStrategy } from '../../domain/decision/DecisionStrategy.js';
+import type {
+  DecisionSignal,
+  OrderConfig,
+} from '../../domain/decision/DecisionTypes.js';
 import type { TechnicalSnapshot } from '../../infrastructure/decision/TechnicalDecisionModelAdapter.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
@@ -16,9 +21,10 @@ import type {
 } from '../../domain/marketdata/MarketFeedPort.js';
 import type { HistoricalBarsPort } from '../../domain/marketdata/HistoricalBarsPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
+import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
+import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
 import type { WatchedSymbol } from '../../domain/watchlist/WatchlistTypes.js';
-import type { EvaluateDecision } from '../decision/EvaluateDecision.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 import { BarStreamManager } from './BarStreamManager.js';
@@ -85,8 +91,6 @@ function createFakeFeed(): FakeFeed {
       connHandler?.(true);
     },
     disconnect() {
-      // Emulate real adapter: closing the WS drops the server-side
-      // subscription set.
       subscribed.clear();
       connHandler?.(false);
     },
@@ -106,7 +110,6 @@ function createFakeFeed(): FakeFeed {
     async emitBar(symbol, bar) {
       if (!barHandler) throw new Error('no bar handler registered');
       barHandler(symbol, bar);
-      // Yield so the manager's awaited handleBar settles.
       await new Promise((r) => setImmediate(r));
       await new Promise((r) => setImmediate(r));
       await new Promise((r) => setImmediate(r));
@@ -169,30 +172,120 @@ function createWatchlist(initial: WatchedSymbol[] = []): TestWatchlist {
   };
 }
 
+type FakeTradeRepo = TradeContextRepository & {
+  _seedActive: (ctx: TradeContext) => void;
+  _markedClosed: string[];
+};
+
+function createTradeRepo(): FakeTradeRepo {
+  const items = new Map<string, TradeContext>();
+  const active = new Map<string, Set<string>>();
+  const markedClosed: string[] = [];
+
+  const activeKey = (model: string, symbol: string) => `${model}:${symbol}`;
+
+  return {
+    async put(ctx: TradeContext) {
+      items.set(ctx.bracket.entryOrderId, ctx);
+      const key = activeKey(ctx.model, ctx.symbol);
+      const set = active.get(key) ?? new Set<string>();
+      set.add(ctx.bracket.entryOrderId);
+      active.set(key, set);
+    },
+    async getByOrderIds(ids: string[]) {
+      const out = new Map<string, TradeContext>();
+      for (const id of ids) {
+        const ctx = items.get(id);
+        if (ctx) out.set(id, ctx);
+      }
+      return out;
+    },
+    async listActiveByModelAndSymbol(model, symbol) {
+      const key = activeKey(model, symbol);
+      const ids = active.get(key);
+      if (!ids) return [];
+      const out: TradeContext[] = [];
+      for (const id of ids) {
+        const ctx = items.get(id);
+        if (ctx) out.push(ctx);
+      }
+      return out;
+    },
+    async markClosed(entryOrderId) {
+      markedClosed.push(entryOrderId);
+      const ctx = items.get(entryOrderId);
+      if (!ctx) return;
+      items.set(entryOrderId, { ...ctx, status: 'closed' });
+      const key = activeKey(ctx.model, ctx.symbol);
+      active.get(key)?.delete(entryOrderId);
+    },
+    _seedActive(ctx) {
+      items.set(ctx.bracket.entryOrderId, ctx);
+      const key = activeKey(ctx.model, ctx.symbol);
+      const set = active.get(key) ?? new Set<string>();
+      set.add(ctx.bracket.entryOrderId);
+      active.set(key, set);
+    },
+    _markedClosed: markedClosed,
+  };
+}
+
+interface StrategyFixture {
+  name: string;
+  initial?: WatchedSymbol[];
+  orderConfig?: OrderConfig;
+  evaluateImpl?: () => Promise<DecisionSignal<TechnicalSnapshot>>;
+}
+
+interface MockModel
+  extends DecisionModelPort<TechnicalSnapshot> {
+  buildSnapshot: ReturnType<typeof vi.fn>;
+  evaluate: ReturnType<typeof vi.fn>;
+}
+
+interface StrategyHandle {
+  name: string;
+  watchlist: TestWatchlist;
+  model: MockModel;
+  orderConfig: OrderConfig;
+}
+
 interface Setup {
   manager: BarStreamManager;
   feed: FakeFeed;
   barRepo: BarRepository;
-  watchlist: TestWatchlist;
   fetchHistorical: ReturnType<typeof vi.fn>;
-  evaluate: { execute: ReturnType<typeof vi.fn> };
   placeBracket: { execute: ReturnType<typeof vi.fn> };
   recordContext: { execute: ReturnType<typeof vi.fn> };
+  tradeRepo: FakeTradeRepo;
   broker: BrokerPort;
   metrics: MetricsPort;
   marketOpen: { value: boolean };
+  strategies: StrategyHandle[];
+  // Convenience accessors for the first strategy (single-strategy tests).
+  watchlist: TestWatchlist;
+  model: MockModel;
 }
 
-function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
+const DEFAULT_ORDER_CONFIG: OrderConfig = {
+  quantity: 100,
+  stopOffset: 0.2,
+  takeProfitOffset: 0.35,
+};
+
+function setup(
+  opts: { initial?: WatchedSymbol[]; strategies?: StrategyFixture[] } = {},
+): Setup {
+  const fixtures: StrategyFixture[] = opts.strategies ?? [
+    { name: 'technical', initial: opts.initial ?? [] },
+  ];
+
   const feed = createFakeFeed();
   const barRepo = createInMemoryBarRepo();
-  const watchlist = createWatchlist(opts.initial ?? []);
   const fetchHistorical = vi.fn(
     async ({ interval }: { symbol: string; interval: BarInterval }) => {
-      // Default: 5 ascending bars ending well before "now" so the
-      // dropOpenBucket filter keeps all of them.
       const stepMs = interval === '1min' ? 60_000 : 5 * 60_000;
-      const lastClosed = Math.floor(Date.now() / stepMs) * stepMs - stepMs; // last fully-closed bucket
+      const lastClosed = Math.floor(Date.now() / stepMs) * stepMs - stepMs;
       return Array.from({ length: 5 }, (_, i) =>
         bar(new Date(lastClosed - (4 - i) * stepMs).toISOString(), 100 + i),
       );
@@ -202,28 +295,23 @@ function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
     fetchHistoricalBars: fetchHistorical,
   };
 
-  const evaluate = { execute: vi.fn(async () => makeHoldSignal()) };
   const placeBracket = {
     execute: vi.fn(
-      async (): Promise<BracketOrderResult> => ({
+      async (input: { symbol: string }): Promise<BracketOrderResult> => ({
         status: 'open',
-        entryOrderId: 'order-1',
-        stopOrderId: 'order-1-stop',
-        takeProfitOrderId: 'order-1-tp',
+        entryOrderId: `entry-${input.symbol}`,
+        stopOrderId: `stop-${input.symbol}`,
+        takeProfitOrderId: `tp-${input.symbol}`,
       }),
     ),
   };
   const recordContext = { execute: vi.fn(async () => undefined) };
+  const tradeRepo = createTradeRepo();
 
   const broker: BrokerPort = {
-    placeOrder: vi.fn(),
     placeBracketOrder: vi.fn(),
-    cancelOrder: vi.fn(),
-    replaceOrder: vi.fn(),
-    getBalances: vi.fn(),
     getPositions: vi.fn(async () => []),
     getOrders: vi.fn(async () => []),
-    getHistoricalOrders: vi.fn(),
     getQuote: vi.fn(),
   } as unknown as BrokerPort;
 
@@ -242,36 +330,102 @@ function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
     recordBarDedupSkip: vi.fn(),
     recordBootstrapFailure: vi.fn(),
     setMarketFeedConnected: vi.fn(),
-  };
+  } as unknown as MetricsPort;
+
+  const handles: StrategyHandle[] = fixtures.map((f) => {
+    const watchlist = createWatchlist(f.initial ?? []);
+    const orderConfig = f.orderConfig ?? DEFAULT_ORDER_CONFIG;
+    const evaluateImpl = f.evaluateImpl ?? (async () => makeHoldSignal());
+    const model: MockModel = {
+      name: f.name,
+      orderConfig,
+      buildSnapshot: vi.fn(async () => (await evaluateImpl()).snapshot),
+      evaluate: vi.fn((input: { snapshot: TechnicalSnapshot }) => {
+        // Return either the live signal stub configured per test, or a hold
+        // built from the snapshot the model itself just produced.
+        const snapshot = input.snapshot;
+        return { action: 'hold', checks: [], snapshot } satisfies ReturnType<
+          DecisionModelPort<TechnicalSnapshot>['evaluate']
+        >;
+      }),
+    };
+    return {
+      name: f.name,
+      watchlist,
+      model,
+      orderConfig,
+    };
+  });
+
+  const strategies: DecisionStrategy[] = handles.map((h) => ({
+    name: h.name,
+    model: h.model,
+    watchlist: h.watchlist,
+    orderConfig: h.orderConfig,
+  }));
 
   const manager = new BarStreamManager({
     feed,
     historicalBars,
     barRepo,
-    watchlist,
-    evaluate: evaluate as unknown as EvaluateDecision,
+    strategies,
     placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
     recordTradeContext: recordContext as unknown as RecordTradeContext,
+    tradeRepo,
     broker,
     marketHours,
     metrics,
-    orderConfig: { quantity: 100, stopOffset: 0.2, takeProfitOffset: 0.35 },
     bootstrapBars: 5,
-    syncIntervalMs: 60_000, // long enough that tests don't trigger a second sync
+    syncIntervalMs: 60_000,
   });
 
   return {
     manager,
     feed,
     barRepo,
-    watchlist,
     fetchHistorical,
-    evaluate,
     placeBracket,
     recordContext,
+    tradeRepo,
     broker,
     metrics,
     marketOpen,
+    strategies: handles,
+    watchlist: handles[0].watchlist,
+    model: handles[0].model,
+  };
+}
+
+// Helper for tests: makes a model fixture return the given signal on its
+// next `evaluate` call (and on any subsequent ones).
+function stubSignal(
+  model: MockModel,
+  signal: DecisionSignal<TechnicalSnapshot>,
+): void {
+  model.buildSnapshot.mockResolvedValue(signal.snapshot);
+  model.evaluate.mockReturnValue(signal);
+}
+
+function makeActiveContext(
+  model: string,
+  symbol: string,
+  entryOrderId: string,
+): TradeContext {
+  return {
+    model,
+    symbol,
+    side: 'BUY',
+    entryLimitPrice: 100,
+    evalStart: 't',
+    evalEnd: 't',
+    bracket: {
+      entryOrderId,
+      stopOrderId: `${entryOrderId}-stop`,
+      takeProfitOrderId: `${entryOrderId}-tp`,
+    },
+    indicators: null,
+    checks: [],
+    status: 'active',
   };
 }
 
@@ -288,7 +442,7 @@ describe('BarStreamManager', () => {
       ],
     });
     await s.manager.start();
-    expect(s.fetchHistorical).toHaveBeenCalledTimes(4); // 1m + 5m × 2 symbols
+    expect(s.fetchHistorical).toHaveBeenCalledTimes(4);
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
     expect(s.feed.subscribed.has('TSLA')).toBe(true);
     expect((await s.barRepo.get('AAPL', '1min')).length).toBe(5);
@@ -305,7 +459,7 @@ describe('BarStreamManager', () => {
     const before = (await s.barRepo.get('AAPL', '1min')).length;
     await s.feed.emitBar('AAPL', { ...last });
     expect((await s.barRepo.get('AAPL', '1min')).length).toBe(before);
-    expect(s.evaluate.execute).not.toHaveBeenCalled();
+    expect(s.model.evaluate).not.toHaveBeenCalled();
     s.manager.stop();
   });
 
@@ -315,10 +469,9 @@ describe('BarStreamManager', () => {
     });
     await s.manager.start();
     const before5 = (await s.barRepo.get('AAPL', '5min')).length;
-    // minute :35 → 35 % 5 === 0 → does NOT close a bucket
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
     expect((await s.barRepo.get('AAPL', '5min')).length).toBe(before5);
-    expect(s.evaluate.execute).toHaveBeenCalledOnce();
+    expect(s.model.evaluate).toHaveBeenCalledOnce();
     s.manager.stop();
   });
 
@@ -327,8 +480,6 @@ describe('BarStreamManager', () => {
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
     await s.manager.start();
-    // Replace 1m cache with bars at :30, :31, :32, :33 so the next emit (:34)
-    // closes the 5m bucket starting at :30.
     const startMs = Date.UTC(2026, 4, 7, 13, 30);
     const seed = [0, 1, 2, 3].map((i) =>
       bar(new Date(startMs + i * 60_000).toISOString(), 100 + i, 1000),
@@ -353,7 +504,7 @@ describe('BarStreamManager', () => {
     await s.manager.start();
     expect(s.fetchHistorical).not.toHaveBeenCalled();
     expect(s.feed.subscribed.has('AAPL')).toBe(false);
-    expect(s.evaluate.execute).not.toHaveBeenCalled();
+    expect(s.model.evaluate).not.toHaveBeenCalled();
     s.manager.stop();
   });
 
@@ -366,7 +517,7 @@ describe('BarStreamManager', () => {
     expect(s.feed.subscribed.has('AAPL')).toBe(false);
     s.marketOpen.value = true;
     await s.manager.forceSync();
-    expect(s.fetchHistorical).toHaveBeenCalledTimes(2); // 1m + 5m for AAPL
+    expect(s.fetchHistorical).toHaveBeenCalledTimes(2);
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
     s.manager.stop();
   });
@@ -383,26 +534,50 @@ describe('BarStreamManager', () => {
     s.manager.stop();
   });
 
-  it('skips placing an order when symbol has open exposure', async () => {
+  it('skips placing an order when the model already has open exposure', async () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    (s.broker.getPositions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { symbol: 'AAPL', quantity: 100, avgPrice: 100 },
+    s.tradeRepo._seedActive(makeActiveContext('technical', 'AAPL', 'entry-1'));
+    (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'entry-1',
+        symbol: 'AAPL',
+        quantity: 100,
+        side: 'BUY',
+        type: 'Limit',
+        status: 'open',
+        createdAt: 't',
+      },
     ]);
-    s.evaluate.execute.mockResolvedValue(makeBuySignal('AAPL'));
+    stubSignal(s.model, makeBuySignal('AAPL'));
     await s.manager.start();
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
-    expect(s.evaluate.execute).not.toHaveBeenCalled();
+    expect(s.model.evaluate).not.toHaveBeenCalled();
     expect(s.placeBracket.execute).not.toHaveBeenCalled();
     s.manager.stop();
   });
 
-  it('places a bracket order on a buy signal and records context', async () => {
+  it('marks the trade context closed when no bracket order is still active', async () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    s.evaluate.execute.mockResolvedValue(makeBuySignal('AAPL'));
+    s.tradeRepo._seedActive(makeActiveContext('technical', 'AAPL', 'entry-1'));
+    // Broker reports no active orders for AAPL — the bracket is fully done.
+    (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    stubSignal(s.model, makeHoldSignal('AAPL'));
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
+    expect(s.tradeRepo._markedClosed).toContain('entry-1');
+    expect(s.model.evaluate).toHaveBeenCalledOnce();
+    s.manager.stop();
+  });
+
+  it('places a bracket order on a buy signal and records context tagged with the model', async () => {
+    const s = setup({
+      initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+    });
+    stubSignal(s.model, makeBuySignal('AAPL'));
     await s.manager.start();
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
     expect(s.placeBracket.execute).toHaveBeenCalledOnce();
@@ -416,6 +591,15 @@ describe('BarStreamManager', () => {
       takeProfitOffset: 0.35,
     });
     expect(s.recordContext.execute).toHaveBeenCalledOnce();
+    const recordArgs = s.recordContext.execute.mock.calls[0][0];
+    expect(recordArgs).toMatchObject({
+      model: 'technical',
+      bracket: {
+        entryOrderId: 'entry-AAPL',
+        stopOrderId: 'stop-AAPL',
+        takeProfitOrderId: 'tp-AAPL',
+      },
+    });
     s.manager.stop();
   });
 
@@ -425,55 +609,55 @@ describe('BarStreamManager', () => {
     });
     await s.manager.start();
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
-    expect(s.evaluate.execute).toHaveBeenCalledOnce();
+    expect(s.model.evaluate).toHaveBeenCalledOnce();
     expect(s.placeBracket.execute).not.toHaveBeenCalled();
     s.manager.stop();
   });
 
   it('drops the in-progress bucket from the bootstrap (1min and 5min)', async () => {
-    // Wall clock pinned at 13:38:00 (mid-period for the 5m bucket that opened
-    // at 13:35, and just past the close of the 1m bucket that opened at 13:37).
     const nowMs = Date.UTC(2026, 4, 7, 13, 38, 0);
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    // Replace setup()'s manager with one whose now() is pinned for deterministic
-    // gating against fixed-timestamp Twelve Data fixtures.
-    const manager = new BarStreamManager({
-      feed: s.feed,
-      historicalBars: { fetchHistoricalBars: s.fetchHistorical },
-      barRepo: s.barRepo,
-      watchlist: s.watchlist,
-      evaluate: s.evaluate as unknown as EvaluateDecision,
-      placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
-      recordTradeContext: s.recordContext as unknown as RecordTradeContext,
-      broker: s.broker,
-      marketHours: { isOpen: () => true },
-      metrics: s.metrics,
-      orderConfig: { quantity: 100, stopOffset: 0.2, takeProfitOffset: 0.35 },
-      bootstrapBars: 5,
-      syncIntervalMs: 60_000,
-      now: () => nowMs,
-    });
     s.fetchHistorical.mockImplementation(
       async ({ interval }: { symbol: string; interval: BarInterval }) => {
         if (interval === '1min') {
-          // bars at 13:35..13:38 — the 13:38 bar (closes 13:39) is partial at now=13:38:00
           return [
             bar('2026-05-07T13:35:00.000Z', 100),
             bar('2026-05-07T13:36:00.000Z', 101),
             bar('2026-05-07T13:37:00.000Z', 102),
-            bar('2026-05-07T13:38:00.000Z', 103), // partial
+            bar('2026-05-07T13:38:00.000Z', 103),
           ];
         }
-        // 5min: 13:25, 13:30, 13:35 — the 13:35 bucket (closes 13:40) is partial
         return [
           bar('2026-05-07T13:25:00.000Z', 100),
           bar('2026-05-07T13:30:00.000Z', 101),
-          bar('2026-05-07T13:35:00.000Z', 102), // partial
+          bar('2026-05-07T13:35:00.000Z', 102),
         ];
       },
     );
+    const manager = new BarStreamManager({
+      feed: s.feed,
+      historicalBars: { fetchHistoricalBars: s.fetchHistorical },
+      barRepo: s.barRepo,
+      strategies: [
+        {
+          name: 'technical',
+          model: s.model,
+          watchlist: s.watchlist,
+          orderConfig: DEFAULT_ORDER_CONFIG,
+        },
+      ],
+      placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
+      recordTradeContext: s.recordContext as unknown as RecordTradeContext,
+      tradeRepo: s.tradeRepo,
+      broker: s.broker,
+      marketHours: { isOpen: () => true },
+      metrics: s.metrics,
+      bootstrapBars: 5,
+      syncIntervalMs: 60_000,
+      now: () => nowMs,
+    });
     await manager.start();
     const cached1m = await s.barRepo.get('AAPL', '1min');
     const cached5m = await s.barRepo.get('AAPL', '5min');
@@ -499,13 +683,12 @@ describe('BarStreamManager', () => {
     s.manager.stop();
   });
 
-  it('unsubscribes and clears cache when a symbol disappears from the watchlist', async () => {
+  it('unsubscribes and clears cache when a symbol disappears from every watchlist', async () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
     await s.manager.start();
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
-    // Symbol fully removed from the watchlist (e.g. TTL expired in Redis).
     s.watchlist._remove('AAPL');
     await s.manager.forceSync();
     expect(s.feed.subscribed.has('AAPL')).toBe(false);
@@ -523,6 +706,133 @@ describe('BarStreamManager', () => {
     await s.manager.forceSync();
     expect(s.feed.subscribed.has('AAPL')).toBe(true);
     expect((await s.barRepo.get('AAPL', '1min')).length).toBeGreaterThan(0);
+    s.manager.stop();
+  });
+
+  // ---- multi-strategy ----
+
+  it('with two strategies sharing AAPL, both evaluate and place independent bracket orders', async () => {
+    const s = setup({
+      strategies: [
+        {
+          name: 'technical',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+          orderConfig: { quantity: 100, stopOffset: 0.2, takeProfitOffset: 0.35 },
+        },
+        {
+          name: 'meanRev',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+          orderConfig: { quantity: 50, stopOffset: 0.5, takeProfitOffset: 1.0 },
+        },
+      ],
+    });
+    stubSignal(s.strategies[0].model, makeBuySignal('AAPL'));
+    stubSignal(s.strategies[1].model, makeBuySignal('AAPL'));
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
+    expect(s.placeBracket.execute).toHaveBeenCalledTimes(2);
+    expect(s.placeBracket.execute.mock.calls[0][0]).toMatchObject({
+      quantity: 100,
+      stopOffset: 0.2,
+    });
+    expect(s.placeBracket.execute.mock.calls[1][0]).toMatchObject({
+      quantity: 50,
+      stopOffset: 0.5,
+    });
+    expect(s.recordContext.execute).toHaveBeenCalledTimes(2);
+    const models = s.recordContext.execute.mock.calls.map(
+      (c: unknown[]) => (c[0] as { model: string }).model,
+    );
+    expect(models).toEqual(['technical', 'meanRev']);
+    s.manager.stop();
+  });
+
+  it('only evaluates a strategy whose watchlist contains the symbol', async () => {
+    const s = setup({
+      strategies: [
+        {
+          name: 'technical',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+        },
+        {
+          name: 'meanRev',
+          initial: [{ symbol: 'MSFT', status: 'active', createdAt: 1 }],
+        },
+      ],
+    });
+    stubSignal(s.strategies[0].model, makeBuySignal('AAPL'));
+    stubSignal(s.strategies[1].model, makeBuySignal('AAPL'));
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
+    expect(s.strategies[0].model.evaluate).toHaveBeenCalledOnce();
+    expect(s.strategies[1].model.evaluate).not.toHaveBeenCalled();
+    expect(s.placeBracket.execute).toHaveBeenCalledOnce();
+    s.manager.stop();
+  });
+
+  it('exposure is tracked per model: A blocked, B places its own order on the same symbol', async () => {
+    const s = setup({
+      strategies: [
+        {
+          name: 'technical',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+        },
+        {
+          name: 'meanRev',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+        },
+      ],
+    });
+    s.tradeRepo._seedActive(
+      makeActiveContext('technical', 'AAPL', 'entry-tech'),
+    );
+    (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'entry-tech',
+        symbol: 'AAPL',
+        quantity: 100,
+        side: 'BUY',
+        type: 'Limit',
+        status: 'open',
+        createdAt: 't',
+      },
+    ]);
+    stubSignal(s.strategies[0].model, makeBuySignal('AAPL'));
+    stubSignal(s.strategies[1].model, makeBuySignal('AAPL'));
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
+    expect(s.strategies[0].model.evaluate).not.toHaveBeenCalled();
+    expect(s.strategies[1].model.evaluate).toHaveBeenCalledOnce();
+    expect(s.placeBracket.execute).toHaveBeenCalledOnce();
+    expect(s.recordContext.execute.mock.calls[0][0]).toMatchObject({
+      model: 'meanRev',
+    });
+    s.manager.stop();
+  });
+
+  it('keeps a symbol subscribed when it disappears from one watchlist but not the other', async () => {
+    const s = setup({
+      strategies: [
+        {
+          name: 'technical',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+        },
+        {
+          name: 'meanRev',
+          initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
+        },
+      ],
+    });
+    await s.manager.start();
+    expect(s.feed.subscribed.has('AAPL')).toBe(true);
+    s.strategies[0].watchlist._remove('AAPL');
+    await s.manager.forceSync();
+    // Still wanted by meanRev → stays subscribed.
+    expect(s.feed.subscribed.has('AAPL')).toBe(true);
+    s.strategies[1].watchlist._remove('AAPL');
+    await s.manager.forceSync();
+    // Now nobody wants it.
+    expect(s.feed.subscribed.has('AAPL')).toBe(false);
     s.manager.stop();
   });
 });

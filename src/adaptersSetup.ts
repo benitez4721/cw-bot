@@ -13,22 +13,31 @@ import { TechnicalDecisionModelAdapter } from './infrastructure/decision/Technic
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
+import type { DecisionStrategy } from './domain/decision/DecisionStrategy.js';
 
 const log = logger.child({ component: 'adaptersSetup' });
+
+export interface ConfiguredStrategy {
+  strategy: DecisionStrategy;
+  // The CW scanner config that feeds this strategy's watchlist. Each model has
+  // its own scanner instance so watchlists stay decoupled.
+  cwConfigId: string;
+  // Exposed so main.ts can wire the ScannerMonitor and the public watchlist
+  // endpoints to the same underlying repo instance.
+  watchlistRepo: RedisWatchlistRepository;
+}
 
 export interface Adapters {
   redis: Redis;
   metrics: PrometheusMetricsAdapter;
   broker: TradeStationBrokerAdapter;
-  watchlistRepo: RedisWatchlistRepository;
   tradeRepo: RedisTradeContextRepository;
   barRepo: RedisBarRepository;
-  indicators: LocalIndicatorAdapter;
-  decisionModel: TechnicalDecisionModelAdapter;
   marketHours: UsMarketHoursAdapter;
   marketFeed: PolygonMarketFeedAdapter;
   historicalBars: TwelveDataHistoricalBarsAdapter;
   scannerFeed: ChartsWatcherScannerFeedAdapter;
+  strategies: ConfiguredStrategy[];
 }
 
 export function setupAdapters(): Adapters {
@@ -53,14 +62,11 @@ export function setupAdapters(): Adapters {
     metrics,
   });
 
-  const watchlistRepo = new RedisWatchlistRepository(redis);
   const tradeRepo = new RedisTradeContextRepository(redis);
   const barRepo = new RedisBarRepository(redis);
 
   // Single TwelveDataClient instance — its rate limiter must be unique to stay
-  // under the 8 req/min free-tier cap. Today only the historical bootstrap
-  // adapter consumes it; keep it as the single chokepoint if a second
-  // Twelve Data adapter is added later.
+  // under the 8 req/min free-tier cap.
   const twelveDataClient = new TwelveDataClient({
     apiKey: env.TWELVEDATA_API_KEY!,
     baseUrl: env.TWELVEDATA_BASE_URL,
@@ -68,10 +74,6 @@ export function setupAdapters(): Adapters {
   });
 
   const indicators = new LocalIndicatorAdapter({ bars: barRepo });
-  const decisionModel = new TechnicalDecisionModelAdapter({
-    broker,
-    indicators,
-  });
   const marketHours = new UsMarketHoursAdapter();
   const marketFeed = new PolygonMarketFeedAdapter({
     apiKey: env.POLYGON_API_KEY!,
@@ -85,18 +87,35 @@ export function setupAdapters(): Adapters {
     apiKey: env.CW_API_KEY!,
   });
 
+  // Single strategy for now. Adding a second model means appending another
+  // entry here with its own watchlistRepo (different keyPrefix) and cwConfigId
+  // (read from CW_CONFIG_ID_<MODEL_UPPER>). No other call site changes.
+  const technicalWatchlist = new RedisWatchlistRepository(redis);
+  const technicalModel = new TechnicalDecisionModelAdapter({
+    broker,
+    indicators,
+  });
+  const technicalStrategy: ConfiguredStrategy = {
+    strategy: {
+      name: 'technical',
+      model: technicalModel,
+      watchlist: technicalWatchlist,
+      orderConfig: technicalModel.orderConfig,
+    },
+    cwConfigId: env.CW_CONFIG_ID!,
+    watchlistRepo: technicalWatchlist,
+  };
+
   return {
     redis,
     metrics,
     broker,
-    watchlistRepo,
     tradeRepo,
     barRepo,
-    indicators,
-    decisionModel,
     marketHours,
     marketFeed,
     historicalBars,
     scannerFeed,
+    strategies: [technicalStrategy],
   };
 }

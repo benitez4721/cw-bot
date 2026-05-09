@@ -12,7 +12,6 @@ import { brokerRoutes } from './infrastructure/http/brokerRoutes.js';
 import { healthRoutes } from './infrastructure/http/healthRoutes.js';
 import { metricsRoutes } from './infrastructure/http/metricsRoutes.js';
 import { registerAuthMiddleware } from './infrastructure/http/authMiddleware.js';
-import { EvaluateDecision } from './application/decision/EvaluateDecision.js';
 import { BarStreamManager } from './application/marketdata/BarStreamManager.js';
 import { GrafanaCloudWriter } from './infrastructure/metrics/GrafanaCloudWriter.js';
 import { Heartbeat } from './application/heartbeat/Heartbeat.js';
@@ -45,14 +44,13 @@ async function main() {
     redis,
     metrics,
     broker,
-    watchlistRepo,
     tradeRepo,
     barRepo,
-    decisionModel,
     marketHours,
     marketFeed,
     historicalBars,
     scannerFeed,
+    strategies,
   } = setupAdapters();
 
   registerAuthMiddleware(server, {
@@ -60,31 +58,34 @@ async function main() {
     protectedPrefix: '/api/',
   });
 
-  const scanner = new ScannerMonitor({
-    feed: scannerFeed,
-    repository: watchlistRepo,
-    metrics,
-    configId: env.CW_CONFIG_ID!,
-  });
+  const scanners = strategies.map(
+    (s) =>
+      new ScannerMonitor({
+        feed: scannerFeed,
+        repository: s.watchlistRepo,
+        metrics,
+        configId: s.cwConfigId,
+      }),
+  );
 
-  const evaluate = new EvaluateDecision(decisionModel);
   const placeBracketOrder = new PlaceBracketOrder(broker);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
-  const listWatchlist = new ListWatchlist(watchlistRepo);
+  // Public watchlist endpoints expose the first strategy's watchlist for now.
+  // When a second strategy is added, expose a per-model lookup instead.
+  const listWatchlist = new ListWatchlist(strategies[0].watchlistRepo);
   const getOrders = new GetOrders(broker, tradeRepo);
 
   const barStream = new BarStreamManager({
     feed: marketFeed,
     historicalBars,
     barRepo,
-    watchlist: watchlistRepo,
-    evaluate,
+    strategies: strategies.map((s) => s.strategy),
     placeBracketOrder,
     recordTradeContext,
+    tradeRepo,
     broker,
     marketHours,
     metrics,
-    orderConfig: decisionModel.orderConfig,
     bootstrapBars: env.BOOTSTRAP_BARS,
   });
 
@@ -108,13 +109,15 @@ async function main() {
       })
     : null;
 
-  try {
-    await scanner.start();
-  } catch (err) {
-    log.error(
-      { err: err instanceof Error ? err.message : String(err) },
-      'scanner monitor start failed (degraded mode — adapter will keep retrying)',
-    );
+  for (const scanner of scanners) {
+    try {
+      await scanner.start();
+    } catch (err) {
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'scanner monitor start failed (degraded mode — adapter will keep retrying)',
+      );
+    }
   }
   try {
     await barStream.start();
@@ -128,7 +131,7 @@ async function main() {
   heartbeat?.start();
 
   await server.register(healthRoutes, {
-    scannerMonitor: scanner,
+    scannerMonitor: scanners[0],
     marketHours,
     redis,
     broker,
@@ -141,12 +144,12 @@ async function main() {
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
 
   const decisionStatus = env.DECISION_ENABLED
-    ? `${decisionModel.name} via barStream (${barStream.getStatus()})`
+    ? `${strategies.map((s) => s.strategy.name).join(',')} via barStream (${barStream.getStatus()})`
     : 'disabled';
   log.info(
     {
       port: env.PORT,
-      cw: scanner.getStatus(),
+      cw: scanners.map((s) => s.getStatus()),
       decision: decisionStatus,
       grafana: grafana ? 'enabled' : 'disabled',
       heartbeat: heartbeat ? 'enabled' : 'disabled',
@@ -160,7 +163,7 @@ async function main() {
       heartbeat?.stop();
       grafana?.stop();
       barStream.stop();
-      scanner.stop();
+      for (const scanner of scanners) scanner.stop();
       await server.close();
       await redis.quit();
     } catch (err) {
