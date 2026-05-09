@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { OrderResult } from '../../domain/broker/BrokerTypes.js';
+import type { BracketOrderResult } from '../../domain/broker/BrokerTypes.js';
 import type { DecisionSignal } from '../../domain/decision/DecisionTypes.js';
 import type { TechnicalSnapshot } from '../../infrastructure/decision/TechnicalDecisionModelAdapter.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
@@ -205,9 +205,11 @@ function setup(opts: { initial?: WatchedSymbol[] } = {}): Setup {
   const evaluate = { execute: vi.fn(async () => makeHoldSignal()) };
   const placeBracket = {
     execute: vi.fn(
-      async (): Promise<OrderResult> => ({
-        orderId: 'order-1',
+      async (): Promise<BracketOrderResult> => ({
         status: 'open',
+        entryOrderId: 'order-1',
+        stopOrderId: 'order-1-stop',
+        takeProfitOrderId: 'order-1-tp',
       }),
     ),
   };

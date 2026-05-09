@@ -348,26 +348,41 @@ export class BarStreamManager {
       });
       this.metrics.recordOrderResult(result.status);
       log.info(
-        { symbol, orderId: result.orderId, status: result.status },
+        {
+          symbol,
+          entryOrderId: result.entryOrderId,
+          stopOrderId: result.stopOrderId,
+          takeProfitOrderId: result.takeProfitOrderId,
+          status: result.status,
+        },
         'bracket placed',
       );
 
       if (
-        result.orderId &&
+        result.entryOrderId &&
         result.status !== 'rejected' &&
         result.status !== 'cancelled' &&
         result.status !== 'expired'
       ) {
         try {
           await this.recordTradeContext.execute({
-            orderId: result.orderId,
+            model: 'technical',
+            bracket: {
+              entryOrderId: result.entryOrderId,
+              stopOrderId: result.stopOrderId,
+              takeProfitOrderId: result.takeProfitOrderId,
+            },
             signal,
             evalStart,
             evalEnd,
           });
         } catch (err) {
           log.warn(
-            { symbol, orderId: result.orderId, err: errMsg(err) },
+            {
+              symbol,
+              entryOrderId: result.entryOrderId,
+              err: errMsg(err),
+            },
             'failed to persist trade context',
           );
         }

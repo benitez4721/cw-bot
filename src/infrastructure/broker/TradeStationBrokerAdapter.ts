@@ -4,8 +4,8 @@ import type {
 } from '../../domain/broker/BrokerPort.js';
 import type {
   BracketOrderInput,
+  BracketOrderResult,
   Order,
-  OrderResult,
   OrderSide,
   OrderStatus,
   OrderType,
@@ -119,7 +119,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     };
   }
 
-  async placeBracketOrder(input: BracketOrderInput): Promise<OrderResult> {
+  async placeBracketOrder(input: BracketOrderInput): Promise<BracketOrderResult> {
     // Stop/TP precios calculados con entryLimitPrice como proxy del fill.
     // Si llena mejor, los offsets terminan asimétricos en cents — aceptado para v1.
     const cost = round2(input.entryLimitPrice);
@@ -176,20 +176,33 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       body: payload,
     });
 
-    const first = response.Orders?.[0];
-    if (!first || first.Error === 'FAILED') {
+    const orders = response.Orders ?? [];
+    const entry = orders[0];
+    const stop = orders[1];
+    const takeProfit = orders[2];
+    const failed = orders.find((o) => o.Error === 'FAILED');
+
+    if (!entry || !stop || !takeProfit || failed) {
       return {
-        orderId: first?.OrderID ?? '',
         status: 'rejected',
-        message: first?.Message,
-        error: first?.Error ?? response.Errors?.[0]?.Error ?? 'Unknown error',
+        entryOrderId: entry?.OrderID ?? '',
+        stopOrderId: stop?.OrderID ?? '',
+        takeProfitOrderId: takeProfit?.OrderID ?? '',
+        message: failed?.Message ?? entry?.Message,
+        error:
+          failed?.Error ??
+          entry?.Error ??
+          response.Errors?.[0]?.Error ??
+          'Unknown error',
       };
     }
 
     return {
-      orderId: first.OrderID ?? '',
-      status: mapStatus(first.Status),
-      message: first.Message,
+      status: mapStatus(entry.Status),
+      entryOrderId: entry.OrderID ?? '',
+      stopOrderId: stop.OrderID ?? '',
+      takeProfitOrderId: takeProfit.OrderID ?? '',
+      message: entry.Message,
     };
   }
 

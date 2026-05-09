@@ -1,7 +1,7 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type {
   BracketOrderInput,
-  OrderResult,
+  BracketOrderResult,
   OrderSide,
 } from '../../domain/broker/BrokerTypes.js';
 
@@ -10,7 +10,7 @@ const VALID_SIDES: OrderSide[] = ['BUY', 'SELL'];
 export class PlaceBracketOrder {
   constructor(private readonly broker: BrokerPort) {}
 
-  async execute(input: BracketOrderInput): Promise<OrderResult> {
+  async execute(input: BracketOrderInput): Promise<BracketOrderResult> {
     if (!input.symbol) throw new Error('symbol is required');
     if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
       throw new Error('quantity must be a positive number');

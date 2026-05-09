@@ -1,7 +1,7 @@
 import type {
   BracketOrderInput,
+  BracketOrderResult,
   Order,
-  OrderResult,
   Position,
   Quote,
 } from './BrokerTypes.js';
@@ -11,7 +11,7 @@ export interface GetQuoteInput {
 }
 
 export interface BrokerPort {
-  placeBracketOrder(input: BracketOrderInput): Promise<OrderResult>;
+  placeBracketOrder(input: BracketOrderInput): Promise<BracketOrderResult>;
   getPositions(): Promise<Position[]>;
   getOrders({ symbol }: { symbol?: string }): Promise<Order[]>;
   getQuote(input: GetQuoteInput): Promise<Quote>;

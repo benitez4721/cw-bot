@@ -56,4 +56,13 @@ export interface BracketOrderInput {
   takeProfitOffset: number;
 }
 
+export interface BracketOrderResult {
+  status: OrderStatus;
+  entryOrderId: string;
+  stopOrderId: string;
+  takeProfitOrderId: string;
+  message?: string;
+  error?: string;
+}
+
 export type OrderWithContext = Order & { context?: TradeContext };
