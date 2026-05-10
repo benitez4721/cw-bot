@@ -7,7 +7,7 @@ import type {
   DecisionSignal,
   OrderConfig,
 } from '../../domain/decision/DecisionTypes.js';
-import type { TechnicalSnapshot } from '../../infrastructure/decision/TechnicalDecisionModelAdapter.js';
+import type { MacdM1CrossOverSnapshot } from '../../infrastructure/decision/MacdM1CrossOverDecisionModelAdapter.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
 import type {
@@ -42,8 +42,8 @@ function bar(timestampUtc: string, close = 100, volume = 1000): Bar {
   };
 }
 
-function makeBuySignal(symbol = 'AAPL'): DecisionSignal<TechnicalSnapshot> {
-  const snapshot: TechnicalSnapshot = {
+function makeBuySignal(symbol = 'AAPL'): DecisionSignal<MacdM1CrossOverSnapshot> {
+  const snapshot: MacdM1CrossOverSnapshot = {
     symbol,
     quote: { symbol, last: 100, bid: 99.9, ask: 100.1, timestamp: 't' },
     macd5min: { macd: 0.1, signal: 0.05, histogram: 0.05, timestamp: 't' },
@@ -63,8 +63,8 @@ function makeBuySignal(symbol = 'AAPL'): DecisionSignal<TechnicalSnapshot> {
   };
 }
 
-function makeHoldSignal(symbol = 'AAPL'): DecisionSignal<TechnicalSnapshot> {
-  const snapshot: TechnicalSnapshot = {
+function makeHoldSignal(symbol = 'AAPL'): DecisionSignal<MacdM1CrossOverSnapshot> {
+  const snapshot: MacdM1CrossOverSnapshot = {
     symbol,
     quote: { symbol, last: 100, bid: 99.9, ask: 100.1, timestamp: 't' },
     macd5min: { macd: 0, signal: 0, histogram: 0, timestamp: 't' },
@@ -239,11 +239,11 @@ interface StrategyFixture {
   name: string;
   initial?: WatchedSymbol[];
   orderConfig?: OrderConfig;
-  evaluateImpl?: () => Promise<DecisionSignal<TechnicalSnapshot>>;
+  evaluateImpl?: () => Promise<DecisionSignal<MacdM1CrossOverSnapshot>>;
 }
 
 interface MockModel
-  extends DecisionModelPort<TechnicalSnapshot> {
+  extends DecisionModelPort<MacdM1CrossOverSnapshot> {
   buildSnapshot: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
 }
@@ -282,7 +282,7 @@ function setup(
   opts: { initial?: WatchedSymbol[]; strategies?: StrategyFixture[] } = {},
 ): Setup {
   const fixtures: StrategyFixture[] = opts.strategies ?? [
-    { name: 'technical', initial: opts.initial ?? [] },
+    { name: 'MacdM1CrossOver', initial: opts.initial ?? [] },
   ];
 
   const feed = createFakeFeed();
@@ -345,12 +345,12 @@ function setup(
       name: f.name,
       orderConfig,
       buildSnapshot: vi.fn(async () => (await evaluateImpl()).snapshot),
-      evaluate: vi.fn((input: { snapshot: TechnicalSnapshot }) => {
+      evaluate: vi.fn((input: { snapshot: MacdM1CrossOverSnapshot }) => {
         // Return either the live signal stub configured per test, or a hold
         // built from the snapshot the model itself just produced.
         const snapshot = input.snapshot;
         return { action: 'hold', checks: [], snapshot } satisfies ReturnType<
-          DecisionModelPort<TechnicalSnapshot>['evaluate']
+          DecisionModelPort<MacdM1CrossOverSnapshot>['evaluate']
         >;
       }),
     };
@@ -411,7 +411,7 @@ function setup(
 // next `evaluate` call (and on any subsequent ones).
 function stubSignal(
   model: MockModel,
-  signal: DecisionSignal<TechnicalSnapshot>,
+  signal: DecisionSignal<MacdM1CrossOverSnapshot>,
 ): void {
   model.buildSnapshot.mockResolvedValue(signal.snapshot);
   model.evaluate.mockReturnValue(signal);
@@ -549,7 +549,7 @@ describe('BarStreamManager', () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    s.tradeRepo._seedActive(makeActiveContext('technical', 'AAPL', 'entry-1'));
+    s.tradeRepo._seedActive(makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-1'));
     (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'entry-1',
@@ -573,7 +573,7 @@ describe('BarStreamManager', () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    s.tradeRepo._seedActive(makeActiveContext('technical', 'AAPL', 'entry-1'));
+    s.tradeRepo._seedActive(makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-1'));
     // Broker reports no active orders for AAPL — the bracket is fully done.
     (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     stubSignal(s.model, makeHoldSignal('AAPL'));
@@ -581,7 +581,7 @@ describe('BarStreamManager', () => {
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
     expect(s.tradeRepo._items.get('entry-1')?.status).toBe('closed');
     expect(
-      await s.tradeRepo.listActiveByModelAndSymbol('technical', 'AAPL'),
+      await s.tradeRepo.listActiveByModelAndSymbol('MacdM1CrossOver', 'AAPL'),
     ).toHaveLength(0);
     expect(s.model.evaluate).toHaveBeenCalledOnce();
     s.manager.stop();
@@ -607,7 +607,7 @@ describe('BarStreamManager', () => {
     expect(s.recordContext.execute).toHaveBeenCalledOnce();
     const recordArgs = s.recordContext.execute.mock.calls[0][0];
     expect(recordArgs).toMatchObject({
-      model: 'technical',
+      model: 'MacdM1CrossOver',
       bracket: {
         entryOrderId: 'entry-AAPL',
         stopOrderId: 'stop-AAPL',
@@ -656,7 +656,7 @@ describe('BarStreamManager', () => {
       barRepo: s.barRepo,
       strategies: [
         {
-          name: 'technical',
+          name: 'MacdM1CrossOver',
           model: s.model,
           watchlist: s.watchlist,
           orderConfig: DEFAULT_ORDER_CONFIG,
@@ -732,7 +732,7 @@ describe('BarStreamManager', () => {
     const s = setup({
       strategies: [
         {
-          name: 'technical',
+          name: 'MacdM1CrossOver',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
           orderConfig: { quantity: 100, stopOffset: 0.2, takeProfitOffset: 0.35 },
         },
@@ -760,7 +760,7 @@ describe('BarStreamManager', () => {
     const models = s.recordContext.execute.mock.calls.map(
       (c: unknown[]) => (c[0] as { model: string }).model,
     );
-    expect(models).toEqual(['technical', 'meanRev']);
+    expect(models).toEqual(['MacdM1CrossOver', 'meanRev']);
     s.manager.stop();
   });
 
@@ -768,7 +768,7 @@ describe('BarStreamManager', () => {
     const s = setup({
       strategies: [
         {
-          name: 'technical',
+          name: 'MacdM1CrossOver',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
         },
         {
@@ -791,7 +791,7 @@ describe('BarStreamManager', () => {
     const s = setup({
       strategies: [
         {
-          name: 'technical',
+          name: 'MacdM1CrossOver',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
         },
         {
@@ -801,7 +801,7 @@ describe('BarStreamManager', () => {
       ],
     });
     s.tradeRepo._seedActive(
-      makeActiveContext('technical', 'AAPL', 'entry-tech'),
+      makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-tech'),
     );
     (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -831,7 +831,7 @@ describe('BarStreamManager', () => {
     const s = setup({
       strategies: [
         {
-          name: 'technical',
+          name: 'MacdM1CrossOver',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
         },
         {

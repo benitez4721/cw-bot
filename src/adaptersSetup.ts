@@ -9,7 +9,7 @@ import { RedisBarRepository } from './infrastructure/marketdata/RedisBarReposito
 import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/TwelveDataHistoricalBarsAdapter.js';
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
-import { TechnicalDecisionModelAdapter } from './infrastructure/decision/TechnicalDecisionModelAdapter.js';
+import { MacdM1CrossOverDecisionModelAdapter } from './infrastructure/decision/MacdM1CrossOverDecisionModelAdapter.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
@@ -90,20 +90,20 @@ export function setupAdapters(): Adapters {
   // Single strategy for now. Adding a second model means appending another
   // entry here with its own watchlistRepo (different keyPrefix) and cwConfigId
   // (read from CW_CONFIG_ID_<MODEL_UPPER>). No other call site changes.
-  const technicalWatchlist = new RedisWatchlistRepository(redis);
-  const technicalModel = new TechnicalDecisionModelAdapter({
+  const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
+  const macdM1CrossOverModel = new MacdM1CrossOverDecisionModelAdapter({
     broker,
     indicators,
   });
-  const technicalStrategy: ConfiguredStrategy = {
+  const macdM1CrossOverStrategy: ConfiguredStrategy = {
     strategy: {
-      name: 'technical',
-      model: technicalModel,
-      watchlist: technicalWatchlist,
-      orderConfig: technicalModel.orderConfig,
+      name: 'MacdM1CrossOver',
+      model: macdM1CrossOverModel,
+      watchlist: macdM1CrossOverWatchlist,
+      orderConfig: macdM1CrossOverModel.orderConfig,
     },
     cwConfigId: env.CW_CONFIG_ID!,
-    watchlistRepo: technicalWatchlist,
+    watchlistRepo: macdM1CrossOverWatchlist,
   };
 
   return {
@@ -116,6 +116,6 @@ export function setupAdapters(): Adapters {
     marketFeed,
     historicalBars,
     scannerFeed,
-    strategies: [technicalStrategy],
+    strategies: [macdM1CrossOverStrategy],
   };
 }

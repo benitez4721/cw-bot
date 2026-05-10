@@ -13,7 +13,7 @@ import type {
 import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
 import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
 
-export interface TechnicalSnapshot {
+export interface MacdM1CrossOverSnapshot {
   symbol: string;
   quote: Quote;
   macd5min: MACD;
@@ -21,17 +21,17 @@ export interface TechnicalSnapshot {
   vwap1min: VWAP;
 }
 
-export interface TechnicalDecisionModelAdapterParams extends OrderConfig {
+export interface MacdM1CrossOverDecisionModelAdapterParams extends OrderConfig {
   entryOffsetBps: number;
   minHistogram1minCrossoverDelta: number;
 }
 
-export interface TechnicalDecisionModelAdapterDeps {
+export interface MacdM1CrossOverDecisionModelAdapterDeps {
   broker: BrokerPort;
   indicators: IndicatorPort;
 }
 
-const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
+const DEFAULT_PARAMS: MacdM1CrossOverDecisionModelAdapterParams = {
   quantity: 2000,
   entryOffsetBps: 10,
   stopOffset: 0.2,
@@ -39,18 +39,18 @@ const DEFAULT_PARAMS: TechnicalDecisionModelAdapterParams = {
   minHistogram1minCrossoverDelta: 0.002,
 };
 
-export class TechnicalDecisionModelAdapter
-  implements DecisionModelPort<TechnicalSnapshot>
+export class MacdM1CrossOverDecisionModelAdapter
+  implements DecisionModelPort<MacdM1CrossOverSnapshot>
 {
-  readonly name = 'technical';
+  readonly name = 'MacdM1CrossOver';
   readonly orderConfig: OrderConfig;
-  private readonly params: TechnicalDecisionModelAdapterParams;
+  private readonly params: MacdM1CrossOverDecisionModelAdapterParams;
   private readonly broker: BrokerPort;
   private readonly indicators: IndicatorPort;
 
   constructor(
-    deps: TechnicalDecisionModelAdapterDeps,
-    params: Partial<TechnicalDecisionModelAdapterParams> = {},
+    deps: MacdM1CrossOverDecisionModelAdapterDeps,
+    params: Partial<MacdM1CrossOverDecisionModelAdapterParams> = {},
   ) {
     this.broker = deps.broker;
     this.indicators = deps.indicators;
@@ -64,7 +64,7 @@ export class TechnicalDecisionModelAdapter
 
   async buildSnapshot({
     symbol,
-  }: BuildSnapshotInput): Promise<TechnicalSnapshot> {
+  }: BuildSnapshotInput): Promise<MacdM1CrossOverSnapshot> {
     const [quote, macd5min, macd1minSeries, vwap1min] = await Promise.all([
       this.broker.getQuote({ symbol }),
       this.indicators.getMACD({ symbol, interval: '5min' }),
@@ -76,7 +76,7 @@ export class TechnicalDecisionModelAdapter
 
   evaluate({
     snapshot,
-  }: EvaluateInput<TechnicalSnapshot>): DecisionSignal<TechnicalSnapshot> {
+  }: EvaluateInput<MacdM1CrossOverSnapshot>): DecisionSignal<MacdM1CrossOverSnapshot> {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
@@ -93,7 +93,7 @@ export class TechnicalDecisionModelAdapter
     };
   }
 
-  private runChecks(s: TechnicalSnapshot): RuleCheck[] {
+  private runChecks(s: MacdM1CrossOverSnapshot): RuleCheck[] {
     const m5 = s.macd5min;
     const m1 = s.macd1minSeries;
     const current = m1[0];
