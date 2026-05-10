@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
 import { TradeStationBrokerAdapter } from './infrastructure/broker/TradeStationBrokerAdapter.js';
+import { TradeStationClient } from './infrastructure/tradestation/TradeStationClient.js';
 import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
@@ -55,7 +56,7 @@ export function setupAdapters(): Adapters {
     log.warn({ err: err.message }, 'redis error');
   });
 
-  const broker = new TradeStationBrokerAdapter({
+  const tradeStationClient = new TradeStationClient({
     clientId: env.TRADESTATION_CLIENT_ID!,
     clientSecret: env.TRADESTATION_CLIENT_SECRET || '',
     refreshToken: env.TRADESTATION_REFRESH_TOKEN!,
@@ -65,6 +66,8 @@ export function setupAdapters(): Adapters {
     signinUrl: env.TRADESTATION_SIGNIN_URL,
     metrics,
   });
+
+  const broker = new TradeStationBrokerAdapter({ client: tradeStationClient });
 
   const tradeRepo = new RedisTradeContextRepository(redis);
   const barRepo = new RedisBarRepository(redis);

@@ -8,39 +8,17 @@ import type {
   BracketOrderResult,
   Order,
   OrderSide,
-  OrderStatus,
-  OrderType,
   Position,
   Quote,
 } from '../../domain/broker/BrokerTypes.js';
-import type {
-  MetricsPort,
-  TsErrorType,
-} from '../../domain/metrics/MetricsPort.js';
-import { logger } from '../logging/logger.js';
-
-const log = logger.child({ component: 'TradeStationBrokerAdapter' });
-
-export interface TokenStatus {
-  cached: boolean;
-  expiresInMs: number;
-}
-
-interface TradeStationConfig {
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
-  accountId: string;
-  simBaseUrl: string;
-  liveBaseUrl: string;
-  signinUrl: string;
-  metrics?: MetricsPort;
-}
-
-interface TokenCache {
-  accessToken: string;
-  expiresAt: number;
-}
+import type { TokenStatus } from '../tradestation/TradeStationClient.js';
+import type { TradeStationClient } from '../tradestation/TradeStationClient.js';
+import {
+  mapOrderType,
+  mapSide,
+  mapStatus,
+  parseNumber,
+} from '../tradestation/tradeStationMapping.js';
 
 interface TsPosition {
   AccountID: string;
@@ -99,25 +77,19 @@ interface TsPlaceOrderResponse {
   Errors?: Array<{ AccountID?: string; Error?: string; Message?: string }>;
 }
 
-const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
+export interface TradeStationBrokerAdapterOptions {
+  client: TradeStationClient;
+}
 
 export class TradeStationBrokerAdapter implements BrokerPort {
-  private readonly config: TradeStationConfig;
-  private readonly metrics?: MetricsPort;
-  private tokenCache: TokenCache | null = null;
-  private refreshPromise: Promise<string> | null = null;
+  private readonly client: TradeStationClient;
 
-  constructor(config: TradeStationConfig) {
-    this.config = config;
-    this.metrics = config.metrics;
+  constructor(options: TradeStationBrokerAdapterOptions) {
+    this.client = options.client;
   }
 
   tokenStatus(): TokenStatus {
-    if (!this.tokenCache) return { cached: false, expiresInMs: 0 };
-    return {
-      cached: true,
-      expiresInMs: Math.max(0, this.tokenCache.expiresAt - Date.now()),
-    };
+    return this.client.tokenStatus();
   }
 
   async placeBracketOrder(input: BracketOrderInput): Promise<BracketOrderResult> {
@@ -134,8 +106,9 @@ export class TradeStationBrokerAdapter implements BrokerPort {
         ? round2(cost + input.takeProfitOffset)
         : round2(cost - input.takeProfitOffset);
 
+    const accountId = this.client.accountId();
     const exitLeg = {
-      AccountID: this.config.accountId,
+      AccountID: accountId,
       Symbol: input.symbol,
       Quantity: String(input.quantity),
       TradeAction: exitSide,
@@ -144,7 +117,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     };
 
     const payload: Record<string, unknown> = {
-      AccountID: this.config.accountId,
+      AccountID: accountId,
       Symbol: input.symbol,
       Quantity: String(input.quantity),
       OrderType: 'Limit',
@@ -171,7 +144,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       ],
     };
 
-    const response = await this.request<TsPlaceOrderResponse>({
+    const response = await this.client.request<TsPlaceOrderResponse>({
       method: 'POST',
       path: '/v3/orderexecution/orders',
       body: payload,
@@ -208,8 +181,8 @@ export class TradeStationBrokerAdapter implements BrokerPort {
   }
 
   async getPositions(): Promise<Position[]> {
-    const account = encodeURIComponent(this.config.accountId);
-    const response = await this.request<{ Positions?: TsPosition[] }>({
+    const account = encodeURIComponent(this.client.accountId());
+    const response = await this.client.request<{ Positions?: TsPosition[] }>({
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/positions`,
     });
@@ -224,12 +197,12 @@ export class TradeStationBrokerAdapter implements BrokerPort {
   }
 
   async getOrders({ symbol }: { symbol?: string }): Promise<Order[]> {
-    const account = encodeURIComponent(this.config.accountId);
+    const account = encodeURIComponent(this.client.accountId());
     const path = symbol
       ? `/v3/brokerage/accounts/${account}/orders?Symbol=${encodeURIComponent(symbol)}`
       : `/v3/brokerage/accounts/${account}/orders`;
 
-    const response = await this.request<{ Orders?: TsOrder[] }>({
+    const response = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
       path,
     });
@@ -241,7 +214,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     orderId,
     stopPrice,
   }: ReplaceStopPriceInput): Promise<void> {
-    await this.request<unknown>({
+    await this.client.request<unknown>({
       method: 'PUT',
       path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
       body: { StopPrice: String(round2(stopPrice)) },
@@ -249,7 +222,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
   }
 
   async getQuote({ symbol }: GetQuoteInput): Promise<Quote> {
-    const response = await this.request<TsQuoteResponse>({
+    const response = await this.client.request<TsQuoteResponse>({
       method: 'GET',
       path: `/v3/marketdata/quotes/${encodeURIComponent(symbol)}`,
     });
@@ -272,191 +245,10 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       timestamp: first.TradeTime ?? new Date().toISOString(),
     };
   }
-
-  private apiBase(): string {
-    return this.config.accountId.startsWith('SIM')
-      ? this.config.simBaseUrl
-      : this.config.liveBaseUrl;
-  }
-
-  private async getAccessToken(): Promise<string> {
-    const now = Date.now();
-    if (
-      this.tokenCache &&
-      this.tokenCache.expiresAt - TOKEN_REFRESH_MARGIN_MS > now
-    ) {
-      return this.tokenCache.accessToken;
-    }
-    if (this.refreshPromise) {
-      return this.refreshPromise;
-    }
-    this.refreshPromise = this.refreshSession().finally(() => {
-      this.refreshPromise = null;
-    });
-    return this.refreshPromise;
-  }
-
-  private async refreshSession(): Promise<string> {
-    const tokenUrl = `${this.config.signinUrl}/oauth/token`;
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: this.config.clientId,
-      client_secret: this.config.clientSecret,
-      refresh_token: this.config.refreshToken,
-    });
-
-    try {
-      const res = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-      });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        this.metrics?.recordOauthRefresh('failure');
-        throw new Error(
-          `[TradeStation] refresh failed: HTTP ${res.status} ${text}`,
-        );
-      }
-
-      const data = (await res.json()) as {
-        access_token: string;
-        expires_in: number;
-      };
-      if (!data.access_token) {
-        this.metrics?.recordOauthRefresh('failure');
-        throw new Error('[TradeStation] refresh response missing access_token');
-      }
-
-      this.tokenCache = {
-        accessToken: data.access_token,
-        expiresAt: Date.now() + data.expires_in * 1000,
-      };
-      this.metrics?.recordOauthRefresh('success');
-      log.info({ expiresInSec: data.expires_in }, 'refreshed access token');
-      return this.tokenCache.accessToken;
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        !err.message.startsWith('[TradeStation] refresh')
-      ) {
-        this.metrics?.recordOauthRefresh('failure');
-      }
-      throw err;
-    }
-  }
-
-  private async request<T>({
-    method,
-    path,
-    body,
-  }: {
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-    path: string;
-    body?: unknown;
-  }): Promise<T> {
-    let token: string;
-    try {
-      token = await this.getAccessToken();
-    } catch (err) {
-      this.metrics?.recordTsRequest(0, 'auth');
-      throw err;
-    }
-    const url = this.apiBase() + path;
-
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    };
-    if (body !== undefined) {
-      headers['content-type'] = 'application/json';
-    }
-
-    const startedAt = Date.now();
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method,
-        headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-    } catch (err) {
-      this.metrics?.recordTsRequest(Date.now() - startedAt, 'network');
-      throw err;
-    }
-
-    const text = await res.text();
-    let parsed: unknown = null;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = text;
-      }
-    }
-
-    if (!res.ok) {
-      const errorType: TsErrorType =
-        res.status >= 500 ? 'http_5xx' : 'http_4xx';
-      this.metrics?.recordTsRequest(Date.now() - startedAt, errorType);
-      log.error({ status: res.status, method, path, body: text }, 'http error');
-      throw new Error(`TradeStation API error: HTTP ${res.status}`);
-    }
-
-    this.metrics?.recordTsRequest(Date.now() - startedAt);
-    return parsed as T;
-  }
 }
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
-}
-
-function parseNumber(value: string | number | undefined | null): number {
-  if (value === undefined || value === null || value === '') return 0;
-  const n = typeof value === 'number' ? value : parseFloat(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function mapStatus(code: string | undefined): OrderStatus {
-  switch (code) {
-    case 'ACK':
-    case 'PND':
-      return 'pending';
-    case 'OPN':
-      return 'open';
-    case 'FLL':
-      return 'filled';
-    case 'FPR':
-      return 'partiallyFilled';
-    case 'CAN':
-    case 'OUT':
-      return 'cancelled';
-    case 'REJ':
-    case 'BRO':
-      return 'rejected';
-    case 'EXP':
-      return 'expired';
-    default:
-      return 'pending';
-  }
-}
-
-function mapOrderType(value: string | undefined): OrderType {
-  switch (value) {
-    case 'Limit':
-      return 'Limit';
-    case 'StopMarket':
-      return 'StopMarket';
-    case 'StopLimit':
-      return 'StopLimit';
-    default:
-      return 'Market';
-  }
-}
-
-function mapSide(value: string | undefined): OrderSide {
-  return value === 'Sell' || value === 'SELL' ? 'SELL' : 'BUY';
 }
 
 function toOrder(o: TsOrder): Order {
