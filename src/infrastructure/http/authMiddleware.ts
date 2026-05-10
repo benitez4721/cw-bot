@@ -44,10 +44,20 @@ function isProtected(url: string, prefix: string): boolean {
 
 function extractBearer(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
-  if (!header) return null;
-  const [scheme, token] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
-  return token;
+  if (header) {
+    const [scheme, token] = header.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token) return token;
+  }
+  // SSE fallback: EventSource del browser no soporta headers custom.
+  // Aceptamos ?token=... ÚNICAMENTE en /api/broker/stream/*; el resto de
+  // /api/* sigue exigiendo Authorization header.
+  const path = request.url.split('?')[0];
+  if (path.startsWith('/api/broker/stream/')) {
+    const parsed = new URL(request.url, 'http://placeholder');
+    const token = parsed.searchParams.get('token');
+    if (token) return token;
+  }
+  return null;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
