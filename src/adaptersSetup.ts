@@ -10,6 +10,10 @@ import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/Twe
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
 import { MacdM1CrossOverDecisionModelAdapter } from './infrastructure/decision/MacdM1CrossOverDecisionModelAdapter.js';
+import {
+  SUPER_CW_CONFIG_ID,
+  SuperDecisionModelAdapter,
+} from './infrastructure/decision/SuperDecisionModelAdapter.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
@@ -87,9 +91,10 @@ export function setupAdapters(): Adapters {
     apiKey: env.CW_API_KEY!,
   });
 
-  // Single strategy for now. Adding a second model means appending another
-  // entry here with its own watchlistRepo (different keyPrefix) and cwConfigId
-  // (read from CW_CONFIG_ID_<MODEL_UPPER>). No other call site changes.
+  // Each strategy owns its own watchlist (separate Redis keyspace via
+  // keyPrefix) and points to its own CW scanner. The Super model's config_id
+  // is exported as a constant from its adapter (it's part of the model's
+  // definition); MacdM1CrossOver's stays in env for now.
   const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
   const macdM1CrossOverModel = new MacdM1CrossOverDecisionModelAdapter({
     broker,
@@ -106,6 +111,22 @@ export function setupAdapters(): Adapters {
     watchlistRepo: macdM1CrossOverWatchlist,
   };
 
+  const superWatchlist = new RedisWatchlistRepository(redis, {
+    keyPrefix: 'cw:wl:super',
+  });
+  const superModel = new SuperDecisionModelAdapter({ broker, indicators });
+  const superStrategy: ConfiguredStrategy = {
+    strategy: {
+      name: 'Super',
+      model: superModel,
+      watchlist: superWatchlist,
+      orderConfig: superModel.orderConfig,
+      trailToBreakEvenAtProfit: 0.005,
+    },
+    cwConfigId: SUPER_CW_CONFIG_ID,
+    watchlistRepo: superWatchlist,
+  };
+
   return {
     redis,
     metrics,
@@ -116,6 +137,6 @@ export function setupAdapters(): Adapters {
     marketFeed,
     historicalBars,
     scannerFeed,
-    strategies: [macdM1CrossOverStrategy],
+    strategies: [macdM1CrossOverStrategy, superStrategy],
   };
 }
