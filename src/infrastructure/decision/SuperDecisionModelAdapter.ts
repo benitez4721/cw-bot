@@ -13,6 +13,11 @@ import type {
 import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
 import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
 
+// ChartsWatcher scanner config that feeds this model's watchlist. Part of
+// the model's definition (RVOL filter is applied upstream by CW), not a
+// per-environment toggle.
+export const SUPER_CW_CONFIG_ID = '69f6bec1f52a7e93e345cd0c';
+
 export interface SuperSnapshot {
   symbol: string;
   triggerBarTimestamp?: string;
