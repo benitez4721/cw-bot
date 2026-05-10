@@ -22,4 +22,6 @@ export interface TradeContext {
   indicators: unknown;
   checks: RuleCheck[];
   status: TradeContextStatus;
+  // Set true once the trail has moved the stop to entry (one-shot per trade).
+  breakEvenMoved?: boolean;
 }

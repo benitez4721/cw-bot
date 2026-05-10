@@ -9,6 +9,7 @@ import { aggregateOneFiveMinuteBucket } from '../../infrastructure/indicators/ca
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
+import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
@@ -26,6 +27,7 @@ export interface BarStreamManagerOptions {
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
   checkOpenTrades: CheckOpenTrades;
+  maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   marketHours: MarketHours;
   metrics: MetricsPort;
   bootstrapBars?: number;
@@ -49,6 +51,7 @@ export class BarStreamManager {
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
   private readonly checkOpenTrades: CheckOpenTrades;
+  private readonly maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly bootstrapBars: number;
@@ -75,6 +78,7 @@ export class BarStreamManager {
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
     this.checkOpenTrades = options.checkOpenTrades;
+    this.maybeMoveStopToBreakEven = options.maybeMoveStopToBreakEven;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
@@ -336,7 +340,20 @@ export class BarStreamManager {
         model: strategy.name,
         symbol,
       });
-      if (stillExposed) return;
+      if (stillExposed) {
+        if (
+          this.maybeMoveStopToBreakEven &&
+          strategy.trailToBreakEvenAtProfit !== undefined
+        ) {
+          await this.maybeMoveStopToBreakEven.execute({
+            model: strategy.name,
+            symbol,
+            lastPrice: bar.close,
+            threshold: strategy.trailToBreakEvenAtProfit,
+          });
+        }
+        return;
+      }
 
       const snapshot = await strategy.model.buildSnapshot({
         symbol,

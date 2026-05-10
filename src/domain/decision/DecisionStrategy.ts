@@ -11,4 +11,8 @@ export interface DecisionStrategy {
   readonly model: DecisionModelPort;
   readonly watchlist: WatchlistRepository;
   readonly orderConfig: OrderConfig;
+  // Opt-in trail: when defined, BarStreamManager moves the stop to entry as
+  // soon as the position reaches this fraction of profit (e.g. 0.005 = 0.5%).
+  // Strategies that omit this field keep their bracket untouched after entry.
+  readonly trailToBreakEvenAtProfit?: number;
 }

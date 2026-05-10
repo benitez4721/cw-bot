@@ -5,6 +5,7 @@ import { setupAdapters } from './adaptersSetup.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
 import { CheckOpenTrades } from './application/trade/CheckOpenTrades.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
+import { MaybeMoveStopToBreakEven } from './application/trade/MaybeMoveStopToBreakEven.js';
 import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
 import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
@@ -78,6 +79,10 @@ async function main() {
     broker,
     closeTrade,
   });
+  const maybeMoveStopToBreakEven = new MaybeMoveStopToBreakEven({
+    tradeRepo,
+    broker,
+  });
   // Public watchlist endpoints expose the first strategy's watchlist for now.
   // When a second strategy is added, expose a per-model lookup instead.
   const listWatchlist = new ListWatchlist(strategies[0].watchlistRepo);
@@ -91,6 +96,7 @@ async function main() {
     placeBracketOrder,
     recordTradeContext,
     checkOpenTrades,
+    maybeMoveStopToBreakEven,
     marketHours,
     metrics,
     bootstrapBars: env.BOOTSTRAP_BARS,
