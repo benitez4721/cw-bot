@@ -4,9 +4,7 @@ import type {
   OrderType,
 } from '../../domain/broker/BrokerTypes.js';
 
-export function parseNumber(
-  value: string | number | undefined | null,
-): number {
+export function parseNumber(value: string | number | undefined | null): number {
   if (value === undefined || value === null || value === '') return 0;
   const n = typeof value === 'number' ? value : parseFloat(value);
   return Number.isFinite(n) ? n : 0;
@@ -16,6 +14,7 @@ export function mapStatus(code: string | undefined): OrderStatus {
   switch (code) {
     case 'ACK':
     case 'PND':
+    case 'DON':
       return 'pending';
     case 'OPN':
       return 'open';
