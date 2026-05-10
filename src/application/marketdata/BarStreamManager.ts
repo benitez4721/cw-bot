@@ -11,6 +11,7 @@ import type { TradeContextRepository } from '../../domain/trade/TradeContextRepo
 import { aggregateOneFiveMinuteBucket } from '../../infrastructure/indicators/calculations.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
+import type { CloseTrade } from '../trade/CloseTrade.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
@@ -27,6 +28,7 @@ export interface BarStreamManagerOptions {
   strategies: DecisionStrategy[];
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
+  closeTrade: CloseTrade;
   tradeRepo: TradeContextRepository;
   broker: BrokerPort;
   marketHours: MarketHours;
@@ -51,6 +53,7 @@ export class BarStreamManager {
   private readonly strategies: DecisionStrategy[];
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
+  private readonly closeTrade: CloseTrade;
   private readonly tradeRepo: TradeContextRepository;
   private readonly broker: BrokerPort;
   private readonly marketHours: MarketHours;
@@ -78,6 +81,7 @@ export class BarStreamManager {
     this.strategies = options.strategies;
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
+    this.closeTrade = options.closeTrade;
     this.tradeRepo = options.tradeRepo;
     this.broker = options.broker;
     this.marketHours = options.marketHours;
@@ -439,7 +443,7 @@ export class BarStreamManager {
         continue;
       }
       try {
-        await this.tradeRepo.markClosed(ctx.bracket.entryOrderId);
+        await this.closeTrade.execute(ctx.bracket.entryOrderId);
       } catch (err) {
         log.warn(
           {

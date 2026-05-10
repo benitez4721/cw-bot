@@ -3,6 +3,7 @@ import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
 import { setupAdapters } from './adaptersSetup.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
+import { CloseTrade } from './application/trade/CloseTrade.js';
 import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
 import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
@@ -70,6 +71,7 @@ async function main() {
 
   const placeBracketOrder = new PlaceBracketOrder(broker);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
+  const closeTrade = new CloseTrade(tradeRepo);
   // Public watchlist endpoints expose the first strategy's watchlist for now.
   // When a second strategy is added, expose a per-model lookup instead.
   const listWatchlist = new ListWatchlist(strategies[0].watchlistRepo);
@@ -82,6 +84,7 @@ async function main() {
     strategies: strategies.map((s) => s.strategy),
     placeBracketOrder,
     recordTradeContext,
+    closeTrade,
     tradeRepo,
     broker,
     marketHours,

@@ -27,17 +27,28 @@ export class RedisTradeContextRepository implements TradeContextRepository {
 
   async put(ctx: TradeContext): Promise<void> {
     const entryOrderId = ctx.bracket.entryOrderId;
-    await this.redis
+    const activeKey = this.activeKey(ctx.model, ctx.symbol);
+    const tx = this.redis
       .multi()
       .sadd(this.indexKey, entryOrderId)
-      .sadd(this.activeKey(ctx.model, ctx.symbol), entryOrderId)
       .set(
         this.itemKey(entryOrderId),
         JSON.stringify(ctx),
         'EX',
         this.itemTtlSeconds,
-      )
-      .exec();
+      );
+    if (ctx.status === 'closed') {
+      tx.srem(activeKey, entryOrderId);
+    } else {
+      tx.sadd(activeKey, entryOrderId);
+    }
+    await tx.exec();
+  }
+
+  async getByOrderId(orderId: string): Promise<TradeContext | undefined> {
+    const raw = await this.redis.get(this.itemKey(orderId));
+    if (!raw) return undefined;
+    return parseItem(raw);
   }
 
   async getByOrderIds(orderIds: string[]): Promise<Map<string, TradeContext>> {
@@ -82,24 +93,6 @@ export class RedisTradeContextRepository implements TradeContextRepository {
     }
 
     return out;
-  }
-
-  async markClosed(entryOrderId: string): Promise<void> {
-    const raw = await this.redis.get(this.itemKey(entryOrderId));
-    if (!raw) return;
-    const ctx = parseItem(raw);
-    if (!ctx) return;
-    const updated: TradeContext = { ...ctx, status: 'closed' };
-    await this.redis
-      .multi()
-      .set(
-        this.itemKey(entryOrderId),
-        JSON.stringify(updated),
-        'EX',
-        this.itemTtlSeconds,
-      )
-      .srem(this.activeKey(ctx.model, ctx.symbol), entryOrderId)
-      .exec();
   }
 
   private itemKey(orderId: string): string {

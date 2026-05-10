@@ -26,6 +26,7 @@ import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import type { WatchlistRepository } from '../../domain/watchlist/WatchlistRepository.js';
 import type { WatchedSymbol } from '../../domain/watchlist/WatchlistTypes.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
+import { CloseTrade } from '../trade/CloseTrade.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 import { BarStreamManager } from './BarStreamManager.js';
 
@@ -174,23 +175,36 @@ function createWatchlist(initial: WatchedSymbol[] = []): TestWatchlist {
 
 type FakeTradeRepo = TradeContextRepository & {
   _seedActive: (ctx: TradeContext) => void;
-  _markedClosed: string[];
+  _items: Map<string, TradeContext>;
 };
 
 function createTradeRepo(): FakeTradeRepo {
   const items = new Map<string, TradeContext>();
   const active = new Map<string, Set<string>>();
-  const markedClosed: string[] = [];
 
   const activeKey = (model: string, symbol: string) => `${model}:${symbol}`;
+  const ensureActiveSet = (key: string): Set<string> => {
+    let set = active.get(key);
+    if (!set) {
+      set = new Set<string>();
+      active.set(key, set);
+    }
+    return set;
+  };
 
   return {
     async put(ctx: TradeContext) {
       items.set(ctx.bracket.entryOrderId, ctx);
       const key = activeKey(ctx.model, ctx.symbol);
-      const set = active.get(key) ?? new Set<string>();
-      set.add(ctx.bracket.entryOrderId);
-      active.set(key, set);
+      const set = ensureActiveSet(key);
+      if (ctx.status === 'closed') {
+        set.delete(ctx.bracket.entryOrderId);
+      } else {
+        set.add(ctx.bracket.entryOrderId);
+      }
+    },
+    async getByOrderId(id: string) {
+      return items.get(id);
     },
     async getByOrderIds(ids: string[]) {
       const out = new Map<string, TradeContext>();
@@ -211,22 +225,12 @@ function createTradeRepo(): FakeTradeRepo {
       }
       return out;
     },
-    async markClosed(entryOrderId) {
-      markedClosed.push(entryOrderId);
-      const ctx = items.get(entryOrderId);
-      if (!ctx) return;
-      items.set(entryOrderId, { ...ctx, status: 'closed' });
-      const key = activeKey(ctx.model, ctx.symbol);
-      active.get(key)?.delete(entryOrderId);
-    },
     _seedActive(ctx) {
       items.set(ctx.bracket.entryOrderId, ctx);
       const key = activeKey(ctx.model, ctx.symbol);
-      const set = active.get(key) ?? new Set<string>();
-      set.add(ctx.bracket.entryOrderId);
-      active.set(key, set);
+      ensureActiveSet(key).add(ctx.bracket.entryOrderId);
     },
-    _markedClosed: markedClosed,
+    _items: items,
   };
 }
 
@@ -364,6 +368,8 @@ function setup(
     orderConfig: h.orderConfig,
   }));
 
+  const closeTrade = new CloseTrade(tradeRepo);
+
   const manager = new BarStreamManager({
     feed,
     historicalBars,
@@ -371,6 +377,7 @@ function setup(
     strategies,
     placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
     recordTradeContext: recordContext as unknown as RecordTradeContext,
+    closeTrade,
     tradeRepo,
     broker,
     marketHours,
@@ -568,7 +575,10 @@ describe('BarStreamManager', () => {
     stubSignal(s.model, makeHoldSignal('AAPL'));
     await s.manager.start();
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
-    expect(s.tradeRepo._markedClosed).toContain('entry-1');
+    expect(s.tradeRepo._items.get('entry-1')?.status).toBe('closed');
+    expect(
+      await s.tradeRepo.listActiveByModelAndSymbol('technical', 'AAPL'),
+    ).toHaveLength(0);
     expect(s.model.evaluate).toHaveBeenCalledOnce();
     s.manager.stop();
   });
@@ -650,6 +660,7 @@ describe('BarStreamManager', () => {
       ],
       placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
       recordTradeContext: s.recordContext as unknown as RecordTradeContext,
+      closeTrade: new CloseTrade(s.tradeRepo),
       tradeRepo: s.tradeRepo,
       broker: s.broker,
       marketHours: { isOpen: () => true },
