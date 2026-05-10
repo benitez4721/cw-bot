@@ -284,7 +284,7 @@ export class BarStreamManager {
     }
 
     if (!this.subscribed.has(symbol)) return;
-    await this.processSymbol(symbol);
+    await this.processSymbol(symbol, bar);
     this.lastSuccessfulTick = this.now();
   }
 
@@ -308,19 +308,20 @@ export class BarStreamManager {
 
   // Iterates strategies sequentially: each one independently checks its own
   // watchlist membership and exposure, then evaluates and (optionally) places.
-  private async processSymbol(symbol: string): Promise<void> {
+  private async processSymbol(symbol: string, bar: Bar): Promise<void> {
     if (!this.marketHours.isOpen(new Date(this.now()))) return;
 
     for (const strategy of this.strategies) {
       const watched = await strategy.watchlist.getBySymbol(symbol);
       if (!watched) continue;
-      await this.processStrategy(strategy, symbol);
+      await this.processStrategy(strategy, symbol, bar);
     }
   }
 
   private async processStrategy(
     strategy: DecisionStrategy,
     symbol: string,
+    bar: Bar,
   ): Promise<void> {
     const inFlightKey = `${strategy.name}:${symbol}`;
     if (this.inFlight.has(inFlightKey)) {
@@ -337,7 +338,10 @@ export class BarStreamManager {
       });
       if (stillExposed) return;
 
-      const snapshot = await strategy.model.buildSnapshot({ symbol });
+      const snapshot = await strategy.model.buildSnapshot({
+        symbol,
+        triggerBar: bar,
+      });
       log.info(
         { model: strategy.name, snapshot },
         'evaluating snapshot',
@@ -352,7 +356,10 @@ export class BarStreamManager {
         symbol: signal.symbol,
         side: signal.side,
         entryLimitPrice: signal.entryLimitPrice,
-        ...strategy.orderConfig,
+        quantity: signal.quantity ?? strategy.orderConfig.quantity,
+        stopOffset: signal.stopOffset ?? strategy.orderConfig.stopOffset,
+        takeProfitOffset:
+          signal.takeProfitOffset ?? strategy.orderConfig.takeProfitOffset,
       });
       this.metrics.recordOrderResult(result.status);
       log.info(

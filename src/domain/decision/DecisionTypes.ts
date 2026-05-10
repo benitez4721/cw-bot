@@ -17,6 +17,12 @@ export type DecisionSignal<TSnapshot = unknown> =
       symbol: string;
       side: OrderSide;
       entryLimitPrice: number;
+      // Optional dynamic order sizing: when set, BarStreamManager prefers these
+      // over the strategy's static OrderConfig. Lets a model size per-symbol
+      // (e.g. floor(notional / last)) and use percentage-based offsets.
+      quantity?: number;
+      stopOffset?: number;
+      takeProfitOffset?: number;
       checks: RuleCheck[];
       snapshot: TSnapshot;
     }
