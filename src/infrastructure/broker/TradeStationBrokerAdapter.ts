@@ -1,6 +1,7 @@
 import type {
   BrokerPort,
   GetQuoteInput,
+  ReplaceStopPriceInput,
 } from '../../domain/broker/BrokerPort.js';
 import type {
   BracketOrderInput,
@@ -234,6 +235,17 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     });
 
     return (response.Orders ?? []).map(toOrder);
+  }
+
+  async replaceStopPrice({
+    orderId,
+    stopPrice,
+  }: ReplaceStopPriceInput): Promise<void> {
+    await this.request<unknown>({
+      method: 'PUT',
+      path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
+      body: { StopPrice: String(round2(stopPrice)) },
+    });
   }
 
   async getQuote({ symbol }: GetQuoteInput): Promise<Quote> {

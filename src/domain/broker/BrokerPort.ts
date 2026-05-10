@@ -10,9 +10,15 @@ export interface GetQuoteInput {
   symbol: string;
 }
 
+export interface ReplaceStopPriceInput {
+  orderId: string;
+  stopPrice: number;
+}
+
 export interface BrokerPort {
   placeBracketOrder(input: BracketOrderInput): Promise<BracketOrderResult>;
   getPositions(): Promise<Position[]>;
   getOrders({ symbol }: { symbol?: string }): Promise<Order[]>;
   getQuote(input: GetQuoteInput): Promise<Quote>;
+  replaceStopPrice(input: ReplaceStopPriceInput): Promise<void>;
 }
