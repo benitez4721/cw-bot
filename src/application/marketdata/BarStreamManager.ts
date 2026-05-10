@@ -1,5 +1,3 @@
-import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { Order } from '../../domain/broker/BrokerTypes.js';
 import type { DecisionStrategy } from '../../domain/decision/DecisionStrategy.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
@@ -7,11 +5,10 @@ import type { HistoricalBarsPort } from '../../domain/marketdata/HistoricalBarsP
 import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
-import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import { aggregateOneFiveMinuteBucket } from '../../infrastructure/indicators/calculations.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
-import type { CloseTrade } from '../trade/CloseTrade.js';
+import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
@@ -28,9 +25,7 @@ export interface BarStreamManagerOptions {
   strategies: DecisionStrategy[];
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
-  closeTrade: CloseTrade;
-  tradeRepo: TradeContextRepository;
-  broker: BrokerPort;
+  checkOpenTrades: CheckOpenTrades;
   marketHours: MarketHours;
   metrics: MetricsPort;
   bootstrapBars?: number;
@@ -53,9 +48,7 @@ export class BarStreamManager {
   private readonly strategies: DecisionStrategy[];
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
-  private readonly closeTrade: CloseTrade;
-  private readonly tradeRepo: TradeContextRepository;
-  private readonly broker: BrokerPort;
+  private readonly checkOpenTrades: CheckOpenTrades;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly bootstrapBars: number;
@@ -81,9 +74,7 @@ export class BarStreamManager {
     this.strategies = options.strategies;
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
-    this.closeTrade = options.closeTrade;
-    this.tradeRepo = options.tradeRepo;
-    this.broker = options.broker;
+    this.checkOpenTrades = options.checkOpenTrades;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
@@ -340,7 +331,11 @@ export class BarStreamManager {
 
     const evalStart = new Date(this.now()).toISOString();
     try {
-      if (await this.hasOpenExposure(strategy.name, symbol)) return;
+      const { stillExposed } = await this.checkOpenTrades.execute({
+        model: strategy.name,
+        symbol,
+      });
+      if (stillExposed) return;
 
       const snapshot = await strategy.model.buildSnapshot({ symbol });
       log.info(
@@ -412,60 +407,6 @@ export class BarStreamManager {
     }
   }
 
-  // Reconciles the trade context repo against the broker. Any context whose
-  // bracket has no order still active (entry/stop/tp) is lazily marked closed.
-  // Returns true if at least one context for (model, symbol) is still live.
-  private async hasOpenExposure(
-    model: string,
-    symbol: string,
-  ): Promise<boolean> {
-    const contexts = await this.tradeRepo.listActiveByModelAndSymbol(
-      model,
-      symbol,
-    );
-    if (contexts.length === 0) return false;
-
-    const orders = await this.broker.getOrders({ symbol });
-    const activeOrderIds = new Set(
-      orders.filter(isOrderActive).map((o) => o.id),
-    );
-
-    let stillExposed = false;
-    for (const ctx of contexts) {
-      const bracketIds = [
-        ctx.bracket.entryOrderId,
-        ctx.bracket.stopOrderId,
-        ctx.bracket.takeProfitOrderId,
-      ];
-      const hasActive = bracketIds.some((id) => activeOrderIds.has(id));
-      if (hasActive) {
-        stillExposed = true;
-        continue;
-      }
-      try {
-        await this.closeTrade.execute(ctx.bracket.entryOrderId);
-      } catch (err) {
-        log.warn(
-          {
-            model,
-            symbol,
-            entryOrderId: ctx.bracket.entryOrderId,
-            err: errMsg(err),
-          },
-          'failed to mark trade context closed',
-        );
-      }
-    }
-    return stillExposed;
-  }
-}
-
-function isOrderActive(o: Order): boolean {
-  return (
-    o.status === 'open' ||
-    o.status === 'pending' ||
-    o.status === 'partiallyFilled'
-  );
 }
 
 function errMsg(err: unknown): string {

@@ -27,6 +27,7 @@ import type { WatchlistRepository } from '../../domain/watchlist/WatchlistReposi
 import type { WatchedSymbol } from '../../domain/watchlist/WatchlistTypes.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import { CloseTrade } from '../trade/CloseTrade.js';
+import { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 import { BarStreamManager } from './BarStreamManager.js';
 
@@ -369,6 +370,11 @@ function setup(
   }));
 
   const closeTrade = new CloseTrade(tradeRepo);
+  const checkOpenTrades = new CheckOpenTrades({
+    tradeRepo,
+    broker,
+    closeTrade,
+  });
 
   const manager = new BarStreamManager({
     feed,
@@ -377,9 +383,7 @@ function setup(
     strategies,
     placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
     recordTradeContext: recordContext as unknown as RecordTradeContext,
-    closeTrade,
-    tradeRepo,
-    broker,
+    checkOpenTrades,
     marketHours,
     metrics,
     bootstrapBars: 5,
@@ -660,9 +664,11 @@ describe('BarStreamManager', () => {
       ],
       placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
       recordTradeContext: s.recordContext as unknown as RecordTradeContext,
-      closeTrade: new CloseTrade(s.tradeRepo),
-      tradeRepo: s.tradeRepo,
-      broker: s.broker,
+      checkOpenTrades: new CheckOpenTrades({
+        tradeRepo: s.tradeRepo,
+        broker: s.broker,
+        closeTrade: new CloseTrade(s.tradeRepo),
+      }),
       marketHours: { isOpen: () => true },
       metrics: s.metrics,
       bootstrapBars: 5,
