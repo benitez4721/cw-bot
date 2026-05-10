@@ -310,16 +310,21 @@ export class BarStreamManager {
     }
   }
 
-  // Iterates strategies sequentially: each one independently checks its own
+  // Runs strategies in parallel: each one independently checks its own
   // watchlist membership and exposure, then evaluates and (optionally) places.
+  // Strategies share no mutable state — TradeContext is keyed by (model,
+  // symbol) and inFlight is keyed by `${name}:${symbol}`. Latency for the
+  // last strategy drops from sum-of-strategies to max-of-strategies.
   private async processSymbol(symbol: string, bar: Bar): Promise<void> {
     if (!this.marketHours.isOpen(new Date(this.now()))) return;
 
-    for (const strategy of this.strategies) {
-      const watched = await strategy.watchlist.getBySymbol(symbol);
-      if (!watched) continue;
-      await this.processStrategy(strategy, symbol, bar);
-    }
+    await Promise.all(
+      this.strategies.map(async (strategy) => {
+        const watched = await strategy.watchlist.getBySymbol(symbol);
+        if (!watched) return;
+        await this.processStrategy(strategy, symbol, bar);
+      }),
+    );
   }
 
   private async processStrategy(
