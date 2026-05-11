@@ -93,7 +93,10 @@ async function main() {
   const listWatchlist = new ListWatchlist(strategies[0].watchlistRepo);
   const getOrders = new GetOrders(broker, tradeRepo);
 
-  const orderStreamMgr = new OrderStreamManager({ stream: orderStreamAdapter });
+  const orderStreamMgr = new OrderStreamManager({
+    stream: orderStreamAdapter,
+    tradeRepo,
+  });
   const positionStreamMgr = new PositionStreamManager({
     stream: positionStreamAdapter,
   });

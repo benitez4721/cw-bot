@@ -1,4 +1,4 @@
-import type { Order, Position } from './BrokerTypes.js';
+import type { OrderWithContext, Position } from './BrokerTypes.js';
 
 // Distingue eventos que reflejan el estado al momento de conectar
 // (priorState) de cambios en vivo posteriores (liveUpdate). El cliente lo usa
@@ -6,7 +6,7 @@ import type { Order, Position } from './BrokerTypes.js';
 export type EventOrigin = 'priorState' | 'liveUpdate';
 
 export interface OrderEvent {
-  order: Order;
+  order: OrderWithContext;
   observedAt: string;
   origin: EventOrigin;
   filledPrice?: number;

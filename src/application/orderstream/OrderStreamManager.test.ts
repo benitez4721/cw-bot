@@ -6,6 +6,8 @@ import type {
   StreamConnectionHandler,
 } from '../../domain/broker/BrokerStreamTypes.js';
 import type { OrderStreamPort } from '../../domain/broker/OrderStreamPort.js';
+import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
+import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { OrderStreamManager } from './OrderStreamManager.js';
 
 class FakeOrderStream implements OrderStreamPort {
@@ -34,6 +36,32 @@ class FakeOrderStream implements OrderStreamPort {
   }
 }
 
+class FakeTradeContextRepository implements TradeContextRepository {
+  private readonly store = new Map<string, TradeContext>();
+
+  setContext(orderId: string, ctx: TradeContext): void {
+    this.store.set(orderId, ctx);
+  }
+
+  async put(ctx: TradeContext): Promise<void> {
+    this.store.set(ctx.bracket.entryOrderId, ctx);
+  }
+  async getByOrderId(orderId: string): Promise<TradeContext | undefined> {
+    return this.store.get(orderId);
+  }
+  async getByOrderIds(orderIds: string[]): Promise<Map<string, TradeContext>> {
+    const out = new Map<string, TradeContext>();
+    for (const id of orderIds) {
+      const ctx = this.store.get(id);
+      if (ctx) out.set(id, ctx);
+    }
+    return out;
+  }
+  async listActiveByModelAndSymbol(): Promise<TradeContext[]> {
+    return [];
+  }
+}
+
 function order(overrides: Partial<Order> = {}): Order {
   return {
     id: 'O-1',
@@ -51,15 +79,47 @@ function makeEvent(o: Order, origin: 'priorState' | 'liveUpdate'): OrderEvent {
   return { order: o, observedAt: '2026-05-10T18:00:00Z', origin };
 }
 
+function makeContext(overrides: Partial<TradeContext> = {}): TradeContext {
+  return {
+    model: 'macd-m1',
+    symbol: 'AAPL',
+    side: 'BUY',
+    entryLimitPrice: 187,
+    evalStart: '2026-05-10T17:59:00Z',
+    evalEnd: '2026-05-10T18:00:00Z',
+    bracket: {
+      entryOrderId: 'O-1',
+      stopOrderId: 'O-2',
+      takeProfitOrderId: 'O-3',
+    },
+    indicators: { ema9: 187.1, rsi: 62 },
+    checks: [],
+    status: 'active',
+    ...overrides,
+  };
+}
+
+function buildManager(): {
+  stream: FakeOrderStream;
+  repo: FakeTradeContextRepository;
+  mgr: OrderStreamManager;
+} {
+  const stream = new FakeOrderStream();
+  const repo = new FakeTradeContextRepository();
+  const mgr = new OrderStreamManager({
+    stream,
+    tradeRepo: repo,
+    now: () => '2026-05-10T18:01:00Z',
+  });
+  return { stream, repo, mgr };
+}
+
 describe('OrderStreamManager', () => {
-  it('replays the current snapshot synchronously when subscribing', () => {
-    const stream = new FakeOrderStream();
-    const mgr = new OrderStreamManager({
-      stream,
-      now: () => '2026-05-10T18:01:00Z',
-    });
+  it('replays the current snapshot synchronously when subscribing', async () => {
+    const { stream, mgr } = buildManager();
     stream.emit(makeEvent(order({ id: 'A' }), 'priorState'));
     stream.emit(makeEvent(order({ id: 'B' }), 'priorState'));
+    await mgr.idle();
 
     const received: OrderEvent[] = [];
     mgr.subscribe((e) => received.push(e));
@@ -69,15 +129,54 @@ describe('OrderStreamManager', () => {
     expect(received[0]?.observedAt).toBe('2026-05-10T18:01:00Z');
   });
 
-  it('forwards live updates to all subscribers', () => {
-    const stream = new FakeOrderStream();
-    const mgr = new OrderStreamManager({ stream });
+  it('enriches events with TradeContext when the repo has one', async () => {
+    const { stream, repo, mgr } = buildManager();
+    const ctx = makeContext({
+      bracket: { entryOrderId: 'A', stopOrderId: 'B', takeProfitOrderId: 'C' },
+    });
+    repo.setContext('A', ctx);
+
+    const live: OrderEvent[] = [];
+    mgr.subscribe((e) => live.push(e));
+
+    stream.emit(makeEvent(order({ id: 'A' }), 'liveUpdate'));
+    stream.emit(makeEvent(order({ id: 'B' }), 'liveUpdate'));
+    await mgr.idle();
+
+    expect(live).toHaveLength(2);
+    expect(live[0]?.order.id).toBe('A');
+    expect(live[0]?.order.context).toEqual(ctx);
+    // B no es entry order; el repo no devuelve contexto y la orden viaja sin él.
+    expect(live[1]?.order.id).toBe('B');
+    expect(live[1]?.order.context).toBeUndefined();
+  });
+
+  it('includes context in the snapshot replay for late subscribers', async () => {
+    const { stream, repo, mgr } = buildManager();
+    const ctx = makeContext({
+      bracket: { entryOrderId: 'A', stopOrderId: 'X', takeProfitOrderId: 'Y' },
+    });
+    repo.setContext('A', ctx);
+
+    stream.emit(makeEvent(order({ id: 'A', status: 'filled' }), 'priorState'));
+    await mgr.idle();
+
+    const replayed: OrderEvent[] = [];
+    mgr.subscribe((e) => replayed.push(e));
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]?.order.context).toEqual(ctx);
+    expect(replayed[0]?.origin).toBe('priorState');
+  });
+
+  it('forwards live updates to all subscribers', async () => {
+    const { stream, mgr } = buildManager();
     const subA: OrderEvent[] = [];
     const subB: OrderEvent[] = [];
     mgr.subscribe((e) => subA.push(e));
     mgr.subscribe((e) => subB.push(e));
 
     stream.emit(makeEvent(order({ id: 'A', status: 'filled' }), 'liveUpdate'));
+    await mgr.idle();
 
     expect(subA).toHaveLength(1);
     expect(subB).toHaveLength(1);
@@ -85,22 +184,23 @@ describe('OrderStreamManager', () => {
     expect(subB[0]?.order.id).toBe('A');
   });
 
-  it('stops delivering events after unsubscribe', () => {
-    const stream = new FakeOrderStream();
-    const mgr = new OrderStreamManager({ stream });
+  it('stops delivering events after unsubscribe', async () => {
+    const { stream, mgr } = buildManager();
     const events: OrderEvent[] = [];
     const sub = mgr.subscribe((e) => events.push(e));
     stream.emit(makeEvent(order({ id: 'A' }), 'liveUpdate'));
+    await mgr.idle();
     sub.unsubscribe();
     stream.emit(makeEvent(order({ id: 'B' }), 'liveUpdate'));
+    await mgr.idle();
 
     expect(events.map((e) => e.order.id)).toEqual(['A']);
   });
 
-  it('reconciles re-snapshot on reconnect without duplicating to consumers', () => {
-    const stream = new FakeOrderStream();
-    const mgr = new OrderStreamManager({ stream });
+  it('reconciles re-snapshot on reconnect without duplicating to consumers', async () => {
+    const { stream, mgr } = buildManager();
     stream.emit(makeEvent(order({ id: 'A', status: 'open' }), 'priorState'));
+    await mgr.idle();
 
     const received: OrderEvent[] = [];
     mgr.subscribe((e) => received.push(e));
@@ -111,6 +211,7 @@ describe('OrderStreamManager', () => {
     // Simula reconexión: TS reenvía snapshot, A ahora llega como filled.
     stream.emitConnection(true);
     stream.emit(makeEvent(order({ id: 'A', status: 'filled' }), 'priorState'));
+    await mgr.idle();
 
     // El subscriber recibe UN evento más (el re-snapshot), no dos.
     expect(received).toHaveLength(2);
@@ -120,8 +221,7 @@ describe('OrderStreamManager', () => {
   });
 
   it('exposes connection state and forwards changes to subscribers', () => {
-    const stream = new FakeOrderStream();
-    const mgr = new OrderStreamManager({ stream });
+    const { stream, mgr } = buildManager();
     const states: boolean[] = [];
     mgr.onConnectionChange((c) => states.push(c));
 
@@ -134,8 +234,7 @@ describe('OrderStreamManager', () => {
   });
 
   it('start() wires connect() on the underlying stream', async () => {
-    const stream = new FakeOrderStream();
-    const mgr = new OrderStreamManager({ stream });
+    const { stream, mgr } = buildManager();
     await mgr.start();
     expect(stream.connected).toBe(1);
     expect(mgr.isConnected()).toBe(true);
