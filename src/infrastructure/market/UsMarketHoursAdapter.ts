@@ -1,7 +1,7 @@
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 
 const TIME_ZONE = 'America/New_York';
-const OPEN_MINUTES = 9 * 60 + 30;
+const OPEN_MINUTES = 9 * 60 + 40;
 const CLOSE_MINUTES = 16 * 60;
 
 const formatter = new Intl.DateTimeFormat('en-US', {
