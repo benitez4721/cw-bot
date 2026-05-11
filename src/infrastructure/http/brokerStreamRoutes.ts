@@ -96,6 +96,10 @@ function setupSseHeaders(reply: FastifyReply): void {
     // Disables nginx proxy buffering — sin esto un nginx default puede
     // bufferear todo el stream y matar el real-time.
     'X-Accel-Buffering': 'no',
+    // reply.hijack() bypasea los hooks de @fastify/cors, asi que el header
+    // CORS hay que escribirlo a mano. '*' coincide con el default del
+    // plugin (cors() sin opciones).
+    'Access-Control-Allow-Origin': '*',
   });
   // writeHead solo prepara los headers; flushHeaders los envía ya. Sin esto,
   // EventSource del cliente no recibe el response hasta el primer write.
