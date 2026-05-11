@@ -145,13 +145,15 @@ async function main() {
       );
     }
   }
-  try {
-    await barStream.start();
-  } catch (err) {
-    log.error(
-      { err: err instanceof Error ? err.message : String(err) },
-      'bar stream manager start failed (will keep retrying via reconnect)',
-    );
+  if (env.DECISION_ENABLED) {
+    try {
+      await barStream.start();
+    } catch (err) {
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'bar stream manager start failed (will keep retrying via reconnect)',
+      );
+    }
   }
   // Streams de broker arrancan warm: el adapter mantiene la conexión a TS
   // viva con reconexión interna. Cualquier error de start() es no fatal.
