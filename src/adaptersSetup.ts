@@ -152,6 +152,6 @@ export function setupAdapters(): Adapters {
     marketFeed,
     historicalBars,
     scannerFeed,
-    strategies: [macdM1CrossOverStrategy, superStrategy],
+    strategies: [macdM1CrossOverStrategy],
   };
 }
