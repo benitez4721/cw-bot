@@ -12,10 +12,13 @@ import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
 import { GetOrders } from './application/broker/GetOrders.js';
 import { watchlistRoutes } from './infrastructure/http/watchlistRoutes.js';
 import { brokerRoutes } from './infrastructure/http/brokerRoutes.js';
+import { brokerStreamRoutes } from './infrastructure/http/brokerStreamRoutes.js';
 import { healthRoutes } from './infrastructure/http/healthRoutes.js';
 import { metricsRoutes } from './infrastructure/http/metricsRoutes.js';
 import { registerAuthMiddleware } from './infrastructure/http/authMiddleware.js';
 import { BarStreamManager } from './application/marketdata/BarStreamManager.js';
+import { OrderStreamManager } from './application/orderstream/OrderStreamManager.js';
+import { PositionStreamManager } from './application/positionstream/PositionStreamManager.js';
 import { GrafanaCloudWriter } from './infrastructure/metrics/GrafanaCloudWriter.js';
 import { Heartbeat } from './application/heartbeat/Heartbeat.js';
 
@@ -47,6 +50,8 @@ async function main() {
     redis,
     metrics,
     broker,
+    orderStreamAdapter,
+    positionStreamAdapter,
     tradeRepo,
     barRepo,
     marketHours,
@@ -87,6 +92,11 @@ async function main() {
   // When a second strategy is added, expose a per-model lookup instead.
   const listWatchlist = new ListWatchlist(strategies[0].watchlistRepo);
   const getOrders = new GetOrders(broker, tradeRepo);
+
+  const orderStreamMgr = new OrderStreamManager({ stream: orderStreamAdapter });
+  const positionStreamMgr = new PositionStreamManager({
+    stream: positionStreamAdapter,
+  });
 
   const barStream = new BarStreamManager({
     feed: marketFeed,
@@ -140,6 +150,20 @@ async function main() {
       'bar stream manager start failed (will keep retrying via reconnect)',
     );
   }
+  // Streams de broker arrancan warm: el adapter mantiene la conexión a TS
+  // viva con reconexión interna. Cualquier error de start() es no fatal.
+  orderStreamMgr.start().catch((err) =>
+    log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      'order stream start failed',
+    ),
+  );
+  positionStreamMgr.start().catch((err) =>
+    log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      'position stream start failed',
+    ),
+  );
   grafana?.start();
   heartbeat?.start();
 
@@ -153,6 +177,10 @@ async function main() {
   await server.register(metricsRoutes, { registry: metrics.registry });
   await server.register(watchlistRoutes, { listWatchlist });
   await server.register(brokerRoutes, { getOrders });
+  await server.register(brokerStreamRoutes, {
+    orderStream: orderStreamMgr,
+    positionStream: positionStreamMgr,
+  });
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
 
@@ -176,6 +204,8 @@ async function main() {
       heartbeat?.stop();
       grafana?.stop();
       barStream.stop();
+      orderStreamMgr.stop();
+      positionStreamMgr.stop();
       for (const scanner of scanners) scanner.stop();
       await server.close();
       await redis.quit();

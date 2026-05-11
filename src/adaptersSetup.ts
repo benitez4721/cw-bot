@@ -3,6 +3,8 @@ import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
 import { TradeStationBrokerAdapter } from './infrastructure/broker/TradeStationBrokerAdapter.js';
 import { TradeStationClient } from './infrastructure/tradestation/TradeStationClient.js';
+import { TradeStationOrderStreamAdapter } from './infrastructure/orderstream/TradeStationOrderStreamAdapter.js';
+import { TradeStationPositionStreamAdapter } from './infrastructure/positionstream/TradeStationPositionStreamAdapter.js';
 import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
@@ -36,6 +38,8 @@ export interface Adapters {
   redis: Redis;
   metrics: PrometheusMetricsAdapter;
   broker: TradeStationBrokerAdapter;
+  orderStreamAdapter: TradeStationOrderStreamAdapter;
+  positionStreamAdapter: TradeStationPositionStreamAdapter;
   tradeRepo: RedisTradeContextRepository;
   barRepo: RedisBarRepository;
   marketHours: UsMarketHoursAdapter;
@@ -68,6 +72,12 @@ export function setupAdapters(): Adapters {
   });
 
   const broker = new TradeStationBrokerAdapter({ client: tradeStationClient });
+  const orderStreamAdapter = new TradeStationOrderStreamAdapter({
+    client: tradeStationClient,
+  });
+  const positionStreamAdapter = new TradeStationPositionStreamAdapter({
+    client: tradeStationClient,
+  });
 
   const tradeRepo = new RedisTradeContextRepository(redis);
   const barRepo = new RedisBarRepository(redis);
@@ -134,6 +144,8 @@ export function setupAdapters(): Adapters {
     redis,
     metrics,
     broker,
+    orderStreamAdapter,
+    positionStreamAdapter,
     tradeRepo,
     barRepo,
     marketHours,
