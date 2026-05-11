@@ -92,7 +92,9 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     return this.client.tokenStatus();
   }
 
-  async placeBracketOrder(input: BracketOrderInput): Promise<BracketOrderResult> {
+  async placeBracketOrder(
+    input: BracketOrderInput,
+  ): Promise<BracketOrderResult> {
     // Stop/TP precios calculados con entryLimitPrice como proxy del fill.
     // Si llena mejor, los offsets terminan asimétricos en cents — aceptado para v1.
     const cost = round2(input.entryLimitPrice);

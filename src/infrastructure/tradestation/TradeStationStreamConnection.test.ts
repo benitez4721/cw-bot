@@ -85,12 +85,11 @@ function manualStream(): ManualStream {
 
 // fetch fake that ties the AbortSignal to the stream so abort() actually
 // terminates the consumer loop (the real Response body does this internally).
-function fetchReturning(
-  ms: ManualStream,
-  status = 200,
-): typeof fetch {
+function fetchReturning(ms: ManualStream, status = 200): typeof fetch {
   return vi.fn(async (_url: unknown, init?: RequestInit) => {
-    init?.signal?.addEventListener('abort', () => ms.error(new Error('aborted')));
+    init?.signal?.addEventListener('abort', () =>
+      ms.error(new Error('aborted')),
+    );
     return new Response(ms.stream, { status });
   }) as unknown as typeof fetch;
 }
@@ -115,9 +114,9 @@ async function flushMicrotasks(times = 20): Promise<void> {
 describe('TradeStationStreamConnection', () => {
   it('parses a single JSON frame in one chunk', async () => {
     const ms = manualStream();
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(ms.stream, { status: 200 }),
-    );
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(ms.stream, { status: 200 }));
     const timers = makeFakeTimers();
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
@@ -159,7 +158,9 @@ describe('TradeStationStreamConnection', () => {
     conn.start();
     await flushMicrotasks();
 
-    ms.push('{"OrderID":"1"}\r\n{"Heartbeat":1,"Timestamp":"2026-05-10T18:00:23Z"}\r\n');
+    ms.push(
+      '{"OrderID":"1"}\r\n{"Heartbeat":1,"Timestamp":"2026-05-10T18:00:23Z"}\r\n',
+    );
     await flushMicrotasks();
 
     expect(onFrame).toHaveBeenCalledTimes(2);

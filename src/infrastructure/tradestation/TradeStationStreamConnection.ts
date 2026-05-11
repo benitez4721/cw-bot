@@ -86,7 +86,8 @@ export class TradeStationStreamConnection {
       return;
     }
 
-    const url = this.client.apiBase() + this.pathBuilder(this.client.accountId());
+    const url =
+      this.client.apiBase() + this.pathBuilder(this.client.accountId());
     this.abortController = new AbortController();
 
     let res: Response;
@@ -221,10 +222,7 @@ export class TradeStationStreamConnection {
     try {
       this.onConnectionChange?.(connected);
     } catch (err) {
-      this.log.warn(
-        { err: errMsg(err) },
-        'onConnectionChange handler threw',
-      );
+      this.log.warn({ err: errMsg(err) }, 'onConnectionChange handler threw');
     }
   }
 }

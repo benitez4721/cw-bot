@@ -66,7 +66,9 @@ describe('PositionStreamManager', () => {
   it('removes positions from the snapshot when quantity reaches 0', () => {
     const stream = new FakePositionStream();
     const mgr = new PositionStreamManager({ stream });
-    stream.emit(makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'));
+    stream.emit(
+      makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'),
+    );
     expect(mgr.getSnapshot()).toHaveLength(1);
 
     stream.emit(makeEvent(pos({ symbol: 'AAPL', quantity: 0 }), 'liveUpdate'));
@@ -76,7 +78,9 @@ describe('PositionStreamManager', () => {
   it('still forwards quantity=0 events to live subscribers', () => {
     const stream = new FakePositionStream();
     const mgr = new PositionStreamManager({ stream });
-    stream.emit(makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'));
+    stream.emit(
+      makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'),
+    );
 
     const received: PositionEvent[] = [];
     mgr.subscribe((e) => received.push(e));
@@ -92,7 +96,9 @@ describe('PositionStreamManager', () => {
   it('does not replay closed positions to new subscribers', () => {
     const stream = new FakePositionStream();
     const mgr = new PositionStreamManager({ stream });
-    stream.emit(makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'));
+    stream.emit(
+      makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'),
+    );
     stream.emit(makeEvent(pos({ symbol: 'AAPL', quantity: 0 }), 'liveUpdate'));
 
     const received: PositionEvent[] = [];

@@ -1,8 +1,4 @@
-import type {
-  FastifyPluginAsync,
-  FastifyReply,
-  FastifyRequest,
-} from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import type { OrderStreamManager } from '../../application/orderstream/OrderStreamManager.js';
 import type { PositionStreamManager } from '../../application/positionstream/PositionStreamManager.js';
 

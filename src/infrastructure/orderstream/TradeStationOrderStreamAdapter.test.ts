@@ -170,15 +170,21 @@ describe('TradeStationOrderStreamAdapter', () => {
     await flushMicrotasks();
 
     ms.push(
-      JSON.stringify({ OrderID: '1', Status: 'OPN', Legs: [{ Symbol: 'AAPL' }] }) +
-        '\r\n',
+      JSON.stringify({
+        OrderID: '1',
+        Status: 'OPN',
+        Legs: [{ Symbol: 'AAPL' }],
+      }) + '\r\n',
     );
     await flushMicrotasks();
     ms.push(JSON.stringify({ StreamStatus: 'EndSnapshot' }) + '\r\n');
     await flushMicrotasks();
     ms.push(
-      JSON.stringify({ OrderID: '2', Status: 'FLL', Legs: [{ Symbol: 'AAPL' }] }) +
-        '\r\n',
+      JSON.stringify({
+        OrderID: '2',
+        Status: 'FLL',
+        Legs: [{ Symbol: 'AAPL' }],
+      }) + '\r\n',
     );
     await flushMicrotasks();
 
@@ -248,8 +254,11 @@ describe('TradeStationOrderStreamAdapter', () => {
     );
     ms.push(JSON.stringify({ Error: 'SOME_ERR', Message: 'oops' }) + '\r\n');
     ms.push(
-      JSON.stringify({ OrderID: '99', Status: 'OPN', Legs: [{ Symbol: 'X' }] }) +
-        '\r\n',
+      JSON.stringify({
+        OrderID: '99',
+        Status: 'OPN',
+        Legs: [{ Symbol: 'X' }],
+      }) + '\r\n',
     );
     await flushMicrotasks();
 

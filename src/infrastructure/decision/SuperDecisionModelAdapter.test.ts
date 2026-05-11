@@ -61,9 +61,8 @@ describe('SuperDecisionModelAdapter', () => {
 
     expect(result.action).toBe('hold');
     expect(
-      result.checks.find((c) =>
-        c.name.startsWith('5min histogram crossover'),
-      )?.passed,
+      result.checks.find((c) => c.name.startsWith('5min histogram crossover'))
+        ?.passed,
     ).toBe(false);
   });
 
@@ -77,9 +76,8 @@ describe('SuperDecisionModelAdapter', () => {
 
     expect(result.action).toBe('hold');
     expect(
-      result.checks.find((c) =>
-        c.name.startsWith('5min histogram crossover'),
-      )?.passed,
+      result.checks.find((c) => c.name.startsWith('5min histogram crossover'))
+        ?.passed,
     ).toBe(false);
   });
 
@@ -93,9 +91,8 @@ describe('SuperDecisionModelAdapter', () => {
 
     expect(result.action).toBe('hold');
     expect(
-      result.checks.find((c) =>
-        c.name.startsWith('5min histogram positive'),
-      )?.passed,
+      result.checks.find((c) => c.name.startsWith('5min histogram positive'))
+        ?.passed,
     ).toBe(false);
   });
 
@@ -103,12 +100,7 @@ describe('SuperDecisionModelAdapter', () => {
     const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
     const result = model.evaluate({
       snapshot: snapshot({
-        macd5minSeries: [
-          macd(0.3, -0.1),
-          macd(0.2),
-          macd(0.1),
-          macd(-0.1),
-        ],
+        macd5minSeries: [macd(0.3, -0.1), macd(0.2), macd(0.1), macd(-0.1)],
       }),
     });
 
@@ -140,9 +132,9 @@ describe('SuperDecisionModelAdapter', () => {
     });
 
     expect(result.action).toBe('hold');
-    expect(
-      result.checks.find((c) => c.name === 'VWAP available')?.passed,
-    ).toBe(false);
+    expect(result.checks.find((c) => c.name === 'VWAP available')?.passed).toBe(
+      false,
+    );
   });
 
   it('holds when last is too high to afford a single share', () => {

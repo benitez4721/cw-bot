@@ -51,7 +51,9 @@ try {
   });
   console.log(`[probe] HTTP ${res.status}`);
   console.log(`[probe] content-type: ${res.headers.get('content-type')}`);
-  console.log(`[probe] transfer-encoding: ${res.headers.get('transfer-encoding')}`);
+  console.log(
+    `[probe] transfer-encoding: ${res.headers.get('transfer-encoding')}`,
+  );
   console.log('---');
 
   if (!res.ok || !res.body) {
@@ -71,7 +73,9 @@ try {
     chunkIdx += 1;
     const ts = ((Date.now() - startedAt) / 1000).toFixed(2);
     const text = decoder.decode(value, { stream: true });
-    console.log(`[chunk #${chunkIdx} t=${ts}s bytes=${value.byteLength}] ${JSON.stringify(text)}`);
+    console.log(
+      `[chunk #${chunkIdx} t=${ts}s bytes=${value.byteLength}] ${JSON.stringify(text)}`,
+    );
     buffer += text;
     let nl = buffer.indexOf('\n');
     while (nl !== -1) {

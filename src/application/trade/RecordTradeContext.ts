@@ -25,7 +25,8 @@ export class RecordTradeContext {
     evalStart,
     evalEnd,
   }: RecordTradeContextInput): Promise<void> {
-    if (!bracket.entryOrderId) throw new Error('bracket.entryOrderId is required');
+    if (!bracket.entryOrderId)
+      throw new Error('bracket.entryOrderId is required');
     if (!model) throw new Error('model is required');
 
     const ctx: TradeContext = {

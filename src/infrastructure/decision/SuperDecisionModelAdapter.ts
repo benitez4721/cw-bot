@@ -58,9 +58,7 @@ const STUB_VWAP: VWAP = { value: NaN, timestamp: '' };
 //
 // Trail to break-even is configured at the strategy level
 // (`DecisionStrategy.trailToBreakEvenAtProfit`), not here.
-export class SuperDecisionModelAdapter
-  implements DecisionModelPort<SuperSnapshot>
-{
+export class SuperDecisionModelAdapter implements DecisionModelPort<SuperSnapshot> {
   readonly name = 'Super';
   // Sentinels: this model always overrides quantity/offsets in the buy signal
   // (sized per-symbol). Zeros fail closed if a future bug leaves them unset.

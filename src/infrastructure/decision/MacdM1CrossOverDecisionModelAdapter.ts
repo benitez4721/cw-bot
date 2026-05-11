@@ -39,9 +39,7 @@ const DEFAULT_PARAMS: MacdM1CrossOverDecisionModelAdapterParams = {
   minHistogram1minCrossoverDelta: 0.002,
 };
 
-export class MacdM1CrossOverDecisionModelAdapter
-  implements DecisionModelPort<MacdM1CrossOverSnapshot>
-{
+export class MacdM1CrossOverDecisionModelAdapter implements DecisionModelPort<MacdM1CrossOverSnapshot> {
   readonly name = 'MacdM1CrossOver';
   readonly orderConfig: OrderConfig;
   private readonly params: MacdM1CrossOverDecisionModelAdapterParams;

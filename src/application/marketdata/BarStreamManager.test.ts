@@ -42,7 +42,9 @@ function bar(timestampUtc: string, close = 100, volume = 1000): Bar {
   };
 }
 
-function makeBuySignal(symbol = 'AAPL'): DecisionSignal<MacdM1CrossOverSnapshot> {
+function makeBuySignal(
+  symbol = 'AAPL',
+): DecisionSignal<MacdM1CrossOverSnapshot> {
   const snapshot: MacdM1CrossOverSnapshot = {
     symbol,
     quote: { symbol, last: 100, bid: 99.9, ask: 100.1, timestamp: 't' },
@@ -63,7 +65,9 @@ function makeBuySignal(symbol = 'AAPL'): DecisionSignal<MacdM1CrossOverSnapshot>
   };
 }
 
-function makeHoldSignal(symbol = 'AAPL'): DecisionSignal<MacdM1CrossOverSnapshot> {
+function makeHoldSignal(
+  symbol = 'AAPL',
+): DecisionSignal<MacdM1CrossOverSnapshot> {
   const snapshot: MacdM1CrossOverSnapshot = {
     symbol,
     quote: { symbol, last: 100, bid: 99.9, ask: 100.1, timestamp: 't' },
@@ -242,8 +246,7 @@ interface StrategyFixture {
   evaluateImpl?: () => Promise<DecisionSignal<MacdM1CrossOverSnapshot>>;
 }
 
-interface MockModel
-  extends DecisionModelPort<MacdM1CrossOverSnapshot> {
+interface MockModel extends DecisionModelPort<MacdM1CrossOverSnapshot> {
   buildSnapshot: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
 }
@@ -549,7 +552,9 @@ describe('BarStreamManager', () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    s.tradeRepo._seedActive(makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-1'));
+    s.tradeRepo._seedActive(
+      makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-1'),
+    );
     (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'entry-1',
@@ -573,7 +578,9 @@ describe('BarStreamManager', () => {
     const s = setup({
       initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
     });
-    s.tradeRepo._seedActive(makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-1'));
+    s.tradeRepo._seedActive(
+      makeActiveContext('MacdM1CrossOver', 'AAPL', 'entry-1'),
+    );
     // Broker reports no active orders for AAPL — the bracket is fully done.
     (s.broker.getOrders as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     stubSignal(s.model, makeHoldSignal('AAPL'));
@@ -734,7 +741,11 @@ describe('BarStreamManager', () => {
         {
           name: 'MacdM1CrossOver',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
-          orderConfig: { quantity: 100, stopOffset: 0.2, takeProfitOffset: 0.35 },
+          orderConfig: {
+            quantity: 100,
+            stopOffset: 0.2,
+            takeProfitOffset: 0.35,
+          },
         },
         {
           name: 'meanRev',

@@ -364,10 +364,7 @@ export class BarStreamManager {
         symbol,
         triggerBar: bar,
       });
-      log.info(
-        { model: strategy.name, snapshot },
-        'evaluating snapshot',
-      );
+      log.info({ model: strategy.name, snapshot }, 'evaluating snapshot');
       const signal = strategy.model.evaluate({ snapshot });
       const evalEnd = new Date(this.now()).toISOString();
 
@@ -435,7 +432,6 @@ export class BarStreamManager {
       this.inFlight.delete(inFlightKey);
     }
   }
-
 }
 
 function errMsg(err: unknown): string {

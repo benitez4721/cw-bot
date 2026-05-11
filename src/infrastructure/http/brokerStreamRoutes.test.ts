@@ -213,7 +213,9 @@ describe('brokerStreamRoutes', () => {
     }
     h.orderMgr.emitConnection(true);
 
-    const text = await readUntil(res.body!, (a) => a.includes('event: connection'));
+    const text = await readUntil(res.body!, (a) =>
+      a.includes('event: connection'),
+    );
     expect(text).toContain('event: connection');
     expect(text).toContain('"connected":true');
 

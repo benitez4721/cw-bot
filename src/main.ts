@@ -152,18 +152,22 @@ async function main() {
   }
   // Streams de broker arrancan warm: el adapter mantiene la conexión a TS
   // viva con reconexión interna. Cualquier error de start() es no fatal.
-  orderStreamMgr.start().catch((err) =>
-    log.error(
-      { err: err instanceof Error ? err.message : String(err) },
-      'order stream start failed',
-    ),
-  );
-  positionStreamMgr.start().catch((err) =>
-    log.error(
-      { err: err instanceof Error ? err.message : String(err) },
-      'position stream start failed',
-    ),
-  );
+  orderStreamMgr
+    .start()
+    .catch((err) =>
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'order stream start failed',
+      ),
+    );
+  positionStreamMgr
+    .start()
+    .catch((err) =>
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'position stream start failed',
+      ),
+    );
   grafana?.start();
   heartbeat?.start();
 
