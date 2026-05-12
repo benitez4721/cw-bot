@@ -7,6 +7,7 @@ import { logger } from '../logging/logger.js';
 const log = logger.child({ component: 'TradeStationClient' });
 
 const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
+const USER_AGENT = 'cw-bot/1.0 (+https://github.com/flex/cw-bot)';
 
 export interface TokenStatus {
   cached: boolean;
@@ -104,6 +105,8 @@ export class TradeStationClient {
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
+      'user-agent': USER_AGENT,
+      accept: 'application/json',
     };
     if (body !== undefined) {
       headers['content-type'] = 'application/json';
@@ -156,7 +159,11 @@ export class TradeStationClient {
     try {
       const res = await fetch(tokenUrl, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'application/json',
+          'user-agent': USER_AGENT,
+        },
         body: body.toString(),
       });
 
