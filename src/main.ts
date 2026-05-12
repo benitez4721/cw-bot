@@ -88,9 +88,12 @@ async function main() {
     tradeRepo,
     broker,
   });
-  // Public watchlist endpoints expose the first strategy's watchlist for now.
-  // When a second strategy is added, expose a per-model lookup instead.
-  const listWatchlist = new ListWatchlist(strategies[0].watchlistRepo);
+  const listWatchlist = new ListWatchlist(
+    strategies.map((s) => ({
+      name: s.strategy.name,
+      repository: s.watchlistRepo,
+    })),
+  );
   const getOrders = new GetOrders(broker, tradeRepo);
 
   const orderStreamMgr = new OrderStreamManager({
