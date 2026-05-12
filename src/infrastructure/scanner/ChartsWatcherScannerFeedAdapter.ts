@@ -52,17 +52,24 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
   private subscribedConfigs: Record<string, true> = {};
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
+  // Single-flight: concurrent connect() calls share the same handshake so we
+  // never open two WebSockets with the same credentials (CW will kill one).
+  private connectPromise: Promise<void> | null = null;
 
   constructor(config: ChartsWatcherConfig) {
     this.config = config;
   }
 
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const url = `${this.config.wsUrl}?user_id=${this.config.userId}&api_key=${this.config.apiKey}`;
-      this.ws = new WebSocket(url);
+    if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.connectPromise) return this.connectPromise;
 
-      this.ws.on('open', () => {
+    this.connectPromise = new Promise<void>((resolve, reject) => {
+      const url = `${this.config.wsUrl}?user_id=${this.config.userId}&api_key=${this.config.apiKey}`;
+      const ws = new WebSocket(url);
+      this.ws = ws;
+
+      ws.on('open', () => {
         log.info('connected');
         this.notifyConnection(true);
         for (const configId of Object.keys(this.subscribedConfigs)) {
@@ -71,25 +78,30 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
         resolve();
       });
 
-      this.ws.on('message', (data) => {
+      ws.on('message', (data) => {
         this.handleMessage(data.toString());
       });
 
-      this.ws.on('close', () => {
-        log.info('disconnected');
+      ws.on('close', (code, reason) => {
+        log.info({ code, reason: reason.toString() }, 'disconnected');
         this.notifyConnection(false);
+        if (this.ws === ws) this.ws = null;
         if (this.shouldReconnect) {
           this.scheduleReconnect();
         }
       });
 
-      this.ws.on('error', (err) => {
+      ws.on('error', (err) => {
         log.error({ err: err.message }, 'ws error');
-        if (this.ws?.readyState !== WebSocket.OPEN) {
+        if (ws.readyState !== WebSocket.OPEN) {
           reject(err);
         }
       });
+    }).finally(() => {
+      this.connectPromise = null;
     });
+
+    return this.connectPromise;
   }
 
   disconnect(): void {
@@ -183,6 +195,15 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
         (c): ScannerColumn => ({ key: c.key, value: c.value }),
       ),
     }));
+
+    log.info(
+      {
+        configId: msg.config_id,
+        count: rows.length,
+        symbols: rows.map((r) => r.symbol),
+      },
+      'toplist update',
+    );
 
     for (const cb of this.updateCallbacks) {
       cb(msg.config_id, rows);
