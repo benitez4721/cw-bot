@@ -35,6 +35,7 @@ interface TsOrderLeg {
   ExecQuantity?: string;
   BuyOrSell?: string;
   ExecutionPrice?: string;
+  OpenOrClose?: string;
 }
 
 interface TsOrder {
@@ -153,32 +154,58 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     });
 
     const orders = response.Orders ?? [];
-    const entry = orders[0];
-    const stop = orders[1];
-    const takeProfit = orders[2];
     const failed = orders.find((o) => o.Error === 'FAILED');
+    const orderIds = orders
+      .map((o) => o.OrderID)
+      .filter((id): id is string => !!id);
 
-    if (!entry || !stop || !takeProfit || failed) {
+    if (orders.length < 3 || failed || orderIds.length < 3) {
       return {
         status: 'rejected',
-        entryOrderId: entry?.OrderID ?? '',
-        stopOrderId: stop?.OrderID ?? '',
-        takeProfitOrderId: takeProfit?.OrderID ?? '',
-        message: failed?.Message ?? entry?.Message,
+        entryOrderId: orders[0]?.OrderID ?? '',
+        stopOrderId: orders[1]?.OrderID ?? '',
+        takeProfitOrderId: orders[2]?.OrderID ?? '',
+        message: failed?.Message ?? orders[0]?.Message,
         error:
           failed?.Error ??
-          entry?.Error ??
+          orders[0]?.Error ??
           response.Errors?.[0]?.Error ??
           'Unknown error',
       };
     }
 
+    // El POST no devuelve OrderType y el orden no es fiable: TS V3 retorna las
+    // child orders del OSO/BRK antes que la parent. Reconsultamos por CSV para
+    // mapear cada OrderID a su rol real combinando OrderType y OpenOrClose:
+    //   entry → Limit + Open    (única "Open")
+    //   stop  → StopMarket + Close
+    //   tp    → Limit + Close
+    const account = encodeURIComponent(this.client.accountId());
+    const detail = await this.client.request<{ Orders?: TsOrder[] }>({
+      method: 'GET',
+      path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
+    });
+    const detailOrders = detail.Orders ?? [];
+    const entry = detailOrders.find((o) => bracketLegRole(o) === 'entry');
+    const stop = detailOrders.find((o) => bracketLegRole(o) === 'stop');
+    const takeProfit = detailOrders.find((o) => bracketLegRole(o) === 'tp');
+
+    if (!entry || !stop || !takeProfit) {
+      return {
+        status: 'rejected',
+        entryOrderId: entry?.OrderID ?? '',
+        stopOrderId: stop?.OrderID ?? '',
+        takeProfitOrderId: takeProfit?.OrderID ?? '',
+        message: 'failed to identify bracket legs from TradeStation response',
+        error: 'leg-detection-failed',
+      };
+    }
+
     return {
       status: mapStatus(entry.Status),
-      entryOrderId: entry.OrderID ?? '',
-      stopOrderId: stop.OrderID ?? '',
-      takeProfitOrderId: takeProfit.OrderID ?? '',
-      message: entry.Message,
+      entryOrderId: entry.OrderID,
+      stopOrderId: stop.OrderID,
+      takeProfitOrderId: takeProfit.OrderID,
     };
   }
 
@@ -251,6 +278,17 @@ export class TradeStationBrokerAdapter implements BrokerPort {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+type BracketLegRole = 'entry' | 'stop' | 'tp';
+
+function bracketLegRole(detail: TsOrder | undefined): BracketLegRole | undefined {
+  if (!detail) return undefined;
+  const openOrClose = detail.Legs?.[0]?.OpenOrClose;
+  if (openOrClose === 'Open') return 'entry';
+  if (detail.OrderType === 'StopMarket') return 'stop';
+  if (detail.OrderType === 'Limit' && openOrClose === 'Close') return 'tp';
+  return undefined;
 }
 
 function toOrder(o: TsOrder): Order {
