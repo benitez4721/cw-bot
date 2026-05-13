@@ -282,7 +282,9 @@ function round2(n: number): number {
 
 type BracketLegRole = 'entry' | 'stop' | 'tp';
 
-function bracketLegRole(detail: TsOrder | undefined): BracketLegRole | undefined {
+function bracketLegRole(
+  detail: TsOrder | undefined,
+): BracketLegRole | undefined {
   if (!detail) return undefined;
   const openOrClose = detail.Legs?.[0]?.OpenOrClose;
   if (openOrClose === 'Open') return 'entry';
