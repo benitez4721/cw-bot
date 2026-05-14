@@ -176,19 +176,27 @@ export class TradeStationBrokerAdapter implements BrokerPort {
 
     // El POST no devuelve OrderType y el orden no es fiable: TS V3 retorna las
     // child orders del OSO/BRK antes que la parent. Reconsultamos por CSV para
-    // mapear cada OrderID a su rol real combinando OrderType y OpenOrClose:
-    //   entry → Limit + Open    (única "Open")
-    //   stop  → StopMarket + Close
-    //   tp    → Limit + Close
+    // mapear cada OrderID a su rol real. No dependemos de Legs[0].OpenOrClose
+    // porque ese campo puede tardar en poblar inmediatamente tras el POST;
+    // BuyOrSell y OrderType vienen sincronos en el response.
+    //   entry → Limit + BuyOrSell === input.side
+    //   stop  → StopMarket
+    //   tp    → Limit + OrderID !== entry.OrderID
     const account = encodeURIComponent(this.client.accountId());
     const detail = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
     });
     const detailOrders = detail.Orders ?? [];
-    const entry = detailOrders.find((o) => bracketLegRole(o) === 'entry');
-    const stop = detailOrders.find((o) => bracketLegRole(o) === 'stop');
-    const takeProfit = detailOrders.find((o) => bracketLegRole(o) === 'tp');
+    const entry = detailOrders.find(
+      (o) =>
+        o.OrderType === 'Limit' &&
+        o.Legs?.[0]?.BuyOrSell?.toUpperCase() === input.side,
+    );
+    const stop = detailOrders.find((o) => o.OrderType === 'StopMarket');
+    const takeProfit = detailOrders.find(
+      (o) => o.OrderType === 'Limit' && o.OrderID !== entry?.OrderID,
+    );
 
     if (!entry || !stop || !takeProfit) {
       return {
@@ -278,19 +286,6 @@ export class TradeStationBrokerAdapter implements BrokerPort {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
-}
-
-type BracketLegRole = 'entry' | 'stop' | 'tp';
-
-function bracketLegRole(
-  detail: TsOrder | undefined,
-): BracketLegRole | undefined {
-  if (!detail) return undefined;
-  const openOrClose = detail.Legs?.[0]?.OpenOrClose;
-  if (openOrClose === 'Open') return 'entry';
-  if (detail.OrderType === 'StopMarket') return 'stop';
-  if (detail.OrderType === 'Limit' && openOrClose === 'Close') return 'tp';
-  return undefined;
 }
 
 function toOrder(o: TsOrder): Order {
