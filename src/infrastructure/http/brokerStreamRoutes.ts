@@ -14,30 +14,33 @@ interface Subscription {
 }
 
 interface SubscribableStream<E> {
-  subscribe(handler: (event: E) => void): Subscription;
+  // `subscribe` puede ser async (OrderStreamManager refresca contextos en
+  // Redis antes del replay) o sync (PositionStreamManager). El caller siempre
+  // hace `await` para uniformar el manejo.
+  subscribe(handler: (event: E) => void): Promise<Subscription> | Subscription;
   onConnectionChange(handler: (connected: boolean) => void): Subscription;
 }
 
 export const brokerStreamRoutes: FastifyPluginAsync<
   BrokerStreamRoutesOptions
 > = async (server, opts) => {
-  server.get('/api/broker/stream/orders', (req, reply) => {
+  server.get('/api/broker/stream/orders', async (req, reply) => {
     reply.hijack();
-    pipeManagerToSse(req, reply, opts.orderStream, 'order');
+    await pipeManagerToSse(req, reply, opts.orderStream, 'order');
   });
 
-  server.get('/api/broker/stream/positions', (req, reply) => {
+  server.get('/api/broker/stream/positions', async (req, reply) => {
     reply.hijack();
-    pipeManagerToSse(req, reply, opts.positionStream, 'position');
+    await pipeManagerToSse(req, reply, opts.positionStream, 'position');
   });
 };
 
-function pipeManagerToSse<E>(
+async function pipeManagerToSse<E>(
   req: FastifyRequest,
   reply: FastifyReply,
   manager: SubscribableStream<E>,
   eventName: string,
-): void {
+): Promise<void> {
   setupSseHeaders(reply);
   let nextId = 0;
   const writeEvent = (name: string, data: unknown): void => {
@@ -50,7 +53,9 @@ function pipeManagerToSse<E>(
   // Registrar el listener de cierre ANTES de subscribirse para evitar
   // listeners huérfanos si el cliente cierra durante el replay.
   const cleanups: Array<() => void> = [];
+  let closed = false;
   req.raw.on('close', () => {
+    closed = true;
     for (const c of cleanups) {
       try {
         c();
@@ -69,7 +74,14 @@ function pipeManagerToSse<E>(
     }
   });
 
-  const sub = manager.subscribe((event) => writeEvent(eventName, event));
+  const sub = await manager.subscribe((event) => writeEvent(eventName, event));
+  // Si el cliente cerró mientras esperábamos el subscribe async (el manager
+  // hace lookup a Redis), des-suscribir inmediatamente: el cleanup no corrió
+  // porque sub aún no estaba pusheado.
+  if (closed) {
+    sub.unsubscribe();
+    return;
+  }
   cleanups.push(() => sub.unsubscribe());
 
   const connSub = manager.onConnectionChange((connected) =>

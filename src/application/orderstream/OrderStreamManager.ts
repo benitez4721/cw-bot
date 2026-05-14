@@ -70,10 +70,14 @@ export class OrderStreamManager {
     return Array.from(this.orders.values());
   }
 
-  // Replay sincrónico del snapshot actual con origin='priorState' + suscripción
-  // a updates futuros. El handler ve un único stream coherente (priorState
-  // primero, liveUpdate después).
-  subscribe(handler: OrderStreamHandler): StreamSubscription {
+  // Replay del snapshot actual con origin='priorState' + suscripción a updates
+  // futuros. Antes del replay, re-consulta el TradeContextRepository para los
+  // orderIds cacheados que aún no tienen `context`: cubre la race entre el
+  // WS update inicial (que llega antes de que RecordTradeContext escriba en
+  // Redis) y el lookup en `process()`, que de otra forma deja el snapshot
+  // congelado sin contexto.
+  async subscribe(handler: OrderStreamHandler): Promise<StreamSubscription> {
+    await this.refreshMissingContexts();
     const observedAt = this.now();
     for (const order of this.orders.values()) {
       try {
@@ -88,6 +92,30 @@ export class OrderStreamManager {
         this.emitter.off('order', handler);
       },
     };
+  }
+
+  private async refreshMissingContexts(): Promise<void> {
+    const missingIds: string[] = [];
+    for (const [id, order] of this.orders) {
+      if (!order.context) missingIds.push(id);
+    }
+    if (missingIds.length === 0) return;
+    let contexts: Awaited<ReturnType<TradeContextRepository['getByOrderIds']>>;
+    try {
+      contexts = await this.tradeRepo.getByOrderIds(missingIds);
+    } catch (err) {
+      log.warn(
+        { err: errMsg(err) },
+        'failed to refresh snapshot contexts on subscribe',
+      );
+      return;
+    }
+    for (const [id, ctx] of contexts) {
+      const order = this.orders.get(id);
+      if (order && !order.context) {
+        this.orders.set(id, { ...order, context: ctx });
+      }
+    }
   }
 
   onConnectionChange(

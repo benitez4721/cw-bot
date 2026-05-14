@@ -115,14 +115,14 @@ function buildManager(): {
 }
 
 describe('OrderStreamManager', () => {
-  it('replays the current snapshot synchronously when subscribing', async () => {
+  it('replays the current snapshot on subscribe', async () => {
     const { stream, mgr } = buildManager();
     stream.emit(makeEvent(order({ id: 'A' }), 'priorState'));
     stream.emit(makeEvent(order({ id: 'B' }), 'priorState'));
     await mgr.idle();
 
     const received: OrderEvent[] = [];
-    mgr.subscribe((e) => received.push(e));
+    await mgr.subscribe((e) => received.push(e));
 
     expect(received.map((e) => e.order.id)).toEqual(['A', 'B']);
     expect(received.every((e) => e.origin === 'priorState')).toBe(true);
@@ -137,7 +137,7 @@ describe('OrderStreamManager', () => {
     repo.setContext('A', ctx);
 
     const live: OrderEvent[] = [];
-    mgr.subscribe((e) => live.push(e));
+    await mgr.subscribe((e) => live.push(e));
 
     stream.emit(makeEvent(order({ id: 'A' }), 'liveUpdate'));
     stream.emit(makeEvent(order({ id: 'B' }), 'liveUpdate'));
@@ -162,18 +162,43 @@ describe('OrderStreamManager', () => {
     await mgr.idle();
 
     const replayed: OrderEvent[] = [];
-    mgr.subscribe((e) => replayed.push(e));
+    await mgr.subscribe((e) => replayed.push(e));
     expect(replayed).toHaveLength(1);
     expect(replayed[0]?.order.context).toEqual(ctx);
     expect(replayed[0]?.origin).toBe('priorState');
+  });
+
+  it('refreshes context from repo on subscribe when cache was missing it', async () => {
+    // Race real: el WS update llega antes de que RecordTradeContext escriba
+    // en Redis, quedando la orden cacheada sin context. Al subscribirse más
+    // tarde, el manager debe re-consultar y enriquecer antes del replay.
+    const { stream, repo, mgr } = buildManager();
+    stream.emit(makeEvent(order({ id: 'A', status: 'filled' }), 'liveUpdate'));
+    await mgr.idle();
+    // Recién ahora aparece el contexto en el repo (escritura post-fill).
+    const ctx = makeContext({
+      bracket: { entryOrderId: 'A', stopOrderId: 'B', takeProfitOrderId: 'C' },
+    });
+    repo.setContext('A', ctx);
+    // El cache aún tiene la orden sin context.
+    expect(mgr.getSnapshot()[0]?.context).toBeUndefined();
+
+    const replayed: OrderEvent[] = [];
+    await mgr.subscribe((e) => replayed.push(e));
+
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]?.order.context).toEqual(ctx);
+    // El cache quedó actualizado: futuros subscribers no re-leen Redis para
+    // este id.
+    expect(mgr.getSnapshot()[0]?.context).toEqual(ctx);
   });
 
   it('forwards live updates to all subscribers', async () => {
     const { stream, mgr } = buildManager();
     const subA: OrderEvent[] = [];
     const subB: OrderEvent[] = [];
-    mgr.subscribe((e) => subA.push(e));
-    mgr.subscribe((e) => subB.push(e));
+    await mgr.subscribe((e) => subA.push(e));
+    await mgr.subscribe((e) => subB.push(e));
 
     stream.emit(makeEvent(order({ id: 'A', status: 'filled' }), 'liveUpdate'));
     await mgr.idle();
@@ -187,7 +212,7 @@ describe('OrderStreamManager', () => {
   it('stops delivering events after unsubscribe', async () => {
     const { stream, mgr } = buildManager();
     const events: OrderEvent[] = [];
-    const sub = mgr.subscribe((e) => events.push(e));
+    const sub = await mgr.subscribe((e) => events.push(e));
     stream.emit(makeEvent(order({ id: 'A' }), 'liveUpdate'));
     await mgr.idle();
     sub.unsubscribe();
@@ -203,7 +228,7 @@ describe('OrderStreamManager', () => {
     await mgr.idle();
 
     const received: OrderEvent[] = [];
-    mgr.subscribe((e) => received.push(e));
+    await mgr.subscribe((e) => received.push(e));
     // Replay del subscribe = 1 evento.
     expect(received).toHaveLength(1);
     expect(received[0]?.order.status).toBe('open');
