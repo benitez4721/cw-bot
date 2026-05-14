@@ -176,26 +176,35 @@ export class TradeStationBrokerAdapter implements BrokerPort {
 
     // El POST no devuelve OrderType y el orden no es fiable: TS V3 retorna las
     // child orders del OSO/BRK antes que la parent. Reconsultamos por CSV para
-    // mapear cada OrderID a su rol real. No dependemos de Legs[0].OpenOrClose
-    // porque ese campo puede tardar en poblar inmediatamente tras el POST;
-    // BuyOrSell y OrderType vienen sincronos en el response.
-    //   entry → Limit + BuyOrSell === input.side
-    //   stop  → StopMarket
-    //   tp    → Limit + OrderID !== entry.OrderID
+    // mapear cada OrderID a su rol real. No dependemos de Legs[0].BuyOrSell
+    // ni OpenOrClose: cuando el entry fillea instantaneo, el GET puede volver
+    // con Legs[0].BuyOrSell vacio y la deteccion degenera a 'rejected' con
+    // entryOrderId vacio (deja la posicion huerfana — sin TradeContext —
+    // aunque el OSO en TS exista). Cada leg tiene una huella unica
+    // (OrderType, precio) que enviamos nosotros en el POST:
+    //   stop  → StopMarket + StopPrice === stopPrice
+    //   entry → Limit      + LimitPrice === cost
+    //   tp    → Limit      + LimitPrice === takeProfitPrice
     const account = encodeURIComponent(this.client.accountId());
     const detail = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
     });
     const detailOrders = detail.Orders ?? [];
+    const stop = detailOrders.find(
+      (o) =>
+        o.OrderType === 'StopMarket' &&
+        parseNumber(o.StopPrice ?? '') === stopPrice,
+    );
     const entry = detailOrders.find(
       (o) =>
-        o.OrderType === 'Limit' &&
-        o.Legs?.[0]?.BuyOrSell?.toUpperCase() === input.side,
+        o.OrderType === 'Limit' && parseNumber(o.LimitPrice ?? '') === cost,
     );
-    const stop = detailOrders.find((o) => o.OrderType === 'StopMarket');
     const takeProfit = detailOrders.find(
-      (o) => o.OrderType === 'Limit' && o.OrderID !== entry?.OrderID,
+      (o) =>
+        o.OrderType === 'Limit' &&
+        o.OrderID !== entry?.OrderID &&
+        parseNumber(o.LimitPrice ?? '') === takeProfitPrice,
     );
 
     if (!entry || !stop || !takeProfit) {
