@@ -18,7 +18,6 @@ export const env = {
     process.env.CW_WS_URL || 'wss://app.chartswatcher.com/api/v1/websocket',
   CW_USER_ID: process.env.CW_USER_ID,
   CW_API_KEY: process.env.CW_API_KEY,
-  CW_CONFIG_ID: process.env.CW_CONFIG_ID,
   ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY,
   ALPHA_VANTAGE_BASE_URL:
     process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co/query',

@@ -13,10 +13,7 @@ import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/Twe
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
 import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
-import {
-  SUPER_CW_CONFIG_ID,
-  SuperDecisionModel,
-} from './domain/decision/models/SuperDecisionModel.js';
+import { SuperDecisionModel } from './domain/decision/models/SuperDecisionModel.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
@@ -105,9 +102,10 @@ export function setupAdapters(): Adapters {
   });
 
   // Each strategy owns its own watchlist (separate Redis keyspace via
-  // keyPrefix) and points to its own CW scanner. The Super model's config_id
-  // is exported as a constant from its adapter (it's part of the model's
-  // definition); MacdM1CrossOver's stays in env for now.
+  // keyPrefix) and points to its own CW scanner. The CW config_id is
+  // infra wiring (opaque pointer to ChartsWatcher); the upstream RVOL
+  // filter that CW applies is part of each strategy spec, but the ID
+  // itself lives here, hardcoded — invariant across deploys.
   const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
   const macdM1CrossOverModel = new MacdM1CrossOverDecisionModel({
     broker,
@@ -119,7 +117,7 @@ export function setupAdapters(): Adapters {
       model: macdM1CrossOverModel,
       watchlist: macdM1CrossOverWatchlist,
     },
-    cwConfigId: env.CW_CONFIG_ID!,
+    cwConfigId: '69b85e8d373a8a104a52803b',
     watchlistRepo: macdM1CrossOverWatchlist,
   };
 
@@ -134,7 +132,7 @@ export function setupAdapters(): Adapters {
       watchlist: superWatchlist,
       trailToBreakEvenAtProfit: 0.005,
     },
-    cwConfigId: SUPER_CW_CONFIG_ID,
+    cwConfigId: '69f6bec1f52a7e93e345cd0c',
     watchlistRepo: superWatchlist,
   };
 

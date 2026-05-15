@@ -35,7 +35,6 @@ function requireEnv(): void {
   if (!env.TWELVEDATA_API_KEY) missing.push('TWELVEDATA_API_KEY');
   if (!env.CW_USER_ID) missing.push('CW_USER_ID');
   if (!env.CW_API_KEY) missing.push('CW_API_KEY');
-  if (!env.CW_CONFIG_ID) missing.push('CW_CONFIG_ID');
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
   }
