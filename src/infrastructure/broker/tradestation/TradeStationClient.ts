@@ -1,8 +1,8 @@
 import type {
   MetricsPort,
   TsErrorType,
-} from '../../domain/metrics/MetricsPort.js';
-import { logger } from '../logging/logger.js';
+} from '../../../domain/metrics/MetricsPort.js';
+import { logger } from '../../logging/logger.js';
 
 const log = logger.child({ component: 'TradeStationClient' });
 

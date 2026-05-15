@@ -2,7 +2,7 @@ import type {
   OrderSide,
   OrderStatus,
   OrderType,
-} from '../../domain/broker/BrokerTypes.js';
+} from '../../../domain/broker/BrokerTypes.js';
 
 export function parseNumber(value: string | number | undefined | null): number {
   if (value === undefined || value === null || value === '') return 0;

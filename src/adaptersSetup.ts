@@ -1,10 +1,10 @@
 import Redis from 'ioredis';
 import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
-import { TradeStationBrokerAdapter } from './infrastructure/tradestation/TradeStationBrokerAdapter.js';
-import { TradeStationClient } from './infrastructure/tradestation/TradeStationClient.js';
-import { TradeStationOrderStreamAdapter } from './infrastructure/tradestation/TradeStationOrderStreamAdapter.js';
-import { TradeStationPositionStreamAdapter } from './infrastructure/tradestation/TradeStationPositionStreamAdapter.js';
+import { TradeStationBrokerAdapter } from './infrastructure/broker/tradestation/TradeStationBrokerAdapter.js';
+import { TradeStationClient } from './infrastructure/broker/tradestation/TradeStationClient.js';
+import { TradeStationOrderStreamAdapter } from './infrastructure/broker/tradestation/TradeStationOrderStreamAdapter.js';
+import { TradeStationPositionStreamAdapter } from './infrastructure/broker/tradestation/TradeStationPositionStreamAdapter.js';
 import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';

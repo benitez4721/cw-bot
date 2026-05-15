@@ -1,5 +1,5 @@
 import type { TradeStationClient } from './TradeStationClient.js';
-import { logger } from '../logging/logger.js';
+import { logger } from '../../logging/logger.js';
 
 const STALL_MS = 35_000;
 const BACKOFF_BASE_MS = 1_000;

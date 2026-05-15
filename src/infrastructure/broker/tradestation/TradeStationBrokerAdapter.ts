@@ -2,7 +2,7 @@ import type {
   BrokerPort,
   GetQuoteInput,
   ReplaceStopPriceInput,
-} from '../../domain/broker/BrokerPort.js';
+} from '../../../domain/broker/BrokerPort.js';
 import type {
   BracketOrderInput,
   BracketOrderResult,
@@ -10,7 +10,7 @@ import type {
   OrderSide,
   Position,
   Quote,
-} from '../../domain/broker/BrokerTypes.js';
+} from '../../../domain/broker/BrokerTypes.js';
 import type { TokenStatus } from './TradeStationClient.js';
 import type { TradeStationClient } from './TradeStationClient.js';
 import {

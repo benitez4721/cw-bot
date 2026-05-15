@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TradeStationOrderStreamAdapter } from './TradeStationOrderStreamAdapter.js';
 import type { TradeStationClient } from './TradeStationClient.js';
-import type { OrderEvent } from '../../domain/broker/BrokerStreamTypes.js';
+import type { OrderEvent } from '../../../domain/broker/BrokerStreamTypes.js';
 
 interface ManualStream {
   stream: ReadableStream<Uint8Array>;
