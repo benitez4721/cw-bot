@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { BrokerPort } from '../../broker/BrokerPort.js';
-import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
+import type { BrokerPort } from '../../../broker/BrokerPort.js';
+import type { IndicatorPort } from '../../../indicators/IndicatorPort.js';
 import {
   MacdM1CrossOverDecisionModel,
   type MacdM1CrossOverSnapshot,
-} from './MacdM1CrossOverDecisionModel.js';
+} from '../../../decision/models/MacdM1CrossOverDecisionModel.js';
 
 const DEPS = {
   broker: {} as BrokerPort,

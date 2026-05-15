@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import RedisMock from 'ioredis-mock';
 import type Redis from 'ioredis';
-import { RedisWatchlistRepository } from './RedisWatchlistRepository.js';
+import { RedisWatchlistRepository } from '../../watchlist/RedisWatchlistRepository.js';
 
 describe('RedisWatchlistRepository', () => {
   let redis: Redis;

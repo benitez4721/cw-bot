@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { brokerStreamRoutes } from './brokerStreamRoutes.js';
-import type { OrderStreamManager } from '../../application/orderstream/OrderStreamManager.js';
-import type { PositionStreamManager } from '../../application/positionstream/PositionStreamManager.js';
+import { brokerStreamRoutes } from '../../http/brokerStreamRoutes.js';
+import type { OrderStreamManager } from '../../../application/orderstream/OrderStreamManager.js';
+import type { PositionStreamManager } from '../../../application/positionstream/PositionStreamManager.js';
 import type {
   OrderEvent,
   PositionEvent,
-} from '../../domain/broker/BrokerStreamTypes.js';
+} from '../../../domain/broker/BrokerStreamTypes.js';
 
 interface Subscription {
   unsubscribe(): void;

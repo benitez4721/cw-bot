@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TradeStationStreamConnection } from './TradeStationStreamConnection.js';
-import type { TradeStationClient } from './TradeStationClient.js';
+import { TradeStationStreamConnection } from '../../../broker/tradestation/TradeStationStreamConnection.js';
+import type { TradeStationClient } from '../../../broker/tradestation/TradeStationClient.js';
 
 type ScheduleEntry = {
   id: number;

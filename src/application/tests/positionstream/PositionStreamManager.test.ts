@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Position } from '../../domain/broker/BrokerTypes.js';
+import type { Position } from '../../../domain/broker/BrokerTypes.js';
 import type {
   PositionEvent,
   PositionStreamHandler,
   StreamConnectionHandler,
-} from '../../domain/broker/BrokerStreamTypes.js';
-import type { PositionStreamPort } from '../../domain/broker/PositionStreamPort.js';
-import { PositionStreamManager } from './PositionStreamManager.js';
+} from '../../../domain/broker/BrokerStreamTypes.js';
+import type { PositionStreamPort } from '../../../domain/broker/PositionStreamPort.js';
+import { PositionStreamManager } from '../../positionstream/PositionStreamManager.js';
 
 class FakePositionStream implements PositionStreamPort {
   private positionHandlers: PositionStreamHandler[] = [];

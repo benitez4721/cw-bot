@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { BrokerPort } from '../../broker/BrokerPort.js';
-import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
-import type { MACD } from '../../indicators/IndicatorTypes.js';
+import type { BrokerPort } from '../../../broker/BrokerPort.js';
+import type { IndicatorPort } from '../../../indicators/IndicatorPort.js';
+import type { MACD } from '../../../indicators/IndicatorTypes.js';
 import {
   SuperDecisionModel,
   type SuperSnapshot,
-} from './SuperDecisionModel.js';
+} from '../../../decision/models/SuperDecisionModel.js';
 
 const DEPS = {
   broker: {} as BrokerPort,

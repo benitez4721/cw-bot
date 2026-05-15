@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
+import type { BarRepository } from '../../../domain/marketdata/BarRepository.js';
 import type {
   Bar,
   BarInterval,
-} from '../../domain/marketdata/MarketDataTypes.js';
-import { LocalIndicatorAdapter } from './LocalIndicatorAdapter.js';
+} from '../../../domain/marketdata/MarketDataTypes.js';
+import { LocalIndicatorAdapter } from '../../indicators/LocalIndicatorAdapter.js';
 
 function createBarRepoStub(): BarRepository & {
   _set: (s: string, i: BarInterval, b: Bar[]) => void;

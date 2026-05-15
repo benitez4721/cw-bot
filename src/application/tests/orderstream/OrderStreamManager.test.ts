@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { Order } from '../../domain/broker/BrokerTypes.js';
+import type { Order } from '../../../domain/broker/BrokerTypes.js';
 import type {
   OrderEvent,
   OrderStreamHandler,
   StreamConnectionHandler,
-} from '../../domain/broker/BrokerStreamTypes.js';
-import type { OrderStreamPort } from '../../domain/broker/OrderStreamPort.js';
-import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
-import type { TradeContext } from '../../domain/trade/TradeTypes.js';
-import { OrderStreamManager } from './OrderStreamManager.js';
+} from '../../../domain/broker/BrokerStreamTypes.js';
+import type { OrderStreamPort } from '../../../domain/broker/OrderStreamPort.js';
+import type { TradeContextRepository } from '../../../domain/trade/TradeContextRepository.js';
+import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
+import { OrderStreamManager } from '../../orderstream/OrderStreamManager.js';
 
 class FakeOrderStream implements OrderStreamPort {
   private orderHandlers: OrderStreamHandler[] = [];

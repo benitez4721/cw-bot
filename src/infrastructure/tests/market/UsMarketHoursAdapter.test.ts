@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UsMarketHoursAdapter } from './UsMarketHoursAdapter.js';
+import { UsMarketHoursAdapter } from '../../market/UsMarketHoursAdapter.js';
 
 describe('UsMarketHoursAdapter', () => {
   const market = new UsMarketHoursAdapter();

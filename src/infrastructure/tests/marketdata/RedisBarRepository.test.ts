@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import RedisMock from 'ioredis-mock';
 import type Redis from 'ioredis';
-import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
-import { RedisBarRepository } from './RedisBarRepository.js';
+import type { Bar } from '../../../domain/marketdata/MarketDataTypes.js';
+import { RedisBarRepository } from '../../marketdata/RedisBarRepository.js';
 
 function bar(timestamp: string, close: number, volume = 1000): Bar {
   return { timestamp, open: close, high: close, low: close, close, volume };

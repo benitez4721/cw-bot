@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TwelveDataClient } from '../twelvedata/TwelveDataClient.js';
-import { TwelveDataHistoricalBarsAdapter } from './TwelveDataHistoricalBarsAdapter.js';
+import { TwelveDataClient } from '../../twelvedata/TwelveDataClient.js';
+import { TwelveDataHistoricalBarsAdapter } from '../../marketdata/TwelveDataHistoricalBarsAdapter.js';
 
 describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
   let adapter: TwelveDataHistoricalBarsAdapter;

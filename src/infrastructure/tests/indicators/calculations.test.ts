@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
+import type { Bar } from '../../../domain/marketdata/MarketDataTypes.js';
 import {
   aggregateOneFiveMinuteBucket,
   calcEMA,
   calcMACD,
   calcSessionVWAP,
   toEasternDate,
-} from './calculations.js';
+} from '../../indicators/calculations.js';
 
 describe('calcEMA', () => {
   it('returns all NaN when input shorter than period', () => {

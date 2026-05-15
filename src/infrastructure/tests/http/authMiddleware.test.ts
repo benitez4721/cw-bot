@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { registerAuthMiddleware } from './authMiddleware.js';
+import { registerAuthMiddleware } from '../../http/authMiddleware.js';
 
 function buildServer(apiToken: string | undefined): FastifyInstance {
   const f = Fastify();
