@@ -15,7 +15,7 @@
     "format:check": "prettier --check .",
     "oauth:refresh-token": "tsx --env-file=.env scripts/get-refresh-token.ts",
     "redis:flush": "tsx --env-file=.env scripts/flush-redis.ts",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",

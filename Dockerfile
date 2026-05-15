@@ -19,7 +19,7 @@ RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod && pnpm store prune
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
 COPY --from=build /app/dist ./dist
 USER app
 EXPOSE 3000
