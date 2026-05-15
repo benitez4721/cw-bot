@@ -1,17 +1,15 @@
-import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { Quote } from '../../domain/broker/BrokerTypes.js';
+import type { BrokerPort } from '../../broker/BrokerPort.js';
+import type { Quote } from '../../broker/BrokerTypes.js';
 import type {
   BuildSnapshotInput,
-  DecisionModelPort,
-  EvaluateInput,
-} from '../../domain/decision/DecisionPort.js';
+  DecisionModel,
+} from '../DecisionModel.js';
 import type {
   DecisionSignal,
-  OrderConfig,
   RuleCheck,
-} from '../../domain/decision/DecisionTypes.js';
-import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
-import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
+} from '../DecisionTypes.js';
+import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
+import type { MACD, VWAP } from '../../indicators/IndicatorTypes.js';
 
 export interface MacdM1CrossOverSnapshot {
   symbol: string;
@@ -21,43 +19,22 @@ export interface MacdM1CrossOverSnapshot {
   vwap1min: VWAP;
 }
 
-export interface MacdM1CrossOverDecisionModelAdapterParams extends OrderConfig {
-  entryOffsetBps: number;
-  minHistogram1minCrossoverDelta: number;
-}
-
-export interface MacdM1CrossOverDecisionModelAdapterDeps {
-  broker: BrokerPort;
-  indicators: IndicatorPort;
-}
-
-const DEFAULT_PARAMS: MacdM1CrossOverDecisionModelAdapterParams = {
+const PARAMS = {
   quantity: 2000,
-  entryOffsetBps: 10,
   stopOffset: 0.2,
   takeProfitOffset: 0.35,
+  entryOffsetBps: 10,
   minHistogram1minCrossoverDelta: 0.002,
-};
+} as const;
 
-export class MacdM1CrossOverDecisionModelAdapter implements DecisionModelPort<MacdM1CrossOverSnapshot> {
+export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOverSnapshot> {
   readonly name = 'MacdM1CrossOver';
-  readonly orderConfig: OrderConfig;
-  private readonly params: MacdM1CrossOverDecisionModelAdapterParams;
   private readonly broker: BrokerPort;
   private readonly indicators: IndicatorPort;
 
-  constructor(
-    deps: MacdM1CrossOverDecisionModelAdapterDeps,
-    params: Partial<MacdM1CrossOverDecisionModelAdapterParams> = {},
-  ) {
+  constructor(deps: { broker: BrokerPort; indicators: IndicatorPort }) {
     this.broker = deps.broker;
     this.indicators = deps.indicators;
-    this.params = { ...DEFAULT_PARAMS, ...params };
-    this.orderConfig = {
-      quantity: this.params.quantity,
-      stopOffset: this.params.stopOffset,
-      takeProfitOffset: this.params.takeProfitOffset,
-    };
   }
 
   async buildSnapshot({
@@ -72,20 +49,21 @@ export class MacdM1CrossOverDecisionModelAdapter implements DecisionModelPort<Ma
     return { symbol, quote, macd5min, macd1minSeries, vwap1min };
   }
 
-  evaluate({
-    snapshot,
-  }: EvaluateInput<MacdM1CrossOverSnapshot>): DecisionSignal<MacdM1CrossOverSnapshot> {
+  evaluate(snapshot: MacdM1CrossOverSnapshot): DecisionSignal<MacdM1CrossOverSnapshot> {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
     }
     const base = snapshot.quote.ask ?? snapshot.quote.last;
-    const cushion = base * (this.params.entryOffsetBps / 10000);
+    const cushion = base * (PARAMS.entryOffsetBps / 10000);
     return {
       action: 'buy',
       symbol: snapshot.symbol,
       side: 'BUY',
       entryLimitPrice: round2(base + cushion),
+      quantity: PARAMS.quantity,
+      stopOffset: PARAMS.stopOffset,
+      takeProfitOffset: PARAMS.takeProfitOffset,
       checks,
       snapshot,
     };
@@ -96,7 +74,7 @@ export class MacdM1CrossOverDecisionModelAdapter implements DecisionModelPort<Ma
     const m1 = s.macd1minSeries;
     const current = m1[0];
     const previous = m1[1];
-    const minDelta = this.params.minHistogram1minCrossoverDelta;
+    const minDelta = PARAMS.minHistogram1minCrossoverDelta;
 
     return [
       { name: '5min MACD > 0', passed: m5.macd > 0 },

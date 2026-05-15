@@ -365,7 +365,7 @@ export class BarStreamManager {
         triggerBar: bar,
       });
       log.info({ model: strategy.name, snapshot }, 'evaluating snapshot');
-      const signal = strategy.model.evaluate({ snapshot });
+      const signal = strategy.model.evaluate(snapshot);
       const evalEnd = new Date(this.now()).toISOString();
 
       this.metrics.recordDecision(symbol, signal.action);
@@ -375,10 +375,9 @@ export class BarStreamManager {
         symbol: signal.symbol,
         side: signal.side,
         entryLimitPrice: signal.entryLimitPrice,
-        quantity: signal.quantity ?? strategy.orderConfig.quantity,
-        stopOffset: signal.stopOffset ?? strategy.orderConfig.stopOffset,
-        takeProfitOffset:
-          signal.takeProfitOffset ?? strategy.orderConfig.takeProfitOffset,
+        quantity: signal.quantity,
+        stopOffset: signal.stopOffset,
+        takeProfitOffset: signal.takeProfitOffset,
       });
       this.metrics.recordOrderResult(result.status);
       log.info(

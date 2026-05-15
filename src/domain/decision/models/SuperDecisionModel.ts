@@ -1,17 +1,15 @@
-import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { Quote } from '../../domain/broker/BrokerTypes.js';
+import type { BrokerPort } from '../../broker/BrokerPort.js';
+import type { Quote } from '../../broker/BrokerTypes.js';
 import type {
   BuildSnapshotInput,
-  DecisionModelPort,
-  EvaluateInput,
-} from '../../domain/decision/DecisionPort.js';
+  DecisionModel,
+} from '../DecisionModel.js';
 import type {
   DecisionSignal,
-  OrderConfig,
   RuleCheck,
-} from '../../domain/decision/DecisionTypes.js';
-import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
-import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
+} from '../DecisionTypes.js';
+import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
+import type { MACD, VWAP } from '../../indicators/IndicatorTypes.js';
 
 // ChartsWatcher scanner config that feeds this model's watchlist. Part of
 // the model's definition (RVOL filter is applied upstream by CW), not a
@@ -21,63 +19,25 @@ export const SUPER_CW_CONFIG_ID = '69f6bec1f52a7e93e345cd0c';
 export interface SuperSnapshot {
   symbol: string;
   triggerBarTimestamp?: string;
-  isFiveMinClose: boolean;
-  // Populated only when isFiveMinClose is true; otherwise stub values.
   quote: Quote;
   macd5minSeries: MACD[];
   vwap: VWAP;
 }
 
-export interface SuperDecisionModelAdapterParams {
-  tradeBudgetUsd: number;
-  stopPercent: number;
-  takeProfitPercent: number;
-  entryOffsetBps: number;
-}
-
-export interface SuperDecisionModelAdapterDeps {
-  broker: BrokerPort;
-  indicators: IndicatorPort;
-}
-
-const DEFAULT_PARAMS: SuperDecisionModelAdapterParams = {
+const PARAMS = {
   tradeBudgetUsd: 25_000,
   stopPercent: 0.01,
   takeProfitPercent: 0.025,
   entryOffsetBps: 10,
-};
-
-const STUB_QUOTE: Quote = { symbol: '', last: 0, timestamp: '' };
-const STUB_VWAP: VWAP = { value: NaN, timestamp: '' };
-
-// Day-trading model gated to the close of every 5-minute bucket. Buys when
-// the histogram has just turned positive (3 most recent 5m bars positive,
-// 4th strictly negative — confirms a neg→pos crossover whose pivot bar is
-// the first of the run). Order sizing is dynamic: quantity = floor(budget
-// / last); SL/TP are percentages of last fed into the bracket as offsets.
-//
-// Trail to break-even is configured at the strategy level
-// (`DecisionStrategy.trailToBreakEvenAtProfit`), not here.
-export class SuperDecisionModelAdapter implements DecisionModelPort<SuperSnapshot> {
+} as const;
+export class SuperDecisionModel implements DecisionModel<SuperSnapshot> {
   readonly name = 'Super';
-  // Sentinels: this model always overrides quantity/offsets in the buy signal
-  // (sized per-symbol). Zeros fail closed if a future bug leaves them unset.
-  readonly orderConfig: OrderConfig = {
-    quantity: 0,
-    stopOffset: 0,
-    takeProfitOffset: 0,
-  };
-  private readonly params: SuperDecisionModelAdapterParams;
   private readonly broker: BrokerPort;
   private readonly indicators: IndicatorPort;
 
-  constructor(
-    deps: SuperDecisionModelAdapterDeps,
-    params: Partial<SuperDecisionModelAdapterParams> = {},
-  ) {
+  constructor(deps: { broker: BrokerPort; indicators: IndicatorPort }) {
     this.broker = deps.broker;
     this.indicators = deps.indicators;
-    this.params = { ...DEFAULT_PARAMS, ...params };
   }
 
   async buildSnapshot({
@@ -85,16 +45,14 @@ export class SuperDecisionModelAdapter implements DecisionModelPort<SuperSnapsho
     triggerBar,
   }: BuildSnapshotInput): Promise<SuperSnapshot> {
     const triggerBarTimestamp = triggerBar?.timestamp;
-    const fiveMinClose = isFiveMinClose(triggerBarTimestamp);
 
-    if (!fiveMinClose) {
+    if (!isFiveMinClose(triggerBarTimestamp)) {
       return {
         symbol,
         triggerBarTimestamp,
-        isFiveMinClose: false,
-        quote: STUB_QUOTE,
+        quote: { symbol: '', last: 0, timestamp: '' },
         macd5minSeries: [],
-        vwap: STUB_VWAP,
+        vwap: { value: NaN, timestamp: '' },
       };
     }
 
@@ -110,16 +68,13 @@ export class SuperDecisionModelAdapter implements DecisionModelPort<SuperSnapsho
     return {
       symbol,
       triggerBarTimestamp,
-      isFiveMinClose: true,
       quote,
       macd5minSeries,
       vwap,
     };
   }
 
-  evaluate({
-    snapshot,
-  }: EvaluateInput<SuperSnapshot>): DecisionSignal<SuperSnapshot> {
+  evaluate(snapshot: SuperSnapshot): DecisionSignal<SuperSnapshot> {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
@@ -127,22 +82,22 @@ export class SuperDecisionModelAdapter implements DecisionModelPort<SuperSnapsho
     const { quote } = snapshot;
     const last = quote.last;
     const base = quote.ask ?? last;
-    const cushion = base * (this.params.entryOffsetBps / 10_000);
+    const cushion = base * (PARAMS.entryOffsetBps / 10_000);
     return {
       action: 'buy',
       symbol: snapshot.symbol,
       side: 'BUY',
       entryLimitPrice: round2(base + cushion),
-      quantity: Math.floor(this.params.tradeBudgetUsd / base),
-      stopOffset: round2(last * this.params.stopPercent),
-      takeProfitOffset: round2(last * this.params.takeProfitPercent),
+      quantity: Math.floor(PARAMS.tradeBudgetUsd / base),
+      stopOffset: round2(last * PARAMS.stopPercent),
+      takeProfitOffset: round2(last * PARAMS.takeProfitPercent),
       checks,
       snapshot,
     };
   }
 
   private runChecks(s: SuperSnapshot): RuleCheck[] {
-    if (!s.isFiveMinClose) {
+    if (!isFiveMinClose(s.triggerBarTimestamp)) {
       return [{ name: '5min boundary close', passed: false }];
     }
     const series = s.macd5minSeries;
@@ -174,7 +129,7 @@ export class SuperDecisionModelAdapter implements DecisionModelPort<SuperSnapsho
       { name: 'price > VWAP', passed: Number.isFinite(vwap) && last > vwap },
       {
         name: 'quantity > 0',
-        passed: base > 0 && Math.floor(this.params.tradeBudgetUsd / base) > 0,
+        passed: base > 0 && Math.floor(PARAMS.tradeBudgetUsd / base) > 0,
       },
     ];
   }

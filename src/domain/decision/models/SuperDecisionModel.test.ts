@@ -1,18 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { IndicatorPort } from '../../domain/indicators/IndicatorPort.js';
-import type { MACD } from '../../domain/indicators/IndicatorTypes.js';
+import type { BrokerPort } from '../../broker/BrokerPort.js';
+import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
+import type { MACD } from '../../indicators/IndicatorTypes.js';
 import {
-  SuperDecisionModelAdapter,
+  SuperDecisionModel,
   type SuperSnapshot,
-} from './SuperDecisionModelAdapter.js';
-
-const PARAMS = {
-  tradeBudgetUsd: 25_000,
-  stopPercent: 0.01,
-  takeProfitPercent: 0.025,
-  entryOffsetBps: 10,
-};
+} from './SuperDecisionModel.js';
 
 const DEPS = {
   broker: {} as BrokerPort,
@@ -28,7 +21,6 @@ function snapshot(overrides: Partial<SuperSnapshot> = {}): SuperSnapshot {
   return {
     symbol: 'AAPL',
     triggerBarTimestamp: '2026-05-10T13:34:00Z', // minute=34, 34%5=4 → boundary
-    isFiveMinClose: true,
     quote: { symbol: 'AAPL', last: 100, ask: 100, timestamp: 't' },
     macd5minSeries: [macd(0.3), macd(0.2), macd(0.1), macd(-0.1)],
     vwap: { value: 99, timestamp: 't' },
@@ -36,12 +28,13 @@ function snapshot(overrides: Partial<SuperSnapshot> = {}): SuperSnapshot {
   };
 }
 
-describe('SuperDecisionModelAdapter', () => {
+describe('SuperDecisionModel', () => {
   it('holds when triggerBar is not at a 5-minute boundary close', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({ isFiveMinClose: false }),
-    });
+    const model = new SuperDecisionModel(DEPS);
+    // minute=33, 33%5=3 → not a 5min boundary close
+    const result = model.evaluate(
+      snapshot({ triggerBarTimestamp: '2026-05-10T13:33:00Z' }),
+    );
 
     expect(result.action).toBe('hold');
     expect(result.checks).toHaveLength(1);
@@ -52,12 +45,12 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when histogram has 4 positive bars in a row (no crossover)', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         macd5minSeries: [macd(0.4), macd(0.3), macd(0.2), macd(0.1)],
       }),
-    });
+    );
 
     expect(result.action).toBe('hold');
     expect(
@@ -67,12 +60,12 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when previous bar histogram is exactly zero (not strictly negative)', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         macd5minSeries: [macd(0.3), macd(0.2), macd(0.1), macd(0)],
       }),
-    });
+    );
 
     expect(result.action).toBe('hold');
     expect(
@@ -82,12 +75,12 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when one of the last 3 histograms is not positive', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         macd5minSeries: [macd(0.3), macd(-0.05), macd(0.1), macd(-0.1)],
       }),
-    });
+    );
 
     expect(result.action).toBe('hold');
     expect(
@@ -97,12 +90,12 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when MACD line is not positive on the most recent 5m bar', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         macd5minSeries: [macd(0.3, -0.1), macd(0.2), macd(0.1), macd(-0.1)],
       }),
-    });
+    );
 
     expect(result.action).toBe('hold');
     expect(
@@ -111,13 +104,13 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when price is not above VWAP', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         quote: { symbol: 'AAPL', last: 99, ask: 99, timestamp: 't' },
         vwap: { value: 99, timestamp: 't' },
       }),
-    });
+    );
 
     expect(result.action).toBe('hold');
     expect(result.checks.find((c) => c.name === 'price > VWAP')?.passed).toBe(
@@ -126,10 +119,10 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when VWAP is NaN (session not yet bootstrapped)', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({ vwap: { value: NaN, timestamp: '' } }),
-    });
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({ vwap: { value: NaN, timestamp: '' } }),
+    );
 
     expect(result.action).toBe('hold');
     expect(result.checks.find((c) => c.name === 'VWAP available')?.passed).toBe(
@@ -138,13 +131,13 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('holds when last is too high to afford a single share', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         quote: { symbol: 'AAPL', last: 30_000, ask: 30_000, timestamp: 't' },
         vwap: { value: 100, timestamp: 't' },
       }),
-    });
+    );
 
     expect(result.action).toBe('hold');
     expect(
@@ -153,12 +146,12 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('emits buy with dynamic quantity, percentage offsets, and ask-based entry', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         quote: { symbol: 'AAPL', last: 100, ask: 100.5, timestamp: 't' },
       }),
-    });
+    );
 
     expect(result.action).toBe('buy');
     if (result.action !== 'buy') return;
@@ -176,13 +169,13 @@ describe('SuperDecisionModelAdapter', () => {
   });
 
   it('floors quantity (no fractional shares) and rounds offsets to 2 decimals', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    const result = model.evaluate({
-      snapshot: snapshot({
+    const model = new SuperDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
         quote: { symbol: 'AAPL', last: 137.42, ask: 137.5, timestamp: 't' },
         vwap: { value: 130, timestamp: 't' },
       }),
-    });
+    );
 
     expect(result.action).toBe('buy');
     if (result.action !== 'buy') return;
@@ -192,14 +185,5 @@ describe('SuperDecisionModelAdapter', () => {
     expect(result.stopOffset).toBe(1.37);
     // 137.42 * 0.025 = 3.4355 → 3.44
     expect(result.takeProfitOffset).toBe(3.44);
-  });
-
-  it('exposes zero sentinels in orderConfig (signal always overrides)', () => {
-    const model = new SuperDecisionModelAdapter(DEPS, PARAMS);
-    expect(model.orderConfig).toEqual({
-      quantity: 0,
-      stopOffset: 0,
-      takeProfitOffset: 0,
-    });
   });
 });

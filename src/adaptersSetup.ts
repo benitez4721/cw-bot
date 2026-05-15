@@ -12,11 +12,11 @@ import { RedisBarRepository } from './infrastructure/marketdata/RedisBarReposito
 import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/TwelveDataHistoricalBarsAdapter.js';
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
-import { MacdM1CrossOverDecisionModelAdapter } from './infrastructure/decision/MacdM1CrossOverDecisionModelAdapter.js';
+import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
 import {
   SUPER_CW_CONFIG_ID,
-  SuperDecisionModelAdapter,
-} from './infrastructure/decision/SuperDecisionModelAdapter.js';
+  SuperDecisionModel,
+} from './domain/decision/models/SuperDecisionModel.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
@@ -109,7 +109,7 @@ export function setupAdapters(): Adapters {
   // is exported as a constant from its adapter (it's part of the model's
   // definition); MacdM1CrossOver's stays in env for now.
   const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
-  const macdM1CrossOverModel = new MacdM1CrossOverDecisionModelAdapter({
+  const macdM1CrossOverModel = new MacdM1CrossOverDecisionModel({
     broker,
     indicators,
   });
@@ -118,7 +118,6 @@ export function setupAdapters(): Adapters {
       name: 'MacdM1CrossOver',
       model: macdM1CrossOverModel,
       watchlist: macdM1CrossOverWatchlist,
-      orderConfig: macdM1CrossOverModel.orderConfig,
     },
     cwConfigId: env.CW_CONFIG_ID!,
     watchlistRepo: macdM1CrossOverWatchlist,
@@ -127,13 +126,12 @@ export function setupAdapters(): Adapters {
   const superWatchlist = new RedisWatchlistRepository(redis, {
     keyPrefix: 'cw:wl:super',
   });
-  const superModel = new SuperDecisionModelAdapter({ broker, indicators });
+  const superModel = new SuperDecisionModel({ broker, indicators });
   const superStrategy: ConfiguredStrategy = {
     strategy: {
       name: 'Super',
       model: superModel,
       watchlist: superWatchlist,
-      orderConfig: superModel.orderConfig,
       trailToBreakEvenAtProfit: 0.005,
     },
     cwConfigId: SUPER_CW_CONFIG_ID,

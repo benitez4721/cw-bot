@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type { BracketOrderResult } from '../../domain/broker/BrokerTypes.js';
-import type { DecisionModelPort } from '../../domain/decision/DecisionPort.js';
+import type { DecisionModel } from '../../domain/decision/DecisionModel.js';
 import type { DecisionStrategy } from '../../domain/decision/DecisionStrategy.js';
-import type {
-  DecisionSignal,
-  OrderConfig,
-} from '../../domain/decision/DecisionTypes.js';
-import type { MacdM1CrossOverSnapshot } from '../../infrastructure/decision/MacdM1CrossOverDecisionModelAdapter.js';
+import type { DecisionSignal } from '../../domain/decision/DecisionTypes.js';
+import type { MacdM1CrossOverSnapshot } from '../../domain/decision/models/MacdM1CrossOverDecisionModel.js';
 import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
 import type {
@@ -44,6 +41,11 @@ function bar(timestampUtc: string, close = 100, volume = 1000): Bar {
 
 function makeBuySignal(
   symbol = 'AAPL',
+  overrides: {
+    quantity?: number;
+    stopOffset?: number;
+    takeProfitOffset?: number;
+  } = {},
 ): DecisionSignal<MacdM1CrossOverSnapshot> {
   const snapshot: MacdM1CrossOverSnapshot = {
     symbol,
@@ -60,6 +62,9 @@ function makeBuySignal(
     symbol,
     side: 'BUY',
     entryLimitPrice: 100.05,
+    quantity: overrides.quantity ?? 100,
+    stopOffset: overrides.stopOffset ?? 0.2,
+    takeProfitOffset: overrides.takeProfitOffset ?? 0.35,
     checks: [],
     snapshot,
   };
@@ -242,11 +247,10 @@ function createTradeRepo(): FakeTradeRepo {
 interface StrategyFixture {
   name: string;
   initial?: WatchedSymbol[];
-  orderConfig?: OrderConfig;
   evaluateImpl?: () => Promise<DecisionSignal<MacdM1CrossOverSnapshot>>;
 }
 
-interface MockModel extends DecisionModelPort<MacdM1CrossOverSnapshot> {
+interface MockModel extends DecisionModel<MacdM1CrossOverSnapshot> {
   buildSnapshot: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
 }
@@ -255,7 +259,6 @@ interface StrategyHandle {
   name: string;
   watchlist: TestWatchlist;
   model: MockModel;
-  orderConfig: OrderConfig;
 }
 
 interface Setup {
@@ -274,12 +277,6 @@ interface Setup {
   watchlist: TestWatchlist;
   model: MockModel;
 }
-
-const DEFAULT_ORDER_CONFIG: OrderConfig = {
-  quantity: 100,
-  stopOffset: 0.2,
-  takeProfitOffset: 0.35,
-};
 
 function setup(
   opts: { initial?: WatchedSymbol[]; strategies?: StrategyFixture[] } = {},
@@ -342,18 +339,15 @@ function setup(
 
   const handles: StrategyHandle[] = fixtures.map((f) => {
     const watchlist = createWatchlist(f.initial ?? []);
-    const orderConfig = f.orderConfig ?? DEFAULT_ORDER_CONFIG;
     const evaluateImpl = f.evaluateImpl ?? (async () => makeHoldSignal());
     const model: MockModel = {
       name: f.name,
-      orderConfig,
       buildSnapshot: vi.fn(async () => (await evaluateImpl()).snapshot),
-      evaluate: vi.fn((input: { snapshot: MacdM1CrossOverSnapshot }) => {
+      evaluate: vi.fn((snapshot: MacdM1CrossOverSnapshot) => {
         // Return either the live signal stub configured per test, or a hold
         // built from the snapshot the model itself just produced.
-        const snapshot = input.snapshot;
         return { action: 'hold', checks: [], snapshot } satisfies ReturnType<
-          DecisionModelPort<MacdM1CrossOverSnapshot>['evaluate']
+          DecisionModel<MacdM1CrossOverSnapshot>['evaluate']
         >;
       }),
     };
@@ -361,7 +355,6 @@ function setup(
       name: f.name,
       watchlist,
       model,
-      orderConfig,
     };
   });
 
@@ -369,7 +362,6 @@ function setup(
     name: h.name,
     model: h.model,
     watchlist: h.watchlist,
-    orderConfig: h.orderConfig,
   }));
 
   const closeTrade = new CloseTrade(tradeRepo);
@@ -666,7 +658,6 @@ describe('BarStreamManager', () => {
           name: 'MacdM1CrossOver',
           model: s.model,
           watchlist: s.watchlist,
-          orderConfig: DEFAULT_ORDER_CONFIG,
         },
       ],
       placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
@@ -741,21 +732,22 @@ describe('BarStreamManager', () => {
         {
           name: 'MacdM1CrossOver',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
-          orderConfig: {
-            quantity: 100,
-            stopOffset: 0.2,
-            takeProfitOffset: 0.35,
-          },
         },
         {
           name: 'meanRev',
           initial: [{ symbol: 'AAPL', status: 'active', createdAt: 1 }],
-          orderConfig: { quantity: 50, stopOffset: 0.5, takeProfitOffset: 1.0 },
         },
       ],
     });
     stubSignal(s.strategies[0].model, makeBuySignal('AAPL'));
-    stubSignal(s.strategies[1].model, makeBuySignal('AAPL'));
+    stubSignal(
+      s.strategies[1].model,
+      makeBuySignal('AAPL', {
+        quantity: 50,
+        stopOffset: 0.5,
+        takeProfitOffset: 1.0,
+      }),
+    );
     await s.manager.start();
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
     expect(s.placeBracket.execute).toHaveBeenCalledTimes(2);
