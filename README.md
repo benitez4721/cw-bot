@@ -201,17 +201,6 @@ docker run -d --name cw-redis -p 6379:6379 redis:7-alpine
 Opción B — Upstash (free tier, 10k commands/día — alcanza para dev):
 crear database → copiar la TLS connection string al `.env` como `REDIS_URL`.
 
-### 4. Conseguir credenciales
-
-| Vendor            | Para qué                          | Cómo obtener                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **TradeStation**  | Broker (orders, quotes, streams)  | Crear app en `developer.tradestation.com` → guardar `Client ID` y `Client Secret`. El `refresh_token` se mintea localmente con `pnpm oauth:refresh-token` (ver más abajo). `Account ID` con prefijo `SIM…` enrutará al simulador automáticamente. |
-| **Polygon.io**    | Feed realtime 1‑min (WS canal AM) | Signup en `polygon.io` → API Keys. **Requiere plan Stocks Starter+** para acceso al WS de aggregates realtime; el free tier sólo da REST end‑of‑day.                                                                                              |
-| **TwelveData**    | Bootstrap histórico de barras     | Signup en `twelvedata.com` → API Key. Free = 8 req/min (alcanza para watchlists chicas). Plan pagado para mayor concurrencia — ajustar `TWELVEDATA_MIN_INTERVAL_MS` a `400` (155/min).                                                            |
-| **ChartsWatcher** | Feed de scanner                   | Cuenta en `chartswatcher.com` → settings → `User ID` + `API Key`. Los `cwConfigId` de cada estrategia están hardcoded en `adaptersSetup.ts` — si tu cuenta no tiene esos scanners, crearlos y reemplazar los IDs.                                 |
-| **BetterStack**   | Heartbeat + Logtail (opcional)    | `betterstack.com` → Heartbeats (URL) y Telemetry → Logtail source token.                                                                                                                                                                          |
-| **Grafana Cloud** | Métricas remote‑write (opcional)  | `grafana.com` → free tier → My Account → Prometheus → endpoint URL + username + API key.                                                                                                                                                          |
-
 #### Mintear el refresh token de TradeStation
 
 ```bash
@@ -344,13 +333,6 @@ de tokens necesita el secret para funcionar.
 | `GRAFANA_CLOUD_PROM_URL`      | —       | Remote‑write Prometheus. Las 3 vars deben estar seteadas; si falta una → métricas locales. |
 | `GRAFANA_CLOUD_PROM_USERNAME` | —       |                                                                                            |
 | `GRAFANA_CLOUD_PROM_API_KEY`  | —       |                                                                                            |
-
-### Legacy / reservadas
-
-`ALPHA_VANTAGE_API_KEY`, `ALPHA_VANTAGE_BASE_URL`,
-`ALPHA_VANTAGE_MIN_INTERVAL_MS` están en `env.ts` y `.env.example` pero el
-adapter no se wirea en `main.ts` (queda para comparación contra
-`LocalIndicatorAdapter` si se necesita).
 
 ## Scripts
 
