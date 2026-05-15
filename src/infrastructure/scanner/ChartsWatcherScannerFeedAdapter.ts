@@ -196,15 +196,6 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
       ),
     }));
 
-    log.info(
-      {
-        configId: msg.config_id,
-        count: rows.length,
-        symbols: rows.map((r) => r.symbol),
-      },
-      'toplist update',
-    );
-
     for (const cb of this.updateCallbacks) {
       cb(msg.config_id, rows);
     }
