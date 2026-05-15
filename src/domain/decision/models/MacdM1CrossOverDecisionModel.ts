@@ -1,13 +1,7 @@
 import type { BrokerPort } from '../../broker/BrokerPort.js';
 import type { Quote } from '../../broker/BrokerTypes.js';
-import type {
-  BuildSnapshotInput,
-  DecisionModel,
-} from '../DecisionModel.js';
-import type {
-  DecisionSignal,
-  RuleCheck,
-} from '../DecisionTypes.js';
+import type { BuildSnapshotInput, DecisionModel } from '../DecisionModel.js';
+import type { DecisionSignal, RuleCheck } from '../DecisionTypes.js';
 import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
 import type { MACD, VWAP } from '../../indicators/IndicatorTypes.js';
 
@@ -49,7 +43,9 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
     return { symbol, quote, macd5min, macd1minSeries, vwap1min };
   }
 
-  evaluate(snapshot: MacdM1CrossOverSnapshot): DecisionSignal<MacdM1CrossOverSnapshot> {
+  evaluate(
+    snapshot: MacdM1CrossOverSnapshot,
+  ): DecisionSignal<MacdM1CrossOverSnapshot> {
     const checks = this.runChecks(snapshot);
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
