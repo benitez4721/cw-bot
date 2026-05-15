@@ -7,3 +7,6 @@ dist
 .DS_Store
 .vscode
 .idea
+
+# CLAUDE.md is ignored globally; this project tracks it.
+!CLAUDE.md
