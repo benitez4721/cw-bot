@@ -437,4 +437,6 @@ quedan disponibles localmente igualmente en `/metrics`.
 `pino` con pretty print en dev. En prod, si `LOGTAIL_SOURCE_TOKEN` está
 seteado, los logs viajan también a Logtail (BetterStack).
 
-```              
+```
+
+```
