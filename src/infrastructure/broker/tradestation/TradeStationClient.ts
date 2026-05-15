@@ -1,6 +1,7 @@
 import type {
   MetricsPort,
   TsErrorType,
+  TsOperation,
 } from '../../../domain/metrics/MetricsPort.js';
 import { logger } from '../../logging/logger.js';
 
@@ -89,16 +90,18 @@ export class TradeStationClient {
     method,
     path,
     body,
+    operation,
   }: {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE';
     path: string;
     body?: unknown;
+    operation: TsOperation;
   }): Promise<T> {
     let token: string;
     try {
       token = await this.getAccessToken();
     } catch (err) {
-      this.metrics?.recordTsRequest(0, 'auth');
+      this.metrics?.recordTsRequest(0, operation, 'auth');
       throw err;
     }
     const url = this.apiBase() + path;
@@ -121,7 +124,11 @@ export class TradeStationClient {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch (err) {
-      this.metrics?.recordTsRequest(Date.now() - startedAt, 'network');
+      this.metrics?.recordTsRequest(
+        Date.now() - startedAt,
+        operation,
+        'network',
+      );
       throw err;
     }
 
@@ -138,12 +145,16 @@ export class TradeStationClient {
     if (!res.ok) {
       const errorType: TsErrorType =
         res.status >= 500 ? 'http_5xx' : 'http_4xx';
-      this.metrics?.recordTsRequest(Date.now() - startedAt, errorType);
+      this.metrics?.recordTsRequest(
+        Date.now() - startedAt,
+        operation,
+        errorType,
+      );
       log.error({ status: res.status, method, path, body: text }, 'http error');
       throw new Error(`TradeStation API error: HTTP ${res.status}`);
     }
 
-    this.metrics?.recordTsRequest(Date.now() - startedAt);
+    this.metrics?.recordTsRequest(Date.now() - startedAt, operation);
     return parsed as T;
   }
 

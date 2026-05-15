@@ -154,6 +154,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       method: 'POST',
       path: '/v3/orderexecution/orders',
       body: payload,
+      operation: 'placeBracket',
     });
 
     const orders = response.Orders ?? [];
@@ -192,6 +193,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     const detail = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
+      operation: 'getOrdersByIds',
     });
     log.info(
       {
@@ -242,6 +244,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     const response = await this.client.request<{ Positions?: TsPosition[] }>({
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/positions`,
+      operation: 'getPositions',
     });
 
     return (response.Positions ?? []).map((p) => ({
@@ -262,6 +265,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     const response = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
       path,
+      operation: 'getOrders',
     });
 
     return (response.Orders ?? []).map(toOrder);
@@ -275,6 +279,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       method: 'PUT',
       path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
       body: { StopPrice: String(round2(stopPrice)) },
+      operation: 'replaceStop',
     });
   }
 
@@ -282,6 +287,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     const response = await this.client.request<TsQuoteResponse>({
       method: 'GET',
       path: `/v3/marketdata/quotes/${encodeURIComponent(symbol)}`,
+      operation: 'getQuote',
     });
 
     const first = response.Quotes?.[0];

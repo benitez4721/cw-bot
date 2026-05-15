@@ -12,6 +12,7 @@ import type {
   OrderRecordStatus,
   TickOutcome,
   TsErrorType,
+  TsOperation,
 } from '../../domain/metrics/MetricsPort.js';
 
 export class PrometheusMetricsAdapter implements MetricsPort {
@@ -19,7 +20,7 @@ export class PrometheusMetricsAdapter implements MetricsPort {
   private readonly decisions: Counter<'symbol' | 'action'>;
   private readonly ticks: Counter<'outcome'>;
   private readonly orders: Counter<'status'>;
-  private readonly tsRequestDuration: Histogram;
+  private readonly tsRequestDuration: Histogram<'operation'>;
   private readonly tsErrors: Counter<'type'>;
   private readonly oauthRefresh: Counter<'result'>;
   private readonly watchlistSize: Gauge;
@@ -56,6 +57,7 @@ export class PrometheusMetricsAdapter implements MetricsPort {
       name: 'tradestation_request_duration_ms',
       help: 'TradeStation HTTP request latency in milliseconds',
       buckets: [50, 100, 250, 500, 1000, 2500, 5000, 10000],
+      labelNames: ['operation'],
       registers: [this.registry],
     });
     this.tsErrors = new Counter({
@@ -114,8 +116,12 @@ export class PrometheusMetricsAdapter implements MetricsPort {
     this.orders.inc({ status });
   }
 
-  recordTsRequest(durationMs: number, errorType?: TsErrorType): void {
-    this.tsRequestDuration.observe(durationMs);
+  recordTsRequest(
+    durationMs: number,
+    operation: TsOperation,
+    errorType?: TsErrorType,
+  ): void {
+    this.tsRequestDuration.observe({ operation }, durationMs);
     if (errorType) this.tsErrors.inc({ type: errorType });
   }
 
