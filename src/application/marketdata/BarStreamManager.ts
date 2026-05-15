@@ -5,7 +5,7 @@ import type { HistoricalBarsPort } from '../../domain/marketdata/HistoricalBarsP
 import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
-import { aggregateOneFiveMinuteBucket } from '../../infrastructure/indicators/calculations.js';
+import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculations.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';

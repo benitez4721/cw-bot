@@ -15,7 +15,7 @@ import type {
   Bar,
   BarInterval,
 } from '../../domain/marketdata/MarketDataTypes.js';
-import { calcMACD, calcSessionVWAP, toEasternDate } from './calculations.js';
+import { calcMACD, calcSessionVWAP, toEasternDate } from '../../domain/indicators/calculations.js';
 
 export interface LocalIndicatorAdapterOptions {
   bars: BarRepository;

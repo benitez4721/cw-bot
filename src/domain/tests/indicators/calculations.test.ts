@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Bar } from '../../../domain/marketdata/MarketDataTypes.js';
+import type { Bar } from '../../marketdata/MarketDataTypes.js';
 import {
   aggregateOneFiveMinuteBucket,
   calcEMA,

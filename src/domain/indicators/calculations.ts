@@ -1,4 +1,4 @@
-import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
+import type { Bar } from '../marketdata/MarketDataTypes.js';
 
 export interface MACDPoint {
   macd: number;
