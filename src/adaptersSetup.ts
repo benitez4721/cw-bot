@@ -1,10 +1,10 @@
 import Redis from 'ioredis';
 import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
-import { TradeStationBrokerAdapter } from './infrastructure/broker/TradeStationBrokerAdapter.js';
+import { TradeStationBrokerAdapter } from './infrastructure/tradestation/TradeStationBrokerAdapter.js';
 import { TradeStationClient } from './infrastructure/tradestation/TradeStationClient.js';
-import { TradeStationOrderStreamAdapter } from './infrastructure/orderstream/TradeStationOrderStreamAdapter.js';
-import { TradeStationPositionStreamAdapter } from './infrastructure/positionstream/TradeStationPositionStreamAdapter.js';
+import { TradeStationOrderStreamAdapter } from './infrastructure/tradestation/TradeStationOrderStreamAdapter.js';
+import { TradeStationPositionStreamAdapter } from './infrastructure/tradestation/TradeStationPositionStreamAdapter.js';
 import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
 import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
@@ -21,14 +21,10 @@ import type { DecisionStrategy } from './domain/decision/DecisionStrategy.js';
 
 const log = logger.child({ component: 'adaptersSetup' });
 
-export interface ConfiguredStrategy {
-  strategy: DecisionStrategy;
-  // The CW scanner config that feeds this strategy's watchlist. Each model has
-  // its own scanner instance so watchlists stay decoupled.
+export interface ConfiguredStrategy extends DecisionStrategy {
+  // The CW scanner config that feeds this strategy's watchlist. Each model
+  // has its own scanner instance so watchlists stay decoupled.
   cwConfigId: string;
-  // Exposed so main.ts can wire the ScannerMonitor and the public watchlist
-  // endpoints to the same underlying repo instance.
-  watchlistRepo: RedisWatchlistRepository;
 }
 
 export interface Adapters {
@@ -112,13 +108,10 @@ export function setupAdapters(): Adapters {
     indicators,
   });
   const macdM1CrossOverStrategy: ConfiguredStrategy = {
-    strategy: {
-      name: 'MacdM1CrossOver',
-      model: macdM1CrossOverModel,
-      watchlist: macdM1CrossOverWatchlist,
-    },
+    name: 'MacdM1CrossOver',
+    model: macdM1CrossOverModel,
+    watchlist: macdM1CrossOverWatchlist,
     cwConfigId: '69b85e8d373a8a104a52803b',
-    watchlistRepo: macdM1CrossOverWatchlist,
   };
 
   const superWatchlist = new RedisWatchlistRepository(redis, {
@@ -126,14 +119,11 @@ export function setupAdapters(): Adapters {
   });
   const superModel = new SuperDecisionModel({ broker, indicators });
   const superStrategy: ConfiguredStrategy = {
-    strategy: {
-      name: 'Super',
-      model: superModel,
-      watchlist: superWatchlist,
-      trailToBreakEvenAtProfit: 0.005,
-    },
+    name: 'Super',
+    model: superModel,
+    watchlist: superWatchlist,
+    trailToBreakEvenAtProfit: 0.005,
     cwConfigId: '69f6bec1f52a7e93e345cd0c',
-    watchlistRepo: superWatchlist,
   };
 
   return {

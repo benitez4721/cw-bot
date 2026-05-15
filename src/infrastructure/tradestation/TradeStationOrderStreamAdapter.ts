@@ -6,14 +6,14 @@ import type {
 } from '../../domain/broker/BrokerStreamTypes.js';
 import type { OrderStreamPort } from '../../domain/broker/OrderStreamPort.js';
 import { logger } from '../logging/logger.js';
-import type { TradeStationClient } from '../tradestation/TradeStationClient.js';
-import { TradeStationStreamConnection } from '../tradestation/TradeStationStreamConnection.js';
+import type { TradeStationClient } from './TradeStationClient.js';
+import { TradeStationStreamConnection } from './TradeStationStreamConnection.js';
 import {
   mapOrderType,
   mapSide,
   mapStatus,
   parseNumber,
-} from '../tradestation/tradeStationMapping.js';
+} from './tradeStationMapping.js';
 
 const log = logger.child({ component: 'TradeStationOrderStreamAdapter' });
 

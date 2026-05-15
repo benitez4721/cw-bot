@@ -11,14 +11,14 @@ import type {
   Position,
   Quote,
 } from '../../domain/broker/BrokerTypes.js';
-import type { TokenStatus } from '../tradestation/TradeStationClient.js';
-import type { TradeStationClient } from '../tradestation/TradeStationClient.js';
+import type { TokenStatus } from './TradeStationClient.js';
+import type { TradeStationClient } from './TradeStationClient.js';
 import {
   mapOrderType,
   mapSide,
   mapStatus,
   parseNumber,
-} from '../tradestation/tradeStationMapping.js';
+} from './tradeStationMapping.js';
 
 interface TsPosition {
   AccountID: string;

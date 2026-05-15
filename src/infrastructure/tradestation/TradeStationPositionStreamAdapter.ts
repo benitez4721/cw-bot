@@ -6,9 +6,9 @@ import type {
 } from '../../domain/broker/BrokerStreamTypes.js';
 import type { PositionStreamPort } from '../../domain/broker/PositionStreamPort.js';
 import { logger } from '../logging/logger.js';
-import type { TradeStationClient } from '../tradestation/TradeStationClient.js';
-import { TradeStationStreamConnection } from '../tradestation/TradeStationStreamConnection.js';
-import { parseNumber } from '../tradestation/tradeStationMapping.js';
+import type { TradeStationClient } from './TradeStationClient.js';
+import { TradeStationStreamConnection } from './TradeStationStreamConnection.js';
+import { parseNumber } from './tradeStationMapping.js';
 
 const log = logger.child({ component: 'TradeStationPositionStreamAdapter' });
 

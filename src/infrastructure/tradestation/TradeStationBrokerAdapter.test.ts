@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TradeStationBrokerAdapter } from './TradeStationBrokerAdapter.js';
-import type { TradeStationClient } from '../tradestation/TradeStationClient.js';
+import type { TradeStationClient } from './TradeStationClient.js';
 
 interface TsLegPayload {
   Symbol: string;

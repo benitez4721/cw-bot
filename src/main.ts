@@ -69,7 +69,7 @@ async function main() {
     (s) =>
       new ScannerMonitor({
         feed: scannerFeed,
-        repository: s.watchlistRepo,
+        repository: s.watchlist,
         metrics,
         configId: s.cwConfigId,
       }),
@@ -89,8 +89,8 @@ async function main() {
   });
   const listWatchlist = new ListWatchlist(
     strategies.map((s) => ({
-      name: s.strategy.name,
-      repository: s.watchlistRepo,
+      name: s.name,
+      repository: s.watchlist,
     })),
   );
   const getOrders = new GetOrders(broker, tradeRepo);
@@ -107,7 +107,7 @@ async function main() {
     feed: marketFeed,
     historicalBars,
     barRepo,
-    strategies: strategies.map((s) => s.strategy),
+    strategies,
     placeBracketOrder,
     recordTradeContext,
     checkOpenTrades,
@@ -196,7 +196,7 @@ async function main() {
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
 
   const decisionStatus = env.DECISION_ENABLED
-    ? `${strategies.map((s) => s.strategy.name).join(',')} via barStream (${barStream.getStatus()})`
+    ? `${strategies.map((s) => s.name).join(',')} via barStream (${barStream.getStatus()})`
     : 'disabled';
   log.info(
     {

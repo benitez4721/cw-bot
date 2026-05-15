@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TradeStationPositionStreamAdapter } from './TradeStationPositionStreamAdapter.js';
-import type { TradeStationClient } from '../tradestation/TradeStationClient.js';
+import type { TradeStationClient } from './TradeStationClient.js';
 import type { PositionEvent } from '../../domain/broker/BrokerStreamTypes.js';
 
 interface ManualStream {
