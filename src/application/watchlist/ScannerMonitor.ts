@@ -33,17 +33,7 @@ export class ScannerMonitor {
     this.now = options.clock ?? Date.now;
 
     this.feed.onUpdate((configId, rows) => {
-      const match = configId === this.configId;
-      log.info(
-        {
-          monitorConfigId: this.configId,
-          incomingConfigId: configId,
-          rowsCount: rows.length,
-          processing: match,
-        },
-        'onUpdate received',
-      );
-      if (!match) return;
+      if (configId !== this.configId) return;
       this.handleUpdate(rows).catch((err) => {
         log.error(
           { err: err instanceof Error ? err.message : String(err) },
