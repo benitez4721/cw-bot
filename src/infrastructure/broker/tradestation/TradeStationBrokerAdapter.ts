@@ -11,6 +11,7 @@ import type {
   Position,
   Quote,
 } from '../../../domain/broker/BrokerTypes.js';
+import type { OrderStatus } from '../../../domain/broker/BrokerTypes.js';
 import type { TokenStatus } from './TradeStationClient.js';
 import type { TradeStationClient } from './TradeStationClient.js';
 import { logger } from '../../logging/logger.js';
@@ -180,60 +181,91 @@ export class TradeStationBrokerAdapter implements BrokerPort {
 
     // El POST no devuelve OrderType y el orden no es fiable: TS V3 retorna las
     // child orders del OSO/BRK antes que la parent. Reconsultamos por CSV para
-    // mapear cada OrderID a su rol real. No dependemos de Legs[0].BuyOrSell
-    // ni OpenOrClose: cuando el entry fillea instantaneo, el GET puede volver
-    // con Legs[0].BuyOrSell vacio y la deteccion degenera a 'rejected' con
-    // entryOrderId vacio (deja la posicion huerfana — sin TradeContext —
-    // aunque el OSO en TS exista). Cada leg tiene una huella unica
+    // mapear cada OrderID a su rol real. Cada exit tiene una huella unica
     // (OrderType, precio) que enviamos nosotros en el POST:
-    //   stop  → StopMarket + StopPrice === stopPrice
-    //   entry → Limit      + LimitPrice === cost
-    //   tp    → Limit      + LimitPrice === takeProfitPrice
+    //   stop → StopMarket + StopPrice === stopPrice
+    //   tp   → Limit      + LimitPrice === takeProfitPrice
+    // La entry NO la detectamos por precio: cuando llena al instante, TS V3
+    // la 404ea en el GET por IDs (sale del set de open orders) aunque los
+    // exits OSO/BRK queden vivos referenciandola en AdvancedOptions=OSO=<id>.
+    // La derivamos por exclusion sobre los 3 OrderIDs que devolvio el POST.
     const account = encodeURIComponent(this.client.accountId());
     const detail = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
       operation: 'getOrdersByIds',
     });
-    log.info(
-      {
-        orderIds,
-        expected: { cost, stopPrice, takeProfitPrice },
-        detail,
-      },
-      'bracket leg detection — GET orders detail',
-    );
     const detailOrders = detail.Orders ?? [];
     const stop = detailOrders.find(
       (o) =>
         o.OrderType === 'StopMarket' &&
         parseNumber(o.StopPrice ?? '') === stopPrice,
     );
-    const entry = detailOrders.find(
-      (o) =>
-        o.OrderType === 'Limit' && parseNumber(o.LimitPrice ?? '') === cost,
-    );
     const takeProfit = detailOrders.find(
       (o) =>
         o.OrderType === 'Limit' &&
-        o.OrderID !== entry?.OrderID &&
         parseNumber(o.LimitPrice ?? '') === takeProfitPrice,
     );
 
-    if (!entry || !stop || !takeProfit) {
+    if (!stop || !takeProfit) {
+      log.warn(
+        {
+          orderIds,
+          expected: { cost, stopPrice, takeProfitPrice },
+          detail,
+        },
+        'bracket leg detection failed — missing stop or take-profit in GET',
+      );
       return {
         status: 'rejected',
-        entryOrderId: entry?.OrderID ?? '',
+        entryOrderId: '',
         stopOrderId: stop?.OrderID ?? '',
         takeProfitOrderId: takeProfit?.OrderID ?? '',
-        message: 'failed to identify bracket legs from TradeStation response',
+        message:
+          'failed to identify bracket exit legs from TradeStation response',
         error: 'leg-detection-failed',
       };
     }
 
+    const entryOrderId = orderIds.find(
+      (id) => id !== stop.OrderID && id !== takeProfit.OrderID,
+    );
+    if (!entryOrderId) {
+      log.warn(
+        {
+          orderIds,
+          expected: { cost, stopPrice, takeProfitPrice },
+          detail,
+        },
+        'bracket leg detection failed — could not derive entry orderId',
+      );
+      return {
+        status: 'rejected',
+        entryOrderId: '',
+        stopOrderId: stop.OrderID,
+        takeProfitOrderId: takeProfit.OrderID,
+        message: 'failed to derive entry orderId from POST response',
+        error: 'leg-detection-failed',
+      };
+    }
+
+    const entry = detailOrders.find((o) => o.OrderID === entryOrderId);
+    const status: OrderStatus = entry ? mapStatus(entry.Status) : 'open';
+    if (!entry) {
+      log.info(
+        {
+          orderIds,
+          entryOrderId,
+          stopOrderId: stop.OrderID,
+          takeProfitOrderId: takeProfit.OrderID,
+        },
+        'bracket entry not present in GET response — defaulting status to open; order stream will reconcile',
+      );
+    }
+
     return {
-      status: mapStatus(entry.Status),
-      entryOrderId: entry.OrderID,
+      status,
+      entryOrderId,
       stopOrderId: stop.OrderID,
       takeProfitOrderId: takeProfit.OrderID,
     };

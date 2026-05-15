@@ -152,7 +152,7 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
     expect(result.takeProfitOrderId).toBe('O-tp');
   });
 
-  it('retorna rejected con error de leg-detection si TS no devuelve los 3 legs', async () => {
+  it('retorna rejected con error de leg-detection si TS no devuelve los exits', async () => {
     const { client } = fakeClient({
       place: {
         Orders: [
@@ -187,5 +187,57 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
 
     expect(result.status).toBe('rejected');
     expect(result.error).toBe('leg-detection-failed');
+  });
+
+  it('deriva entry por exclusion cuando TS V3 404ea la entry en el GET por IDs', async () => {
+    // Caso QCOM real: la entry (Limit @ cost) llena al instante y TS la marca
+    // NotFound al consultarla por ID, pero los exits OSO/BRK quedan vivos.
+    // El bracket sigue siendo valido: derivamos el entry orderId restandolo
+    // del set del POST. Sin este fallback, el bracket queda rejected y nunca
+    // se crea el TradeContext, dejando la posicion huerfana en TS.
+    const { client } = fakeClient({
+      place: {
+        Orders: [
+          { OrderID: '952057086' },
+          { OrderID: '952057087' },
+          { OrderID: '952057090' },
+        ],
+      },
+      detail: {
+        Orders: [
+          {
+            OrderID: '952057087',
+            Status: 'DON',
+            OrderType: 'Limit',
+            LimitPrice: '208.44',
+            Legs: [{ Symbol: 'QCOM', Quantity: '123', BuyOrSell: 'Sell' }],
+          },
+          {
+            OrderID: '952057086',
+            Status: 'OPN',
+            OrderType: 'StopMarket',
+            StopPrice: '201.33',
+            Legs: [{ Symbol: 'QCOM', Quantity: '123', BuyOrSell: 'Sell' }],
+          },
+          // 952057090 (entry) viene como NotFound y no aparece aqui.
+        ],
+      },
+    });
+
+    const broker = new TradeStationBrokerAdapter({ client });
+    const result = await broker.placeBracketOrder({
+      symbol: 'QCOM',
+      side: 'BUY',
+      quantity: 123,
+      entryLimitPrice: 203.36,
+      stopOffset: 2.03,
+      takeProfitOffset: 5.08,
+    });
+
+    expect(result.status).toBe('open');
+    expect(result.entryOrderId).toBe('952057090');
+    expect(result.stopOrderId).toBe('952057086');
+    expect(result.takeProfitOrderId).toBe('952057087');
+    expect(result.error).toBeUndefined();
   });
 });
