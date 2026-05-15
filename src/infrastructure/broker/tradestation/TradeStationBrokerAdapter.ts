@@ -13,12 +13,15 @@ import type {
 } from '../../../domain/broker/BrokerTypes.js';
 import type { TokenStatus } from './TradeStationClient.js';
 import type { TradeStationClient } from './TradeStationClient.js';
+import { logger } from '../../logging/logger.js';
 import {
   mapOrderType,
   mapSide,
   mapStatus,
   parseNumber,
 } from './tradeStationMapping.js';
+
+const log = logger.child({ component: 'TradeStationBrokerAdapter' });
 
 interface TsPosition {
   AccountID: string;
@@ -190,6 +193,14 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       method: 'GET',
       path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
     });
+    log.info(
+      {
+        orderIds,
+        expected: { cost, stopPrice, takeProfitPrice },
+        detail,
+      },
+      'bracket leg detection — GET orders detail',
+    );
     const detailOrders = detail.Orders ?? [];
     const stop = detailOrders.find(
       (o) =>
