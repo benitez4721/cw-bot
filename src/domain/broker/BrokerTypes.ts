@@ -26,6 +26,7 @@ export interface Order {
   type: OrderType;
   status: OrderStatus;
   filledQuantity?: number;
+  filledPrice?: number;
   limitPrice?: number;
   stopPrice?: number;
   createdAt: string;

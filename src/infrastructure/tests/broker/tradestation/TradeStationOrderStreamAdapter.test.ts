@@ -144,13 +144,14 @@ describe('TradeStationOrderStreamAdapter', () => {
       type: 'StopMarket',
       status: 'pending',
       filledQuantity: 0,
+      filledPrice: undefined,
       stopPrice: 0.78,
       limitPrice: undefined,
       createdAt: '2026-05-08T14:16:01Z',
     });
     expect(events[0]?.origin).toBe('priorState');
     // FilledPrice='0' no debe propagarse como precio real.
-    expect(events[0]?.filledPrice).toBeUndefined();
+    expect(events[0]?.order.filledPrice).toBeUndefined();
     adapter.disconnect();
   });
 
@@ -229,7 +230,7 @@ describe('TradeStationOrderStreamAdapter', () => {
     await flushMicrotasks();
 
     expect(events).toHaveLength(1);
-    expect(events[0]?.filledPrice).toBe(187.32);
+    expect(events[0]?.order.filledPrice).toBe(187.32);
     adapter.disconnect();
   });
 

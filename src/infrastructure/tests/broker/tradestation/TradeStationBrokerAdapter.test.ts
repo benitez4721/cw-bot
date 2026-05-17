@@ -6,12 +6,14 @@ interface TsLegPayload {
   Symbol: string;
   Quantity: string;
   BuyOrSell: string;
+  ExecutionPrice?: string;
 }
 
 interface TsOrderPayload {
   OrderID: string;
   Status?: string;
   OrderType?: string;
+  FilledPrice?: string;
   LimitPrice?: string;
   StopPrice?: string;
   Legs?: TsLegPayload[];
@@ -239,5 +241,72 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
     expect(result.stopOrderId).toBe('952057086');
     expect(result.takeProfitOrderId).toBe('952057087');
     expect(result.error).toBeUndefined();
+  });
+});
+
+describe('TradeStationBrokerAdapter.getOrders', () => {
+  function brokerWithOrders(
+    orders: TsOrderPayload[],
+  ): TradeStationBrokerAdapter {
+    const client = {
+      accountId: () => 'SIM12345',
+      apiBase: () => 'https://sim.api.tradestation.com',
+      request: vi.fn(async () => ({ Orders: orders })),
+    } as unknown as TradeStationClient;
+    return new TradeStationBrokerAdapter({ client });
+  }
+
+  it('mapea FilledPrice del root al filledPrice del Order', async () => {
+    const broker = brokerWithOrders([
+      {
+        OrderID: '1',
+        Status: 'FLL',
+        OrderType: 'Limit',
+        FilledPrice: '1.23',
+        Legs: [{ Symbol: 'AAPL', Quantity: '100', BuyOrSell: 'Buy' }],
+      },
+    ]);
+
+    const [order] = await broker.getOrders({});
+
+    expect(order?.filledPrice).toBe(1.23);
+  });
+
+  it('cae a Legs[0].ExecutionPrice cuando FilledPrice es "0"', async () => {
+    const broker = brokerWithOrders([
+      {
+        OrderID: '2',
+        Status: 'FLL',
+        OrderType: 'Limit',
+        FilledPrice: '0',
+        Legs: [
+          {
+            Symbol: 'AAPL',
+            Quantity: '100',
+            BuyOrSell: 'Buy',
+            ExecutionPrice: '187.32',
+          },
+        ],
+      },
+    ]);
+
+    const [order] = await broker.getOrders({});
+
+    expect(order?.filledPrice).toBe(187.32);
+  });
+
+  it('deja filledPrice undefined cuando ni root ni leg tienen precio', async () => {
+    const broker = brokerWithOrders([
+      {
+        OrderID: '3',
+        Status: 'OPN',
+        OrderType: 'Limit',
+        Legs: [{ Symbol: 'AAPL', Quantity: '100', BuyOrSell: 'Buy' }],
+      },
+    ]);
+
+    const [order] = await broker.getOrders({});
+
+    expect(order?.filledPrice).toBeUndefined();
   });
 });

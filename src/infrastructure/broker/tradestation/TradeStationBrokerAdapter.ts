@@ -20,6 +20,7 @@ import {
   mapSide,
   mapStatus,
   parseNumber,
+  pickFilledPrice,
 } from './tradeStationMapping.js';
 
 const log = logger.child({ component: 'TradeStationBrokerAdapter' });
@@ -50,6 +51,7 @@ interface TsOrder {
   OrderType?: string;
   Quantity?: string;
   FilledQuantity?: string;
+  FilledPrice?: string;
   LimitPrice?: string;
   StopPrice?: string;
   OpenedDateTime?: string;
@@ -356,6 +358,7 @@ function toOrder(o: TsOrder): Order {
     type: mapOrderType(o.OrderType),
     status: mapStatus(o.Status),
     filledQuantity: pickFilledQuantity(o, firstLeg),
+    filledPrice: pickFilledPrice(o),
     limitPrice: o.LimitPrice ? parseNumber(o.LimitPrice) : undefined,
     stopPrice: o.StopPrice ? parseNumber(o.StopPrice) : undefined,
     createdAt: o.OpenedDateTime ?? '',

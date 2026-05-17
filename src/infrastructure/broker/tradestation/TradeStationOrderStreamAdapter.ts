@@ -13,6 +13,7 @@ import {
   mapSide,
   mapStatus,
   parseNumber,
+  pickFilledPrice,
 } from './tradeStationMapping.js';
 
 const log = logger.child({ component: 'TradeStationOrderStreamAdapter' });
@@ -118,7 +119,6 @@ export class TradeStationOrderStreamAdapter implements OrderStreamPort {
       order,
       observedAt: new Date().toISOString(),
       origin: this.replayingPriorState ? 'priorState' : 'liveUpdate',
-      filledPrice: pickFilledPrice(tsOrder),
     };
     for (const h of this.orderHandlers) {
       try {
@@ -140,6 +140,7 @@ function mapStreamOrder(o: TsStreamOrder): Order {
     type: mapOrderType(o.OrderType),
     status: mapStatus(o.Status),
     filledQuantity: pickFilledQuantity(firstLeg),
+    filledPrice: pickFilledPrice(o),
     limitPrice: o.LimitPrice ? parseNumber(o.LimitPrice) : undefined,
     stopPrice: o.StopPrice ? parseNumber(o.StopPrice) : undefined,
     createdAt: o.OpenedDateTime ?? '',
@@ -151,22 +152,6 @@ function pickFilledQuantity(
 ): number | undefined {
   if (leg?.ExecQuantity == null) return undefined;
   return parseNumber(leg.ExecQuantity);
-}
-
-function pickFilledPrice(o: TsStreamOrder): number | undefined {
-  // TS reporta '0' como FilledPrice cuando todavía no hubo ejecución.
-  // No queremos propagar 0 como precio real.
-  const top = o.FilledPrice;
-  if (top != null && top !== '' && top !== '0') {
-    const n = parseNumber(top);
-    if (n > 0) return n;
-  }
-  const legPrice = o.Legs?.[0]?.ExecutionPrice;
-  if (legPrice != null && legPrice !== '' && legPrice !== '0') {
-    const n = parseNumber(legPrice);
-    if (n > 0) return n;
-  }
-  return undefined;
 }
 
 function errMsg(err: unknown): string {

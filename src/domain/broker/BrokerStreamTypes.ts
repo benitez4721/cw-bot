@@ -9,7 +9,6 @@ export interface OrderEvent {
   order: OrderWithContext;
   observedAt: string;
   origin: EventOrigin;
-  filledPrice?: number;
 }
 
 export interface PositionEvent {

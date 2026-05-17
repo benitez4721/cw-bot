@@ -51,3 +51,25 @@ export function mapOrderType(value: string | undefined): OrderType {
 export function mapSide(value: string | undefined): OrderSide {
   return value === 'Sell' || value === 'SELL' ? 'SELL' : 'BUY';
 }
+
+// TS reporta '0' como FilledPrice / ExecutionPrice cuando todavia no hubo
+// ejecucion. No queremos propagar 0 como precio real. Estructural para que
+// sirva tanto al REST (TsOrder) como al stream (TsStreamOrder).
+interface FillPriceSource {
+  FilledPrice?: string;
+  Legs?: Array<{ ExecutionPrice?: string }>;
+}
+
+export function pickFilledPrice(o: FillPriceSource): number | undefined {
+  const top = o.FilledPrice;
+  if (top != null && top !== '' && top !== '0') {
+    const n = parseNumber(top);
+    if (n > 0) return n;
+  }
+  const legPrice = o.Legs?.[0]?.ExecutionPrice;
+  if (legPrice != null && legPrice !== '' && legPrice !== '0') {
+    const n = parseNumber(legPrice);
+    if (n > 0) return n;
+  }
+  return undefined;
+}
