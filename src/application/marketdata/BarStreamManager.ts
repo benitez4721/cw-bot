@@ -6,6 +6,7 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculations.js';
+import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
@@ -64,6 +65,8 @@ export class BarStreamManager {
   // Keyed by `${model}:${symbol}` so two strategies can evaluate the same
   // symbol concurrently without blocking each other.
   private readonly inFlight = new Set<string>();
+  // Dedup: ensure at most one in-flight cache recovery per symbol.
+  private readonly recoveryInFlight = new Set<string>();
   private tickTimer: NodeJS.Timeout | null = null;
   private status: BarStreamManagerStatus = 'idle';
   private handlersRegistered = false;
@@ -236,6 +239,14 @@ export class BarStreamManager {
   }
 
   private async bootstrapAndSubscribe(symbol: string): Promise<void> {
+    await this.refreshHistoricalCache(symbol);
+    this.feed.subscribe(symbol);
+    this.subscribed.add(symbol);
+  }
+
+  // Repopulates the 1m/5m cache for a symbol from the historical-bars port.
+  // Idempotent: callers (initial bootstrap + cache recovery) share this path.
+  private async refreshHistoricalCache(symbol: string): Promise<void> {
     log.info({ symbol, bars: this.bootstrapBars }, 'bootstrapping');
     const [bars1m, bars5m] = await Promise.all([
       this.historicalBars.fetchHistoricalBars({
@@ -256,8 +267,6 @@ export class BarStreamManager {
       this.barRepo.set(symbol, '1min', closed1m),
       this.barRepo.set(symbol, '5min', closed5m),
     ]);
-    this.feed.subscribe(symbol);
-    this.subscribed.add(symbol);
     log.info(
       {
         symbol,
@@ -266,8 +275,27 @@ export class BarStreamManager {
         dropped1m: bars1m.length - closed1m.length,
         dropped5m: bars5m.length - closed5m.length,
       },
-      'bootstrapped + subscribed',
+      'historical cache refreshed',
     );
+  }
+
+  // Triggered when the indicator port reports the cache is missing/short.
+  // Skips the WS subscribe step if the symbol is already subscribed.
+  private async recoverCache(symbol: string): Promise<void> {
+    if (this.recoveryInFlight.has(symbol)) return;
+    this.recoveryInFlight.add(symbol);
+    try {
+      log.warn({ symbol }, 'cache underfilled — re-bootstrapping');
+      if (this.subscribed.has(symbol)) {
+        await this.refreshHistoricalCache(symbol);
+      } else {
+        await this.bootstrapAndSubscribe(symbol);
+      }
+    } catch (err) {
+      log.error({ symbol, err: errMsg(err) }, 'cache recovery failed');
+    } finally {
+      this.recoveryInFlight.delete(symbol);
+    }
   }
 
   private async handleBar(symbol: string, bar: Bar): Promise<void> {
@@ -427,6 +455,9 @@ export class BarStreamManager {
         { model: strategy.name, symbol, err: errMsg(err) },
         'process failed',
       );
+      if (err instanceof CacheUnderfilledError) {
+        void this.recoverCache(symbol);
+      }
     } finally {
       this.inFlight.delete(inFlightKey);
     }

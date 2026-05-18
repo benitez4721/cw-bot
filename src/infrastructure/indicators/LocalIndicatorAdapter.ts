@@ -20,6 +20,7 @@ import {
   calcSessionVWAP,
   toEasternDate,
 } from '../../domain/indicators/calculations.js';
+import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 
 export interface LocalIndicatorAdapterOptions {
   bars: BarRepository;
@@ -45,7 +46,7 @@ export class LocalIndicatorAdapter implements IndicatorPort {
     const series = await this.computeMACDSeries(input);
     const last = findLastValidMACD(series);
     if (last === null) {
-      throw new Error(
+      throw new CacheUnderfilledError(
         `LocalIndicator: insufficient data for MACD on ${input.symbol}`,
       );
     }
@@ -61,7 +62,7 @@ export class LocalIndicatorAdapter implements IndicatorPort {
       (p) => !Number.isNaN(p.macd) && !Number.isNaN(p.signal),
     );
     if (valid.length === 0) {
-      throw new Error(
+      throw new CacheUnderfilledError(
         `LocalIndicator: insufficient data for MACD series on ${input.symbol}`,
       );
     }
@@ -87,7 +88,7 @@ export class LocalIndicatorAdapter implements IndicatorPort {
   ): Promise<Bar[]> {
     const bars = await this.bars.get(symbol, interval);
     if (bars.length === 0) {
-      throw new Error(
+      throw new CacheUnderfilledError(
         `LocalIndicator: no cached bars for ${symbol} ${interval}`,
       );
     }
