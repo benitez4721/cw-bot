@@ -11,6 +11,8 @@ export type OrderRecordStatus =
 export type TsErrorType = 'auth' | 'http_4xx' | 'http_5xx' | 'network';
 export type TsOperation =
   | 'placeBracket'
+  | 'placeMarket'
+  | 'cancelOrder'
   | 'getOrdersByIds'
   | 'getPositions'
   | 'getOrders'

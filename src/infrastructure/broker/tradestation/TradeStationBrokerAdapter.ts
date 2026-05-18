@@ -1,12 +1,15 @@
 import type {
   BrokerPort,
+  CancelOrderInput,
   GetQuoteInput,
+  PlaceMarketOrderInput,
   ReplaceStopPriceInput,
 } from '../../../domain/broker/BrokerPort.js';
 import type {
   BracketOrderInput,
   BracketOrderResult,
   Order,
+  OrderResult,
   OrderSide,
   Position,
   Quote,
@@ -82,6 +85,12 @@ interface TsPlaceOrderResponse {
     Status?: string;
   }>;
   Errors?: Array<{ AccountID?: string; Error?: string; Message?: string }>;
+}
+
+interface TsCancelOrderResponse {
+  OrderID?: string;
+  Error?: string;
+  Message?: string;
 }
 
 export interface TradeStationBrokerAdapterOptions {
@@ -315,6 +324,78 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       body: { StopPrice: String(round2(stopPrice)) },
       operation: 'replaceStop',
     });
+  }
+
+  // Idempotent: TradeStation may signal a non-cancellable order either via a
+  // 4xx (request() throws) or via 200 OK with `Error` populated in the body
+  // (terminal-state path observed in V2 and consistent with placeBracketOrder
+  // V3 behavior). Both paths are swallowed with a warn so callers can fan out
+  // cancels without racing on each individual leg's state.
+  async cancelOrder({ orderId }: CancelOrderInput): Promise<void> {
+    try {
+      const response = await this.client.request<TsCancelOrderResponse>({
+        method: 'DELETE',
+        path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
+        operation: 'cancelOrder',
+      });
+      if (response?.Error) {
+        log.warn(
+          { orderId, error: response.Error, message: response.Message },
+          'cancelOrder rejected by broker — order likely in terminal state',
+        );
+      }
+    } catch (err) {
+      log.warn(
+        { orderId, err: err instanceof Error ? err.message : String(err) },
+        'cancelOrder failed — order may already be filled or cancelled',
+      );
+    }
+  }
+
+  async placeMarketOrder({
+    symbol,
+    quantity,
+    side,
+  }: PlaceMarketOrderInput): Promise<OrderResult> {
+    const payload = {
+      AccountID: this.client.accountId(),
+      Symbol: symbol,
+      Quantity: String(quantity),
+      OrderType: 'Market',
+      TradeAction: side,
+      TimeInForce: { Duration: 'DAY' },
+      Route: 'Intelligent',
+    };
+
+    const response = await this.client.request<TsPlaceOrderResponse>({
+      method: 'POST',
+      path: '/v3/orderexecution/orders',
+      body: payload,
+      operation: 'placeMarket',
+    });
+
+    const orders = response.Orders ?? [];
+    const first = orders[0];
+    const failed = orders.find((o) => o.Error === 'FAILED');
+
+    if (!first || failed || !first.OrderID) {
+      return {
+        orderId: first?.OrderID ?? '',
+        status: 'rejected',
+        message: failed?.Message ?? first?.Message,
+        error:
+          failed?.Error ??
+          first?.Error ??
+          response.Errors?.[0]?.Error ??
+          'Unknown error',
+      };
+    }
+
+    return {
+      orderId: first.OrderID,
+      status: first.Status ? mapStatus(first.Status) : 'open',
+      message: first.Message,
+    };
   }
 
   async getQuote({ symbol }: GetQuoteInput): Promise<Quote> {

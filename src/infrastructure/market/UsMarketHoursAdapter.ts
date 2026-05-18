@@ -2,7 +2,9 @@ import type { MarketHours } from '../../domain/market/MarketHours.js';
 
 const TIME_ZONE = 'America/New_York';
 const OPEN_MINUTES = 9 * 60 + 40;
-const CLOSE_MINUTES = 16 * 60;
+// 15:50 ET — bot stops trading 10 min before the RTH close so that
+// MarketCloseManager can flatten remaining positions before 16:00.
+const CLOSE_MINUTES = 15 * 60 + 50;
 
 const formatter = new Intl.DateTimeFormat('en-US', {
   timeZone: TIME_ZONE,
