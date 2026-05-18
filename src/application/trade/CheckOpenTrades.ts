@@ -57,6 +57,12 @@ export class CheckOpenTrades {
         ctx.bracket.entryOrderId,
         ctx.bracket.stopOrderId,
         ctx.bracket.takeProfitOrderId,
+        // Si el trade fue flateado, el Market opuesto puede seguir open
+        // unos segundos hasta que llene — mantenerlo en el set evita cerrar
+        // el context con la posición aún en transición.
+        ...(ctx.bracket.forcedExitOrderId
+          ? [ctx.bracket.forcedExitOrderId]
+          : []),
       ];
       const hasActive = bracketIds.some((id) => activeOrderIds.has(id));
       if (hasActive) {

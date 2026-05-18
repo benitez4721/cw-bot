@@ -60,6 +60,9 @@ class FakeTradeContextRepository implements TradeContextRepository {
   async listActiveByModelAndSymbol(): Promise<TradeContext[]> {
     return [];
   }
+  async listAllActive(): Promise<TradeContext[]> {
+    return [];
+  }
 }
 
 function order(overrides: Partial<Order> = {}): Order {

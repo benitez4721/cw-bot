@@ -7,6 +7,8 @@ import {
 } from 'prom-client';
 import type {
   DecisionAction,
+  FlattenFailurePhase,
+  FlattenOutcome,
   MetricsPort,
   OauthRefreshResult,
   OrderRecordStatus,
@@ -29,6 +31,8 @@ export class PrometheusMetricsAdapter implements MetricsPort {
   private readonly barDedupSkips: Counter;
   private readonly bootstrapFailures: Counter;
   private readonly marketFeedConnected: Gauge;
+  private readonly flattenOutcomes: Counter<'outcome'>;
+  private readonly flattenFailures: Counter<'phase'>;
 
   constructor() {
     this.registry = new Registry();
@@ -102,6 +106,18 @@ export class PrometheusMetricsAdapter implements MetricsPort {
       help: 'Polygon WebSocket state (0 disconnected / 1 connected)',
       registers: [this.registry],
     });
+    this.flattenOutcomes = new Counter({
+      name: 'flatten_outcomes_total',
+      help: 'Pre-close flatten outcomes per trade context',
+      labelNames: ['outcome'],
+      registers: [this.registry],
+    });
+    this.flattenFailures = new Counter({
+      name: 'flatten_failures_total',
+      help: 'Pre-close flatten failures by phase',
+      labelNames: ['phase'],
+      registers: [this.registry],
+    });
   }
 
   recordDecision(symbol: string, action: DecisionAction): void {
@@ -151,5 +167,13 @@ export class PrometheusMetricsAdapter implements MetricsPort {
 
   setMarketFeedConnected(connected: boolean): void {
     this.marketFeedConnected.set(connected ? 1 : 0);
+  }
+
+  recordFlattenOutcome(outcome: FlattenOutcome): void {
+    this.flattenOutcomes.inc({ outcome });
+  }
+
+  recordFlattenFailure(phase: FlattenFailurePhase): void {
+    this.flattenFailures.inc({ phase });
   }
 }

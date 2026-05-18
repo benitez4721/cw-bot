@@ -7,6 +7,10 @@ export interface TradeContextBracket {
   entryOrderId: string;
   stopOrderId: string;
   takeProfitOrderId: string;
+  // OrderID of the Market order used to flatten this trade pre-close.
+  // Indexed in the trade repo alongside entryOrderId so the order stream
+  // can enrich the Market event with this context, keeping the trade grouped.
+  forcedExitOrderId?: string;
 }
 
 export interface TradeContext {

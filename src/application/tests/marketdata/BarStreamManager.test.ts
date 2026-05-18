@@ -235,6 +235,13 @@ function createTradeRepo(): FakeTradeRepo {
       }
       return out;
     },
+    async listAllActive() {
+      const out: TradeContext[] = [];
+      for (const ctx of items.values()) {
+        if (ctx.status === 'active') out.push(ctx);
+      }
+      return out;
+    },
     _seedActive(ctx) {
       items.set(ctx.bracket.entryOrderId, ctx);
       const key = activeKey(ctx.model, ctx.symbol);

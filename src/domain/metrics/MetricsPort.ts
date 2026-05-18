@@ -19,6 +19,8 @@ export type TsOperation =
   | 'replaceStop'
   | 'getQuote';
 export type OauthRefreshResult = 'success' | 'failure';
+export type FlattenOutcome = 'cancelled' | 'marketSent' | 'skipped';
+export type FlattenFailurePhase = 'cancel' | 'market' | 'persist';
 
 export interface MetricsPort {
   recordDecision(symbol: string, action: DecisionAction): void;
@@ -37,4 +39,7 @@ export interface MetricsPort {
   recordBarDedupSkip(): void;
   recordBootstrapFailure(): void;
   setMarketFeedConnected(connected: boolean): void;
+  // Pre-close flatten lifecycle (FlattenAllPositions use case).
+  recordFlattenOutcome(outcome: FlattenOutcome): void;
+  recordFlattenFailure(phase: FlattenFailurePhase): void;
 }

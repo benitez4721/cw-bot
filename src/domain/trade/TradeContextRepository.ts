@@ -8,4 +8,6 @@ export interface TradeContextRepository {
     model: string,
     symbol: string,
   ): Promise<TradeContext[]>;
+  // Cross-model / cross-symbol — usado por el flatten pre-close.
+  listAllActive(): Promise<TradeContext[]>;
 }

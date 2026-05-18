@@ -28,15 +28,23 @@ export class RedisTradeContextRepository implements TradeContextRepository {
   async put(ctx: TradeContext): Promise<void> {
     const entryOrderId = ctx.bracket.entryOrderId;
     const activeKey = this.activeKey(ctx.model, ctx.symbol);
+    const serialized = JSON.stringify(ctx);
     const tx = this.redis
       .multi()
       .sadd(this.indexKey, entryOrderId)
-      .set(
-        this.itemKey(entryOrderId),
-        JSON.stringify(ctx),
+      .set(this.itemKey(entryOrderId), serialized, 'EX', this.itemTtlSeconds);
+    // Dual-write: si el trade fue flateado, indexamos también bajo el
+    // OrderID del Market opuesto. Permite que OrderStreamManager enriquezca
+    // el evento de ese Market con este TradeContext (mismo JSON) y el
+    // dashboard agrupe los 4 OrderIDs como un solo trade.
+    if (ctx.bracket.forcedExitOrderId) {
+      tx.set(
+        this.itemKey(ctx.bracket.forcedExitOrderId),
+        serialized,
         'EX',
         this.itemTtlSeconds,
       );
+    }
     if (ctx.status === 'closed') {
       tx.srem(activeKey, entryOrderId);
     } else {
@@ -92,6 +100,27 @@ export class RedisTradeContextRepository implements TradeContextRepository {
       await this.redis.srem(setKey, ...expired);
     }
 
+    return out;
+  }
+
+  // Itera el índice global de entryOrderIds, materializa los items vivos en
+  // Redis y devuelve solo los activos. Aceptable para cardinalidad baja
+  // (decenas de trades por día, TTL 7d sobre los items). El flatten pre-close
+  // es la única ruta que lo invoca, una vez por día.
+  async listAllActive(): Promise<TradeContext[]> {
+    const ids = await this.redis.smembers(this.indexKey);
+    if (ids.length === 0) return [];
+
+    const raws = await this.redis.mget(...ids.map((id) => this.itemKey(id)));
+    const out: TradeContext[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const raw = raws[i];
+      if (!raw) continue;
+      const parsed = parseItem(raw);
+      if (!parsed) continue;
+      if (parsed.status !== 'active') continue;
+      out.push(parsed);
+    }
     return out;
   }
 
