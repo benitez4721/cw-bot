@@ -8,6 +8,7 @@ import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculations.js';
 import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import type { FlattenAllPositions } from '../broker/FlattenAllPositions.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
@@ -17,6 +18,13 @@ const log = logger.child({ component: 'BarStreamManager' });
 
 const DEFAULT_BOOTSTRAP_BARS = 200;
 const DEFAULT_SYNC_INTERVAL_MS = 10_000;
+
+const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 export type BarStreamManagerStatus = 'idle' | 'running';
 
@@ -31,6 +39,9 @@ export interface BarStreamManagerOptions {
   maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   marketHours: MarketHours;
   metrics: MetricsPort;
+  // Disparado una sola vez al detectarse la transición isOpen: true→false
+  // (15:50 ET con UsMarketHoursAdapter). Opcional para tests legacy.
+  flattenAll?: FlattenAllPositions;
   bootstrapBars?: number;
   syncIntervalMs?: number;
   // Injected for tests
@@ -55,6 +66,8 @@ export class BarStreamManager {
   private readonly maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
+  private readonly flattenAll?: FlattenAllPositions;
+  private lastFlattenedDay: string | null = null;
   private readonly bootstrapBars: number;
   private readonly syncIntervalMs: number;
   private readonly now: () => number;
@@ -84,6 +97,7 @@ export class BarStreamManager {
     this.maybeMoveStopToBreakEven = options.maybeMoveStopToBreakEven;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
+    this.flattenAll = options.flattenAll;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
     this.now = options.now ?? (() => Date.now());
@@ -191,12 +205,28 @@ export class BarStreamManager {
       this.feedConnected = false;
       this.subscribed.clear();
       this.inFlight.clear();
+      this.triggerFlatten(new Date(this.now()));
       return;
     }
 
     if (open && this.feedConnected) {
       await this.syncWatchlist();
     }
+  }
+
+  // Fire-and-forget: el tick sigue su curso aunque el flatten tarde varios
+  // segundos. Idempotencia diaria via `lastFlattenedDay` en TZ NY — sólo
+  // un disparo por día calendario (sirve para evitar redisparos si el feed
+  // re-conecta brevemente y vuelve a desconectarse).
+  private triggerFlatten(now: Date): void {
+    if (!this.flattenAll) return;
+    const day = dayKeyFormatter.format(now);
+    if (this.lastFlattenedDay === day) return;
+    this.lastFlattenedDay = day;
+    log.info({ day }, 'market closed — running flatten');
+    void this.flattenAll.execute().catch((err) => {
+      log.error({ err: errMsg(err) }, 'flatten execution failed');
+    });
   }
 
   private async syncWatchlist(): Promise<void> {

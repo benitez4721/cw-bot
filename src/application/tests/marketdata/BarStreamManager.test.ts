@@ -22,6 +22,7 @@ import type { TradeContextRepository } from '../../../domain/trade/TradeContextR
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 import type { WatchlistRepository } from '../../../domain/watchlist/WatchlistRepository.js';
 import type { WatchedSymbol } from '../../../domain/watchlist/WatchlistTypes.js';
+import type { FlattenAllPositions } from '../../broker/FlattenAllPositions.js';
 import type { PlaceBracketOrder } from '../../broker/PlaceBracketOrder.js';
 import { CloseTrade } from '../../trade/CloseTrade.js';
 import { CheckOpenTrades } from '../../trade/CheckOpenTrades.js';
@@ -279,6 +280,8 @@ interface Setup {
   broker: BrokerPort;
   metrics: MetricsPort;
   marketOpen: { value: boolean };
+  nowMs: { value: number };
+  flatten: { execute: ReturnType<typeof vi.fn> };
   strategies: StrategyHandle[];
   // Convenience accessors for the first strategy (single-strategy tests).
   watchlist: TestWatchlist;
@@ -286,7 +289,11 @@ interface Setup {
 }
 
 function setup(
-  opts: { initial?: WatchedSymbol[]; strategies?: StrategyFixture[] } = {},
+  opts: {
+    initial?: WatchedSymbol[];
+    strategies?: StrategyFixture[];
+    initialNowMs?: number;
+  } = {},
 ): Setup {
   const fixtures: StrategyFixture[] = opts.strategies ?? [
     { name: 'MacdM1CrossOver', initial: opts.initial ?? [] },
@@ -378,6 +385,9 @@ function setup(
     closeTrade,
   });
 
+  const nowMs = { value: opts.initialNowMs ?? Date.now() };
+  const flatten = { execute: vi.fn(async () => undefined) };
+
   const manager = new BarStreamManager({
     feed,
     historicalBars,
@@ -388,8 +398,10 @@ function setup(
     checkOpenTrades,
     marketHours,
     metrics,
+    flattenAll: flatten as unknown as FlattenAllPositions,
     bootstrapBars: 5,
     syncIntervalMs: 60_000,
+    now: () => nowMs.value,
   });
 
   return {
@@ -403,6 +415,8 @@ function setup(
     broker,
     metrics,
     marketOpen,
+    nowMs,
+    flatten,
     strategies: handles,
     watchlist: handles[0].watchlist,
     model: handles[0].model,
@@ -861,5 +875,73 @@ describe('BarStreamManager', () => {
     // Now nobody wants it.
     expect(s.feed.subscribed.has('AAPL')).toBe(false);
     s.manager.stop();
+  });
+
+  describe('flatten on market close', () => {
+    // 2026-05-18 (Monday) 19:49 UTC = 15:49 EDT — bot abierto
+    const OPEN_NOW = new Date('2026-05-18T19:49:00Z').getTime();
+    // 2026-05-18 19:50 UTC = 15:50 EDT — bot cerrado
+    const CLOSED_NOW = new Date('2026-05-18T19:50:00Z').getTime();
+
+    it('dispara flatten al detectar transición open→closed durante un tick', async () => {
+      const s = setup({ initialNowMs: OPEN_NOW });
+      s.marketOpen.value = true;
+      await s.manager.start();
+      // start() ejecutó un tick con feed conectado.
+      expect(s.flatten.execute).not.toHaveBeenCalled();
+
+      // Llegan las 15:50 ET: mercado cerrado.
+      s.marketOpen.value = false;
+      s.nowMs.value = CLOSED_NOW;
+      await s.manager.forceSync();
+      expect(s.flatten.execute).toHaveBeenCalledTimes(1);
+      s.manager.stop();
+    });
+
+    it('idempotencia: no dispara dos veces el mismo día aunque el feed reconecte y vuelva a desconectarse', async () => {
+      const s = setup({ initialNowMs: OPEN_NOW });
+      s.marketOpen.value = true;
+      await s.manager.start();
+
+      s.marketOpen.value = false;
+      s.nowMs.value = CLOSED_NOW;
+      await s.manager.forceSync();
+      expect(s.flatten.execute).toHaveBeenCalledTimes(1);
+
+      // Re-abre brevemente (hipotético — feed reconecta) y cierra otra vez
+      s.marketOpen.value = true;
+      s.nowMs.value = CLOSED_NOW + 60_000;
+      await s.manager.forceSync();
+      s.marketOpen.value = false;
+      s.nowMs.value = CLOSED_NOW + 120_000;
+      await s.manager.forceSync();
+      // Sigue siendo el mismo día NY → no se redispara.
+      expect(s.flatten.execute).toHaveBeenCalledTimes(1);
+      s.manager.stop();
+    });
+
+    it('no dispara si arranca con el mercado ya cerrado', async () => {
+      const s = setup({ initialNowMs: CLOSED_NOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      await s.manager.forceSync();
+      // feedConnected nunca pasó a true → no hay transición.
+      expect(s.flatten.execute).not.toHaveBeenCalled();
+      s.manager.stop();
+    });
+
+    it('falla del flatten no rompe el ciclo del manager', async () => {
+      const s = setup({ initialNowMs: OPEN_NOW });
+      s.marketOpen.value = true;
+      await s.manager.start();
+      s.flatten.execute.mockRejectedValueOnce(new Error('broker down'));
+
+      s.marketOpen.value = false;
+      s.nowMs.value = CLOSED_NOW;
+      await s.manager.forceSync();
+      // Fire-and-forget: el tick no debe haber throwed.
+      expect(s.flatten.execute).toHaveBeenCalledTimes(1);
+      s.manager.stop();
+    });
   });
 });

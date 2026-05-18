@@ -2,6 +2,7 @@ import { createServer } from './infrastructure/http/server.js';
 import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
 import { setupAdapters } from './adaptersSetup.js';
+import { FlattenAllPositions } from './application/broker/FlattenAllPositions.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
 import { CheckOpenTrades } from './application/trade/CheckOpenTrades.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
@@ -103,6 +104,8 @@ async function main() {
     stream: positionStreamAdapter,
   });
 
+  const flattenAll = new FlattenAllPositions({ broker, tradeRepo, metrics });
+
   const barStream = new BarStreamManager({
     feed: marketFeed,
     historicalBars,
@@ -114,6 +117,7 @@ async function main() {
     maybeMoveStopToBreakEven,
     marketHours,
     metrics,
+    flattenAll,
     bootstrapBars: env.BOOTSTRAP_BARS,
   });
 
