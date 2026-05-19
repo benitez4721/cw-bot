@@ -18,6 +18,7 @@ import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMar
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
 import type { DecisionStrategy } from './domain/decision/DecisionStrategy.js';
+import type { EventStrategy } from './domain/decision/EventStrategy.js';
 
 const log = logger.child({ component: 'adaptersSetup' });
 
@@ -40,6 +41,7 @@ export interface Adapters {
   historicalBars: TwelveDataHistoricalBarsAdapter;
   scannerFeed: ChartsWatcherScannerFeedAdapter;
   strategies: ConfiguredStrategy[];
+  eventStrategies: EventStrategy[];
 }
 
 export function setupAdapters(): Adapters {
@@ -126,6 +128,17 @@ export function setupAdapters(): Adapters {
     cwConfigId: '69f6bec1f52a7e93e345cd0c',
   };
 
+  // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
+  // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
+  // recibir cada NewAlert. Convive en paralelo con los DecisionStrategy.
+  const highOfDayAlert: EventStrategy = {
+    name: 'HighOfDayAlert',
+    cwConfigId: '68ab7ca8a42020253d351a52',
+    quantity: 2000,
+    trailingStopPercent: 8,
+    entryBufferBps: 50,
+  };
+
   return {
     redis,
     metrics,
@@ -139,5 +152,6 @@ export function setupAdapters(): Adapters {
     historicalBars,
     scannerFeed,
     strategies: [macdM1CrossOverStrategy, superStrategy],
+    eventStrategies: [highOfDayAlert],
   };
 }

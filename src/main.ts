@@ -4,7 +4,10 @@ import { logger } from './infrastructure/logging/logger.js';
 import { setupAdapters } from './adaptersSetup.js';
 import { FlattenAllPositions } from './application/broker/FlattenAllPositions.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
+import { PlaceTrailingBracketOrder } from './application/broker/PlaceTrailingBracketOrder.js';
 import { CheckOpenTrades } from './application/trade/CheckOpenTrades.js';
+import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
+import { AlertEventManager } from './application/scanner/AlertEventManager.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
 import { MaybeMoveStopToBreakEven } from './application/trade/MaybeMoveStopToBreakEven.js';
 import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
@@ -59,6 +62,7 @@ async function main() {
     historicalBars,
     scannerFeed,
     strategies,
+    eventStrategies,
   } = setupAdapters();
 
   registerAuthMiddleware(server, {
@@ -77,6 +81,7 @@ async function main() {
   );
 
   const placeBracketOrder = new PlaceBracketOrder(broker);
+  const placeTrailingBracketOrder = new PlaceTrailingBracketOrder(broker);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
   const closeTrade = new CloseTrade(tradeRepo);
   const checkOpenTrades = new CheckOpenTrades({
@@ -102,6 +107,22 @@ async function main() {
   });
   const positionStreamMgr = new PositionStreamManager({
     stream: positionStreamAdapter,
+  });
+
+  const alertManagers = eventStrategies.map((strategy) => {
+    const onAlert = new OnScannerAlert({
+      strategy,
+      broker,
+      placeTrailingBracketOrder,
+      tradeRepo,
+      metrics,
+    });
+    return new AlertEventManager({
+      feed: scannerFeed,
+      strategy,
+      onAlert,
+      metrics,
+    });
   });
 
   const flattenAll = new FlattenAllPositions({ broker, tradeRepo, metrics });
@@ -148,6 +169,16 @@ async function main() {
       log.error(
         { err: err instanceof Error ? err.message : String(err) },
         'scanner monitor start failed (degraded mode — adapter will keep retrying)',
+      );
+    }
+  }
+  for (const mgr of alertManagers) {
+    try {
+      await mgr.start();
+    } catch (err) {
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'alert event manager start failed (degraded mode — adapter will keep retrying)',
       );
     }
   }
@@ -207,6 +238,7 @@ async function main() {
       port: env.PORT,
       cw: scanners.map((s) => s.getStatus()),
       decision: decisionStatus,
+      eventStrategies: eventStrategies.map((s) => s.name),
       grafana: grafana ? 'enabled' : 'disabled',
       heartbeat: heartbeat ? 'enabled' : 'disabled',
     },
