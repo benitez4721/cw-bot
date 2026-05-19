@@ -29,6 +29,7 @@ export interface Order {
   filledPrice?: number;
   limitPrice?: number;
   stopPrice?: number;
+  advancedOptions?: string;
   createdAt: string;
 }
 

@@ -58,6 +58,7 @@ interface TsOrder {
   FilledPrice?: string;
   LimitPrice?: string;
   StopPrice?: string;
+  AdvancedOptions?: string;
   OpenedDateTime?: string;
   ClosedDateTime?: string;
   Legs?: TsOrderLeg[];
@@ -584,6 +585,7 @@ function toOrder(o: TsOrder): Order {
     filledPrice: pickFilledPrice(o),
     limitPrice: o.LimitPrice ? parseNumber(o.LimitPrice) : undefined,
     stopPrice: o.StopPrice ? parseNumber(o.StopPrice) : undefined,
+    advancedOptions: o.AdvancedOptions,
     createdAt: o.OpenedDateTime ?? '',
   };
 }

@@ -16,6 +16,7 @@ interface TsOrderPayload {
   FilledPrice?: string;
   LimitPrice?: string;
   StopPrice?: string;
+  AdvancedOptions?: string;
   Legs?: TsLegPayload[];
 }
 
@@ -308,6 +309,39 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
     const [order] = await broker.getOrders({});
 
     expect(order?.filledPrice).toBeUndefined();
+  });
+
+  it('mapea AdvancedOptions al campo advancedOptions del Order', async () => {
+    const broker = brokerWithOrders([
+      {
+        OrderID: '4',
+        Status: 'OPN',
+        OrderType: 'StopMarket',
+        StopPrice: '1.56',
+        AdvancedOptions: 'Trailing Stop',
+        Legs: [{ Symbol: 'ORGN', Quantity: '2000', BuyOrSell: 'Sell' }],
+      },
+    ]);
+
+    const [order] = await broker.getOrders({});
+
+    expect(order?.advancedOptions).toBe('Trailing Stop');
+  });
+
+  it('advancedOptions queda undefined cuando TS no lo reporta', async () => {
+    const broker = brokerWithOrders([
+      {
+        OrderID: '5',
+        Status: 'ACK',
+        OrderType: 'StopMarket',
+        StopPrice: '1.50',
+        Legs: [{ Symbol: 'AAPL', Quantity: '100', BuyOrSell: 'Sell' }],
+      },
+    ]);
+
+    const [order] = await broker.getOrders({});
+
+    expect(order?.advancedOptions).toBeUndefined();
   });
 });
 
