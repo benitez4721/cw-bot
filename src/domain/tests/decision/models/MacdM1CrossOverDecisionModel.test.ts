@@ -16,19 +16,19 @@ function snapshot(
 ): MacdM1CrossOverSnapshot {
   return {
     symbol: 'AAPL',
-    quote: { symbol: 'AAPL', last: 101, timestamp: 't' },
+    quote: { symbol: 'AAPL', last: 100, timestamp: 't' },
     macd5min: { macd: 0.5, signal: 0.2, histogram: 0.3, timestamp: 't' },
     macd1minSeries: [
       { macd: 0.4, signal: 0.1, histogram: 0.3, timestamp: 't0' },
       { macd: 0.2, signal: 0.3, histogram: -0.1, timestamp: 't-1' },
     ],
-    vwap1min: { value: 100, timestamp: 't' },
+    vwap1min: { value: 99, timestamp: 't' },
     ...overrides,
   };
 }
 
 describe('MacdM1CrossOverDecisionModel', () => {
-  it('emits buy with symbol, side, entry price and order sizing when all rules pass', () => {
+  it('emits buy with dynamic quantity and percentage offsets when all rules pass', () => {
     const model = new MacdM1CrossOverDecisionModel(DEPS);
     const result = model.evaluate(snapshot());
 
@@ -36,26 +36,49 @@ describe('MacdM1CrossOverDecisionModel', () => {
     if (result.action !== 'buy') return;
     expect(result.symbol).toBe('AAPL');
     expect(result.side).toBe('BUY');
-    // last=101, no ask → base=101, cushion=101 * 10/10000 = 0.101 → 101.10
-    expect(result.entryLimitPrice).toBe(101.1);
-    expect(result.quantity).toBe(2000);
-    expect(result.stopOffset).toBe(0.2);
-    expect(result.takeProfitOffset).toBe(0.35);
+    // last=100, no ask → base=100, cushion=100 * 10/10000 = 0.1 → 100.10
+    expect(result.entryLimitPrice).toBe(100.1);
+    // budget 25000 / base 100 = 250
+    expect(result.quantity).toBe(250);
+    // last 100 * 0.01 = 1.00
+    expect(result.stopOffset).toBe(1);
+    // last 100 * 0.025 = 2.50
+    expect(result.takeProfitOffset).toBe(2.5);
     expect(result.checks.every((c) => c.passed)).toBe(true);
   });
 
-  it('uses ask as base when present, falling back to last only if missing', () => {
+  it('uses ask as base for entry and quantity, but last for SL/TP offsets', () => {
     const model = new MacdM1CrossOverDecisionModel(DEPS);
     const result = model.evaluate(
       snapshot({
-        quote: { symbol: 'AAPL', last: 101, ask: 101.5, timestamp: 't' },
+        quote: { symbol: 'AAPL', last: 100, ask: 100.5, timestamp: 't' },
       }),
     );
 
     expect(result.action).toBe('buy');
     if (result.action !== 'buy') return;
-    // ask=101.5, cushion=101.5 * 10/10000 = 0.1015 → 101.60
-    expect(result.entryLimitPrice).toBe(101.6);
+    // ask=100.5, cushion=100.5 * 10/10000 = 0.1005 → 100.60
+    expect(result.entryLimitPrice).toBe(100.6);
+    // budget 25000 / ask 100.5 = 248.756… → floor → 248
+    expect(result.quantity).toBe(248);
+    // SL/TP use last (100), not ask
+    expect(result.stopOffset).toBe(1);
+    expect(result.takeProfitOffset).toBe(2.5);
+  });
+
+  it('holds when price is too high to afford a single share within the budget', () => {
+    const model = new MacdM1CrossOverDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
+        quote: { symbol: 'AAPL', last: 30_000, ask: 30_000, timestamp: 't' },
+        vwap1min: { value: 100, timestamp: 't' },
+      }),
+    );
+
+    expect(result.action).toBe('hold');
+    expect(result.checks.find((c) => c.name === 'quantity > 0')?.passed).toBe(
+      false,
+    );
   });
 
   it('holds when 5min MACD is not positive', () => {

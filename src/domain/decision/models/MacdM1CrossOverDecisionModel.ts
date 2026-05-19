@@ -14,9 +14,9 @@ export interface MacdM1CrossOverSnapshot {
 }
 
 const PARAMS = {
-  quantity: 2000,
-  stopOffset: 0.2,
-  takeProfitOffset: 0.35,
+  tradeBudgetUsd: 25_000,
+  stopPercent: 0.01,
+  takeProfitPercent: 0.025,
   entryOffsetBps: 10,
   minHistogram1minCrossoverDelta: 0.002,
 } as const;
@@ -50,16 +50,17 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
     if (checks.some((c) => !c.passed)) {
       return { action: 'hold', checks, snapshot };
     }
-    const base = snapshot.quote.ask ?? snapshot.quote.last;
-    const cushion = base * (PARAMS.entryOffsetBps / 10000);
+    const last = snapshot.quote.last;
+    const base = snapshot.quote.ask ?? last;
+    const cushion = base * (PARAMS.entryOffsetBps / 10_000);
     return {
       action: 'buy',
       symbol: snapshot.symbol,
       side: 'BUY',
       entryLimitPrice: round2(base + cushion),
-      quantity: PARAMS.quantity,
-      stopOffset: PARAMS.stopOffset,
-      takeProfitOffset: PARAMS.takeProfitOffset,
+      quantity: Math.floor(PARAMS.tradeBudgetUsd / base),
+      stopOffset: round2(last * PARAMS.stopPercent),
+      takeProfitOffset: round2(last * PARAMS.takeProfitPercent),
       checks,
       snapshot,
     };
@@ -71,6 +72,7 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
     const current = m1[0];
     const previous = m1[1];
     const minDelta = PARAMS.minHistogram1minCrossoverDelta;
+    const base = s.quote.ask ?? s.quote.last;
 
     return [
       { name: '5min MACD > 0', passed: m5.macd > 0 },
@@ -92,6 +94,10 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
           current.histogram - previous.histogram >= minDelta,
       },
       { name: 'price > VWAP (1min)', passed: s.quote.last > s.vwap1min.value },
+      {
+        name: 'quantity > 0',
+        passed: base > 0 && Math.floor(PARAMS.tradeBudgetUsd / base) > 0,
+      },
     ];
   }
 }
