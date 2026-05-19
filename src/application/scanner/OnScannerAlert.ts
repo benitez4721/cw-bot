@@ -1,5 +1,6 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type { EventStrategy } from '../../domain/decision/EventStrategy.js';
+import type { MarketHours } from '../../domain/market/MarketHours.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
@@ -15,6 +16,7 @@ export interface OnScannerAlertDeps {
   placeTrailingBracketOrder: PlaceTrailingBracketOrder;
   tradeRepo: TradeContextRepository;
   checkOpenTrades: CheckOpenTrades;
+  marketHours: MarketHours;
   metrics: MetricsPort;
   now?: () => string;
 }
@@ -25,6 +27,7 @@ export class OnScannerAlert {
   private readonly placeTrailingBracketOrder: PlaceTrailingBracketOrder;
   private readonly tradeRepo: TradeContextRepository;
   private readonly checkOpenTrades: CheckOpenTrades;
+  private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly now: () => string;
 
@@ -34,11 +37,21 @@ export class OnScannerAlert {
     this.placeTrailingBracketOrder = deps.placeTrailingBracketOrder;
     this.tradeRepo = deps.tradeRepo;
     this.checkOpenTrades = deps.checkOpenTrades;
+    this.marketHours = deps.marketHours;
     this.metrics = deps.metrics;
     this.now = deps.now ?? (() => new Date().toISOString());
   }
 
   async handle(symbol: string): Promise<void> {
+    if (!this.marketHours.isOpen(new Date(this.now()))) {
+      this.metrics.recordAlertOutcome(this.strategy.name, 'skipped_closed');
+      log.info(
+        { model: this.strategy.name, symbol },
+        'alert skipped — market closed',
+      );
+      return;
+    }
+
     const { stillExposed } = await this.checkOpenTrades.execute({
       model: this.strategy.name,
       symbol,

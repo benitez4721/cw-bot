@@ -21,7 +21,12 @@ export type TsOperation =
 export type OauthRefreshResult = 'success' | 'failure';
 export type FlattenOutcome = 'cancelled' | 'marketSent' | 'skipped';
 export type FlattenFailurePhase = 'cancel' | 'market' | 'persist';
-export type AlertOutcome = 'received' | 'opened' | 'skipped_busy' | 'rejected';
+export type AlertOutcome =
+  | 'received'
+  | 'opened'
+  | 'skipped_busy'
+  | 'skipped_closed'
+  | 'rejected';
 
 export interface MetricsPort {
   recordDecision(symbol: string, action: DecisionAction): void;

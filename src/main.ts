@@ -116,6 +116,7 @@ async function main() {
       placeTrailingBracketOrder,
       tradeRepo,
       checkOpenTrades,
+      marketHours,
       metrics,
     });
     return new AlertEventManager({

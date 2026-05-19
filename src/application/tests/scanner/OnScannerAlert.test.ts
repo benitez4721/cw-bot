@@ -5,6 +5,7 @@ import type {
   TrailingBracketOrderInput,
 } from '../../../domain/broker/BrokerTypes.js';
 import type { EventStrategy } from '../../../domain/decision/EventStrategy.js';
+import type { MarketHours } from '../../../domain/market/MarketHours.js';
 import type { MetricsPort } from '../../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
@@ -51,13 +52,19 @@ interface Fakes {
   };
   placeTrailing: PlaceTrailingBracketOrder;
   placeSpy: ReturnType<typeof vi.fn>;
+  marketHours: MarketHours;
   metrics: MetricsPort & { recordAlertOutcome: ReturnType<typeof vi.fn> };
+}
+
+function makeMarketHours(isOpen: boolean): MarketHours {
+  return { isOpen: () => isOpen };
 }
 
 function setup(opts: {
   stillExposed?: boolean;
   placeResult?: BracketOrderResult;
   quote?: { ask?: number; last?: number };
+  marketOpen?: boolean;
 }): Fakes {
   const stillExposed = opts.stillExposed ?? false;
   const placeResult: BracketOrderResult = opts.placeResult ?? {
@@ -97,6 +104,7 @@ function setup(opts: {
     checkOpenTrades,
     placeTrailing,
     placeSpy,
+    marketHours: makeMarketHours(opts.marketOpen ?? true),
     metrics: makeMetrics(),
   };
 }
@@ -114,6 +122,7 @@ describe('OnScannerAlert.handle', () => {
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
       checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
       metrics: f.metrics,
       now: () => 't0',
     });
@@ -155,6 +164,7 @@ describe('OnScannerAlert.handle', () => {
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
       checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
       metrics: f.metrics,
     });
 
@@ -183,6 +193,7 @@ describe('OnScannerAlert.handle', () => {
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
       checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
       metrics: f.metrics,
     });
 
@@ -215,6 +226,7 @@ describe('OnScannerAlert.handle', () => {
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
       checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
       metrics: f.metrics,
     });
 
@@ -235,6 +247,7 @@ describe('OnScannerAlert.handle', () => {
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
       checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
       metrics: f.metrics,
     });
 
@@ -247,6 +260,30 @@ describe('OnScannerAlert.handle', () => {
     );
   });
 
+  it('si el mercado está cerrado salta la alerta sin tocar broker ni repo', async () => {
+    const f = setup({ marketOpen: false });
+    const useCase = new OnScannerAlert({
+      strategy,
+      broker: f.broker,
+      placeTrailingBracketOrder: f.placeTrailing,
+      tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
+      metrics: f.metrics,
+    });
+
+    await useCase.handle('ORGN');
+
+    expect(f.checkOpenTrades.execute).not.toHaveBeenCalled();
+    expect(f.broker.getQuote).not.toHaveBeenCalled();
+    expect(f.placeSpy).not.toHaveBeenCalled();
+    expect(f.tradeRepo.put).not.toHaveBeenCalled();
+    expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlert',
+      'skipped_closed',
+    );
+  });
+
   it('cae a last cuando no hay ask', async () => {
     const f = setup({ quote: { ask: undefined, last: 2 } });
     const useCase = new OnScannerAlert({
@@ -255,6 +292,7 @@ describe('OnScannerAlert.handle', () => {
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
       checkOpenTrades: f.checkOpenTrades,
+      marketHours: f.marketHours,
       metrics: f.metrics,
     });
 
