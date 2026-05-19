@@ -24,6 +24,7 @@ export class TwelveDataHistoricalBarsAdapter implements HistoricalBarsPort {
       interval: input.interval,
       outputsize: String(input.limit),
       timezone: 'UTC',
+      prepost: 'true',
     });
     const values = data.values ?? [];
     if (values.length === 0) {

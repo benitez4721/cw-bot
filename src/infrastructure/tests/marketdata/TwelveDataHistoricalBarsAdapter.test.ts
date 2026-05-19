@@ -52,6 +52,7 @@ describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
     expect(url.searchParams.get('interval')).toBe('1min');
     expect(url.searchParams.get('outputsize')).toBe('200');
     expect(url.searchParams.get('timezone')).toBe('UTC');
+    expect(url.searchParams.get('prepost')).toBe('true');
     expect(url.searchParams.get('apikey')).toBe('test-key');
   });
 
