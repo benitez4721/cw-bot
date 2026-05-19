@@ -32,6 +32,26 @@ interface CWToplistUpdate {
   }[];
 }
 
+interface CWAlertConfirm {
+  '@type': 'AlertConfirm';
+  success: boolean;
+  msg?: string;
+  action?: string;
+  config_id: string;
+}
+
+interface CWNewAlert {
+  '@type': 'NewAlert';
+  config_id: string;
+  row: {
+    symbol: string;
+    columns: {
+      key: string;
+      value: string;
+    }[];
+  };
+}
+
 interface CWKeepAlive {
   '@type': 'KeepAlive';
 }
@@ -41,15 +61,23 @@ interface CWError {
   message: string;
 }
 
-type CWMessage = CWToplistConfirm | CWToplistUpdate | CWKeepAlive | CWError;
+type CWMessage =
+  | CWToplistConfirm
+  | CWToplistUpdate
+  | CWAlertConfirm
+  | CWNewAlert
+  | CWKeepAlive
+  | CWError;
 
 export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
   private ws: WebSocket | null = null;
   private readonly config: ChartsWatcherConfig;
   private updateCallbacks: ((configId: string, rows: ScannerRow[]) => void)[] =
     [];
+  private alertCallbacks: ((configId: string, row: ScannerRow) => void)[] = [];
   private connectionCallbacks: ((connected: boolean) => void)[] = [];
   private subscribedConfigs: Record<string, true> = {};
+  private subscribedAlertConfigs: Record<string, true> = {};
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
   // Single-flight: concurrent connect() calls share the same handshake so we
@@ -74,6 +102,9 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
         this.notifyConnection(true);
         for (const configId of Object.keys(this.subscribedConfigs)) {
           this.sendSubscribe(configId);
+        }
+        for (const configId of Object.keys(this.subscribedAlertConfigs)) {
+          this.sendSubscribeAlert(configId);
         }
         resolve();
       });
@@ -127,12 +158,15 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
     this.updateCallbacks.push(callback);
   }
 
-  subscribeAlert(_configId: string): void {
-    throw new Error('subscribeAlert: implementación pendiente (Fase 3)');
+  subscribeAlert(configId: string): void {
+    this.subscribedAlertConfigs[configId] = true;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendSubscribeAlert(configId);
+    }
   }
 
-  onAlert(_callback: (configId: string, row: ScannerRow) => void): void {
-    throw new Error('onAlert: implementación pendiente (Fase 3)');
+  onAlert(callback: (configId: string, row: ScannerRow) => void): void {
+    this.alertCallbacks.push(callback);
   }
 
   onConnectionChange(callback: (connected: boolean) => void): void {
@@ -162,6 +196,16 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
     );
   }
 
+  private sendSubscribeAlert(configId: string): void {
+    this.ws?.send(
+      JSON.stringify({
+        '@type': 'Alert',
+        config_id: configId,
+        action: 'subscribe',
+      }),
+    );
+  }
+
   private handleMessage(raw: string): void {
     let msg: CWMessage;
     try {
@@ -183,6 +227,14 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
         this.handleUpdate(msg);
         break;
 
+      case 'AlertConfirm':
+        this.handleAlertConfirm(msg);
+        break;
+
+      case 'NewAlert':
+        this.handleNewAlert(msg);
+        break;
+
       case 'Error':
         // TODO: distinguish fatal (invalid api_key) from per-config errors (unknown config_id).
         log.error({ message: msg.message }, 'server error');
@@ -193,6 +245,29 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
           { type: (msg as { '@type': string })['@type'] },
           'unknown message type',
         );
+    }
+  }
+
+  private handleAlertConfirm(msg: CWAlertConfirm): void {
+    if (!msg.success) {
+      log.warn(
+        { configId: msg.config_id, message: msg.msg },
+        'alert subscription failed',
+      );
+      return;
+    }
+    log.info({ configId: msg.config_id }, 'alert subscription confirmed');
+  }
+
+  private handleNewAlert(msg: CWNewAlert): void {
+    const row: ScannerRow = {
+      symbol: msg.row.symbol,
+      columns: msg.row.columns.map(
+        (c): ScannerColumn => ({ key: c.key, value: c.value }),
+      ),
+    };
+    for (const cb of this.alertCallbacks) {
+      cb(msg.config_id, row);
     }
   }
 
