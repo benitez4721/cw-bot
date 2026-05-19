@@ -114,10 +114,13 @@ export class FlattenAllPositions {
       }
 
       // Caso B — posición abierta: cancela exits del bracket
-      await Promise.allSettled([
-        this.broker.cancelOrder({ orderId: ctx.bracket.stopOrderId }),
-        this.broker.cancelOrder({ orderId: ctx.bracket.takeProfitOrderId }),
-      ]);
+      const exitIds = [
+        ctx.bracket.stopOrderId,
+        ctx.bracket.takeProfitOrderId,
+      ].filter((id): id is string => !!id);
+      await Promise.allSettled(
+        exitIds.map((orderId) => this.broker.cancelOrder({ orderId })),
+      );
 
       // Solo el primer ctx del símbolo envía el Market (qty agregada).
       // Los siguientes reusan el mismo forcedExitOrderId.

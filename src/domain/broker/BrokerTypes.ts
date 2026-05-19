@@ -57,11 +57,19 @@ export interface BracketOrderInput {
   takeProfitOffset: number;
 }
 
+export interface TrailingBracketOrderInput {
+  symbol: string;
+  quantity: number;
+  side: OrderSide;
+  entryLimitPrice: number;
+  trailingStopPercent: number;
+}
+
 export interface BracketOrderResult {
   status: OrderStatus;
   entryOrderId: string;
   stopOrderId: string;
-  takeProfitOrderId: string;
+  takeProfitOrderId?: string;
   message?: string;
   error?: string;
 }

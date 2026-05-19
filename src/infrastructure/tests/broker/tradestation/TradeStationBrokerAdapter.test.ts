@@ -310,3 +310,142 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
     expect(order?.filledPrice).toBeUndefined();
   });
 });
+
+describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
+  interface CapturedRequest {
+    method: string;
+    path: string;
+    body?: Record<string, unknown>;
+  }
+
+  function capturingClient(responses: {
+    place: PlaceResponse;
+    detail: DetailResponse;
+  }): { client: TradeStationClient; calls: CapturedRequest[] } {
+    const calls: CapturedRequest[] = [];
+    const client = {
+      accountId: () => 'SIM12345',
+      apiBase: () => 'https://sim.api.tradestation.com',
+      request: vi.fn(async (req: CapturedRequest) => {
+        calls.push(req);
+        if (req.method === 'POST') return responses.place;
+        return responses.detail;
+      }),
+    } as unknown as TradeStationClient;
+    return { client, calls };
+  }
+
+  it('arma BRK de un solo exit leg con AdvancedOptions.TrailingStop.Percent', async () => {
+    const { client, calls } = capturingClient({
+      place: {
+        Orders: [{ OrderID: 'O-stop' }, { OrderID: 'O-entry' }],
+      },
+      detail: {
+        Orders: [
+          {
+            OrderID: 'O-entry',
+            Status: 'ACK',
+            OrderType: 'Limit',
+            LimitPrice: '1.70',
+            Legs: [{ Symbol: 'ORGN', Quantity: '2000', BuyOrSell: 'BUY' }],
+          },
+          {
+            OrderID: 'O-stop',
+            Status: 'ACK',
+            OrderType: 'StopMarket',
+            StopPrice: '1.56',
+            Legs: [{ Symbol: 'ORGN', Quantity: '2000', BuyOrSell: 'SELL' }],
+          },
+        ],
+      },
+    });
+
+    const broker = new TradeStationBrokerAdapter({ client });
+    const result = await broker.placeTrailingBracketOrder({
+      symbol: 'ORGN',
+      side: 'BUY',
+      quantity: 2000,
+      entryLimitPrice: 1.7,
+      trailingStopPercent: 8,
+    });
+
+    expect(result.status).not.toBe('rejected');
+    expect(result.entryOrderId).toBe('O-entry');
+    expect(result.stopOrderId).toBe('O-stop');
+    expect(result.takeProfitOrderId).toBeUndefined();
+
+    const post = calls.find((c) => c.method === 'POST');
+    const body = post?.body as {
+      OSOs: Array<{ Type: string; Orders: Record<string, unknown>[] }>;
+    };
+    expect(body.OSOs).toHaveLength(1);
+    expect(body.OSOs[0].Type).toBe('BRK');
+    expect(body.OSOs[0].Orders).toHaveLength(1);
+    const stopLeg = body.OSOs[0].Orders[0];
+    expect(stopLeg.OrderType).toBe('StopMarket');
+    expect(stopLeg.AdvancedOptions).toEqual({
+      TrailingStop: { Percent: 8 },
+    });
+    expect(stopLeg.StopPrice).toBeUndefined();
+  });
+
+  it('identifica el stop trailing por OrderType (no por precio)', async () => {
+    const { client } = capturingClient({
+      place: {
+        Orders: [{ OrderID: 'O-stop' }, { OrderID: 'O-entry' }],
+      },
+      detail: {
+        Orders: [
+          {
+            OrderID: 'O-entry',
+            Status: 'ACK',
+            OrderType: 'Limit',
+            LimitPrice: '1.70',
+            Legs: [{ Symbol: 'ORGN', Quantity: '2000', BuyOrSell: 'BUY' }],
+          },
+          {
+            OrderID: 'O-stop',
+            Status: 'ACK',
+            OrderType: 'StopMarket',
+            // TS recalcula este precio dinámicamente; el matching no compara.
+            StopPrice: '999.99',
+            Legs: [{ Symbol: 'ORGN', Quantity: '2000', BuyOrSell: 'SELL' }],
+          },
+        ],
+      },
+    });
+
+    const broker = new TradeStationBrokerAdapter({ client });
+    const result = await broker.placeTrailingBracketOrder({
+      symbol: 'ORGN',
+      side: 'BUY',
+      quantity: 2000,
+      entryLimitPrice: 1.7,
+      trailingStopPercent: 8,
+    });
+
+    expect(result.stopOrderId).toBe('O-stop');
+    expect(result.status).not.toBe('rejected');
+  });
+
+  it('retorna rejected cuando el POST devuelve menos de 2 legs', async () => {
+    const { client } = capturingClient({
+      place: {
+        Orders: [{ OrderID: 'O-only-one' }],
+      },
+      detail: { Orders: [] },
+    });
+
+    const broker = new TradeStationBrokerAdapter({ client });
+    const result = await broker.placeTrailingBracketOrder({
+      symbol: 'ORGN',
+      side: 'BUY',
+      quantity: 2000,
+      entryLimitPrice: 1.7,
+      trailingStopPercent: 8,
+    });
+
+    expect(result.status).toBe('rejected');
+    expect(result.takeProfitOrderId).toBeUndefined();
+  });
+});

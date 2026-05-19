@@ -13,6 +13,7 @@ import type {
   OrderSide,
   Position,
   Quote,
+  TrailingBracketOrderInput,
 } from '../../../domain/broker/BrokerTypes.js';
 import type { OrderStatus } from '../../../domain/broker/BrokerTypes.js';
 import type { TokenStatus } from './TradeStationClient.js';
@@ -279,6 +280,147 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       entryOrderId,
       stopOrderId: stop.OrderID,
       takeProfitOrderId: takeProfit.OrderID,
+    };
+  }
+
+  async placeTrailingBracketOrder(
+    input: TrailingBracketOrderInput,
+  ): Promise<BracketOrderResult> {
+    const cost = round2(input.entryLimitPrice);
+    const exitSide: OrderSide = input.side === 'BUY' ? 'SELL' : 'BUY';
+    const accountId = this.client.accountId();
+
+    const payload: Record<string, unknown> = {
+      AccountID: accountId,
+      Symbol: input.symbol,
+      Quantity: String(input.quantity),
+      OrderType: 'Limit',
+      LimitPrice: String(cost),
+      TradeAction: input.side,
+      TimeInForce: { Duration: 'DAY' },
+      Route: 'Intelligent',
+      OSOs: [
+        {
+          Type: 'BRK',
+          Orders: [
+            {
+              AccountID: accountId,
+              Symbol: input.symbol,
+              Quantity: String(input.quantity),
+              TradeAction: exitSide,
+              TimeInForce: { Duration: 'GTC' },
+              Route: 'Intelligent',
+              OrderType: 'StopMarket',
+              AdvancedOptions: {
+                TrailingStop: { Percent: input.trailingStopPercent },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const response = await this.client.request<TsPlaceOrderResponse>({
+      method: 'POST',
+      path: '/v3/orderexecution/orders',
+      body: payload,
+      operation: 'placeBracket',
+    });
+
+    const orders = response.Orders ?? [];
+    const failed = orders.find((o) => o.Error === 'FAILED');
+    const orderIds = orders
+      .map((o) => o.OrderID)
+      .filter((id): id is string => !!id);
+
+    if (orders.length < 2 || failed || orderIds.length < 2) {
+      return {
+        status: 'rejected',
+        entryOrderId: orders[0]?.OrderID ?? '',
+        stopOrderId: orders[1]?.OrderID ?? '',
+        message: failed?.Message ?? orders[0]?.Message,
+        error:
+          failed?.Error ??
+          orders[0]?.Error ??
+          response.Errors?.[0]?.Error ??
+          'Unknown error',
+      };
+    }
+
+    // Trailing: stop se identifica como el único StopMarket del bracket — TS
+    // recalcula StopPrice dinámicamente, no podemos matchear por precio.
+    // La entry se deriva por exclusión sobre los OrderIDs del POST (mismo
+    // patrón que placeBracketOrder, ver comentario allí).
+    const account = encodeURIComponent(this.client.accountId());
+    const detail = await this.client.request<{ Orders?: TsOrder[] }>({
+      method: 'GET',
+      path: `/v3/brokerage/accounts/${account}/orders/${orderIds.join(',')}`,
+      operation: 'getOrdersByIds',
+    });
+    const detailOrders = detail.Orders ?? [];
+    const stop = detailOrders.find((o) => o.OrderType === 'StopMarket');
+
+    if (!stop) {
+      log.warn(
+        {
+          orderIds,
+          expected: {
+            cost,
+            trailingStopPercent: input.trailingStopPercent,
+          },
+          detail,
+        },
+        'trailing bracket leg detection failed — missing StopMarket in GET',
+      );
+      return {
+        status: 'rejected',
+        entryOrderId: '',
+        stopOrderId: '',
+        message:
+          'failed to identify trailing stop leg from TradeStation response',
+        error: 'leg-detection-failed',
+      };
+    }
+
+    const entryOrderId = orderIds.find((id) => id !== stop.OrderID);
+    if (!entryOrderId) {
+      log.warn(
+        {
+          orderIds,
+          expected: {
+            cost,
+            trailingStopPercent: input.trailingStopPercent,
+          },
+          detail,
+        },
+        'trailing bracket leg detection failed — could not derive entry orderId',
+      );
+      return {
+        status: 'rejected',
+        entryOrderId: '',
+        stopOrderId: stop.OrderID,
+        message: 'failed to derive entry orderId from POST response',
+        error: 'leg-detection-failed',
+      };
+    }
+
+    const entry = detailOrders.find((o) => o.OrderID === entryOrderId);
+    const status: OrderStatus = entry ? mapStatus(entry.Status) : 'open';
+    if (!entry) {
+      log.info(
+        {
+          orderIds,
+          entryOrderId,
+          stopOrderId: stop.OrderID,
+        },
+        'trailing bracket entry not present in GET response — defaulting status to open; order stream will reconcile',
+      );
+    }
+
+    return {
+      status,
+      entryOrderId,
+      stopOrderId: stop.OrderID,
     };
   }
 

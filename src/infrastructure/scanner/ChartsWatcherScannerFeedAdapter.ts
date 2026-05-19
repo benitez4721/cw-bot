@@ -127,6 +127,14 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
     this.updateCallbacks.push(callback);
   }
 
+  subscribeAlert(_configId: string): void {
+    throw new Error('subscribeAlert: implementación pendiente (Fase 3)');
+  }
+
+  onAlert(_callback: (configId: string, row: ScannerRow) => void): void {
+    throw new Error('onAlert: implementación pendiente (Fase 3)');
+  }
+
   onConnectionChange(callback: (connected: boolean) => void): void {
     this.connectionCallbacks.push(callback);
   }

@@ -6,6 +6,7 @@ import type {
   OrderSide,
   Position,
   Quote,
+  TrailingBracketOrderInput,
 } from './BrokerTypes.js';
 
 export interface GetQuoteInput {
@@ -29,6 +30,9 @@ export interface PlaceMarketOrderInput {
 
 export interface BrokerPort {
   placeBracketOrder(input: BracketOrderInput): Promise<BracketOrderResult>;
+  placeTrailingBracketOrder(
+    input: TrailingBracketOrderInput,
+  ): Promise<BracketOrderResult>;
   getPositions(): Promise<Position[]>;
   getOrders({ symbol }: { symbol?: string }): Promise<Order[]>;
   getQuote(input: GetQuoteInput): Promise<Quote>;
