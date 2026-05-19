@@ -165,7 +165,7 @@ describe('OnScannerAlert.handle', () => {
     );
   });
 
-  it('con trade activo en otro símbolo tampoco opera (lock global por modelo)', async () => {
+  it('con trade activo en otro símbolo sí abre — el lock es por símbolo', async () => {
     const f = setup({
       active: [
         {
@@ -192,11 +192,11 @@ describe('OnScannerAlert.handle', () => {
 
     await useCase.handle('ORGN');
 
-    expect(f.placeSpy).not.toHaveBeenCalled();
-    expect(f.tradeRepo.put).not.toHaveBeenCalled();
+    expect(f.placeSpy).toHaveBeenCalledOnce();
+    expect(f.tradeRepo.put).toHaveBeenCalledOnce();
     expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
       'HighOfDayAlert',
-      'skipped_busy',
+      'opened',
     );
   });
 

@@ -36,11 +36,12 @@ export class OnScannerAlert {
 
   async handle(symbol: string): Promise<void> {
     const open = await this.tradeRepo.listActiveByModel(this.strategy.name);
-    if (open.length > 0) {
+    const openForSymbol = open.filter((c) => c.symbol === symbol);
+    if (openForSymbol.length > 0) {
       this.metrics.recordAlertOutcome(this.strategy.name, 'skipped_busy');
       log.info(
-        { model: this.strategy.name, symbol, openCount: open.length },
-        'alert skipped — model already has an active trade',
+        { model: this.strategy.name, symbol, openCount: openForSymbol.length },
+        'alert skipped — symbol already has an active trade',
       );
       return;
     }
