@@ -258,6 +258,7 @@ interface Setup {
   marketOpen: { value: boolean };
   nowMs: { value: number };
   flatten: { execute: ReturnType<typeof vi.fn> };
+  flushRedis: ReturnType<typeof vi.fn>;
   strategies: StrategyHandle[];
   // Convenience accessors for the first strategy (single-strategy tests).
   watchlist: TestWatchlist;
@@ -363,6 +364,7 @@ function setup(
 
   const nowMs = { value: opts.initialNowMs ?? Date.now() };
   const flatten = { execute: vi.fn(async () => undefined) };
+  const flushRedis = vi.fn(async () => undefined);
 
   const manager = new BarStreamManager({
     feed,
@@ -375,6 +377,7 @@ function setup(
     marketHours,
     metrics,
     flattenAll: flatten as unknown as FlattenAllPositions,
+    flushRedis,
     bootstrapBars: 5,
     syncIntervalMs: 60_000,
     now: () => nowMs.value,
@@ -393,6 +396,7 @@ function setup(
     marketOpen,
     nowMs,
     flatten,
+    flushRedis,
     strategies: handles,
     watchlist: handles[0].watchlist,
     model: handles[0].model,
@@ -919,6 +923,96 @@ describe('BarStreamManager', () => {
       await s.manager.forceSync();
       // Fire-and-forget: el tick no debe haber throwed.
       expect(s.flatten.execute).toHaveBeenCalledTimes(1);
+      s.manager.stop();
+    });
+  });
+
+  describe('pre-market flush', () => {
+    // 2026-05-18 (Monday) 13:29 UTC = 09:29 EDT → ventana de flush.
+    const FLUSH_WINDOW = new Date('2026-05-18T13:29:00Z').getTime();
+    // 2026-05-18 (Monday) 13:28 UTC = 09:28 EDT → antes de la ventana.
+    const BEFORE_WINDOW = new Date('2026-05-18T13:28:00Z').getTime();
+    // 2026-05-18 (Monday) 13:30 UTC = 09:30 EDT → fuera de la ventana (open).
+    const AFTER_WINDOW = new Date('2026-05-18T13:30:00Z').getTime();
+    // 2026-05-19 (Tuesday) 13:29 UTC = 09:29 EDT → ventana del día siguiente.
+    const NEXT_DAY_FLUSH_WINDOW = new Date('2026-05-19T13:29:00Z').getTime();
+    // 2026-05-16 (Saturday) 13:29 UTC = 09:29 EDT.
+    const SATURDAY_FLUSH_WINDOW = new Date('2026-05-16T13:29:00Z').getTime();
+    // 2026-05-17 (Sunday) 13:29 UTC = 09:29 EDT.
+    const SUNDAY_FLUSH_WINDOW = new Date('2026-05-17T13:29:00Z').getTime();
+
+    it('flushea cuando el tick cae a 9:29 ET de un día hábil', async () => {
+      const s = setup({ initialNowMs: FLUSH_WINDOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      expect(s.flushRedis).toHaveBeenCalledTimes(1);
+      s.manager.stop();
+    });
+
+    it('no flushea antes de la ventana ni después (durante el open)', async () => {
+      const s = setup({ initialNowMs: BEFORE_WINDOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      expect(s.flushRedis).not.toHaveBeenCalled();
+
+      s.nowMs.value = AFTER_WINDOW;
+      s.marketOpen.value = true;
+      await s.manager.forceSync();
+      expect(s.flushRedis).not.toHaveBeenCalled();
+      s.manager.stop();
+    });
+
+    it('idempotencia: dos ticks dentro del mismo minuto 9:29 → un solo flush', async () => {
+      const s = setup({ initialNowMs: FLUSH_WINDOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      expect(s.flushRedis).toHaveBeenCalledTimes(1);
+
+      s.nowMs.value = FLUSH_WINDOW + 30_000; // 9:29:30 ET, sigue dentro
+      await s.manager.forceSync();
+      expect(s.flushRedis).toHaveBeenCalledTimes(1);
+      s.manager.stop();
+    });
+
+    it('re-dispara al día NY siguiente', async () => {
+      const s = setup({ initialNowMs: FLUSH_WINDOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      expect(s.flushRedis).toHaveBeenCalledTimes(1);
+
+      s.nowMs.value = NEXT_DAY_FLUSH_WINDOW;
+      await s.manager.forceSync();
+      expect(s.flushRedis).toHaveBeenCalledTimes(2);
+      s.manager.stop();
+    });
+
+    it('no flushea los sábados', async () => {
+      const s = setup({ initialNowMs: SATURDAY_FLUSH_WINDOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      expect(s.flushRedis).not.toHaveBeenCalled();
+      s.manager.stop();
+    });
+
+    it('no flushea los domingos', async () => {
+      const s = setup({ initialNowMs: SUNDAY_FLUSH_WINDOW });
+      s.marketOpen.value = false;
+      await s.manager.start();
+      expect(s.flushRedis).not.toHaveBeenCalled();
+      s.manager.stop();
+    });
+
+    it('falla del flush no rompe el tick; tampoco reintenta el mismo día', async () => {
+      const s = setup({ initialNowMs: FLUSH_WINDOW });
+      s.marketOpen.value = false;
+      s.flushRedis.mockRejectedValueOnce(new Error('redis down'));
+      await s.manager.start();
+      expect(s.flushRedis).toHaveBeenCalledTimes(1);
+
+      // Otro tick en la misma ventana: no se reintenta (marcado como
+      // intentado para evitar bucles).
+      await s.manager.forceSync();
+      expect(s.flushRedis).toHaveBeenCalledTimes(1);
       s.manager.stop();
     });
   });

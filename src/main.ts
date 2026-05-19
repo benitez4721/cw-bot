@@ -139,6 +139,9 @@ async function main() {
     marketHours,
     metrics,
     flattenAll,
+    flushRedis: async () => {
+      await redis.flushdb();
+    },
     bootstrapBars: env.BOOTSTRAP_BARS,
   });
 

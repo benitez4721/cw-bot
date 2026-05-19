@@ -26,6 +26,29 @@ const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
+// Pre-market flush corre 1 min antes del open (9:29 ET) de cada día hábil
+// para que el bot arranque el día con Redis limpio.
+const FLUSH_HOUR_NY = 9;
+const FLUSH_MINUTE_NY = 29;
+
+const wallNyFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour12: false,
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function isPreMarketFlushWindow(now: Date): boolean {
+  const parts = wallNyFormatter.formatToParts(now);
+  const weekday = parts.find((p) => p.type === 'weekday')?.value;
+  const hour = parts.find((p) => p.type === 'hour')?.value;
+  const minute = parts.find((p) => p.type === 'minute')?.value;
+  if (!weekday || !hour || !minute) return false;
+  if (weekday === 'Sat' || weekday === 'Sun') return false;
+  return Number(hour) === FLUSH_HOUR_NY && Number(minute) === FLUSH_MINUTE_NY;
+}
+
 export type BarStreamManagerStatus = 'idle' | 'running';
 
 export interface BarStreamManagerOptions {
@@ -42,6 +65,9 @@ export interface BarStreamManagerOptions {
   // Disparado una sola vez al detectarse la transición isOpen: true→false
   // (15:50 ET con UsMarketHoursAdapter). Opcional para tests legacy.
   flattenAll?: FlattenAllPositions;
+  // Disparado una sola vez por día NY cuando el tick cae dentro de la
+  // ventana 9:29 ET de un día hábil. Bot arranca el día con Redis limpio.
+  flushRedis?: () => Promise<void>;
   bootstrapBars?: number;
   syncIntervalMs?: number;
   // Injected for tests
@@ -68,6 +94,8 @@ export class BarStreamManager {
   private readonly metrics: MetricsPort;
   private readonly flattenAll?: FlattenAllPositions;
   private lastFlattenedDay: string | null = null;
+  private readonly flushRedis?: () => Promise<void>;
+  private lastFlushedDay: string | null = null;
   private readonly bootstrapBars: number;
   private readonly syncIntervalMs: number;
   private readonly now: () => number;
@@ -98,6 +126,7 @@ export class BarStreamManager {
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
     this.flattenAll = options.flattenAll;
+    this.flushRedis = options.flushRedis;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
     this.now = options.now ?? (() => Date.now());
@@ -181,7 +210,9 @@ export class BarStreamManager {
   }
 
   private async tick(): Promise<void> {
-    const open = this.marketHours.isOpen(new Date(this.now()));
+    const nowDate = new Date(this.now());
+    await this.triggerPreMarketFlush(nowDate);
+    const open = this.marketHours.isOpen(nowDate);
 
     if (open && !this.feedConnected) {
       log.info('market open — connecting feed');
@@ -205,7 +236,7 @@ export class BarStreamManager {
       this.feedConnected = false;
       this.subscribed.clear();
       this.inFlight.clear();
-      this.triggerFlatten(new Date(this.now()));
+      this.triggerFlatten(nowDate);
       return;
     }
 
@@ -227,6 +258,25 @@ export class BarStreamManager {
     void this.flattenAll.execute().catch((err) => {
       log.error({ err: errMsg(err) }, 'flatten execution failed');
     });
+  }
+
+  // Awaited: queremos que el flush termine antes de que el tick avance a
+  // sus ramas de feed/sync. En la práctica corre a 9:29 ET cuando feed está
+  // desconectado, así que no compite con el bootstrap (que ocurre a 9:30).
+  // Idempotente por día NY: marcamos el día como flusheado-intentado aunque
+  // el flush falle, para evitar bucles de reintento dentro de la ventana.
+  private async triggerPreMarketFlush(now: Date): Promise<void> {
+    if (!this.flushRedis) return;
+    if (!isPreMarketFlushWindow(now)) return;
+    const day = dayKeyFormatter.format(now);
+    if (this.lastFlushedDay === day) return;
+    this.lastFlushedDay = day;
+    log.info({ day }, 'pre-market window — flushing redis');
+    try {
+      await this.flushRedis();
+    } catch (err) {
+      log.error({ err: errMsg(err) }, 'redis flush failed');
+    }
   }
 
   private async syncWatchlist(): Promise<void> {
