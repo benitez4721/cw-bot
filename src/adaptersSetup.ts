@@ -12,7 +12,7 @@ import { RedisBarRepository } from './infrastructure/marketdata/RedisBarReposito
 import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/TwelveDataHistoricalBarsAdapter.js';
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
-import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
+// import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
 import { SuperDecisionModel } from './domain/decision/models/SuperDecisionModel.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
@@ -104,18 +104,18 @@ export function setupAdapters(): Adapters {
   // infra wiring (opaque pointer to ChartsWatcher); the upstream RVOL
   // filter that CW applies is part of each strategy spec, but the ID
   // itself lives here, hardcoded — invariant across deploys.
-  const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
-  const macdM1CrossOverModel = new MacdM1CrossOverDecisionModel({
-    broker,
-    indicators,
-  });
-  const macdM1CrossOverStrategy: ConfiguredStrategy = {
-    name: 'MacdM1CrossOver',
-    model: macdM1CrossOverModel,
-    watchlist: macdM1CrossOverWatchlist,
-    trailToBreakEvenAtProfit: 0.005,
-    cwConfigId: '69b85e8d373a8a104a52803b',
-  };
+  // const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
+  // const macdM1CrossOverModel = new MacdM1CrossOverDecisionModel({
+  //   broker,
+  //   indicators,
+  // });
+  // const macdM1CrossOverStrategy: ConfiguredStrategy = {
+  //   name: 'MacdM1CrossOver',
+  //   model: macdM1CrossOverModel,
+  //   watchlist: macdM1CrossOverWatchlist,
+  //   trailToBreakEvenAtProfit: 0.005,
+  //   cwConfigId: '69b85e8d373a8a104a52803b',
+  // };
 
   const superWatchlist = new RedisWatchlistRepository(redis, {
     keyPrefix: 'cw:wl:super',
@@ -152,7 +152,7 @@ export function setupAdapters(): Adapters {
     marketFeed,
     historicalBars,
     scannerFeed,
-    strategies: [macdM1CrossOverStrategy, superStrategy],
+    strategies: [superStrategy],
     eventStrategies: [highOfDayAlert],
   };
 }
