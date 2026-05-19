@@ -113,6 +113,7 @@ export function setupAdapters(): Adapters {
     name: 'MacdM1CrossOver',
     model: macdM1CrossOverModel,
     watchlist: macdM1CrossOverWatchlist,
+    trailToBreakEvenAtProfit: 0.005,
     cwConfigId: '69b85e8d373a8a104a52803b',
   };
 
