@@ -5,6 +5,7 @@ import type { TradeContextRepository } from '../../domain/trade/TradeContextRepo
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { PlaceTrailingBracketOrder } from '../broker/PlaceTrailingBracketOrder.js';
+import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 
 const log = logger.child({ component: 'OnScannerAlert' });
 
@@ -13,6 +14,7 @@ export interface OnScannerAlertDeps {
   broker: BrokerPort;
   placeTrailingBracketOrder: PlaceTrailingBracketOrder;
   tradeRepo: TradeContextRepository;
+  checkOpenTrades: CheckOpenTrades;
   metrics: MetricsPort;
   now?: () => string;
 }
@@ -22,6 +24,7 @@ export class OnScannerAlert {
   private readonly broker: BrokerPort;
   private readonly placeTrailingBracketOrder: PlaceTrailingBracketOrder;
   private readonly tradeRepo: TradeContextRepository;
+  private readonly checkOpenTrades: CheckOpenTrades;
   private readonly metrics: MetricsPort;
   private readonly now: () => string;
 
@@ -30,17 +33,20 @@ export class OnScannerAlert {
     this.broker = deps.broker;
     this.placeTrailingBracketOrder = deps.placeTrailingBracketOrder;
     this.tradeRepo = deps.tradeRepo;
+    this.checkOpenTrades = deps.checkOpenTrades;
     this.metrics = deps.metrics;
     this.now = deps.now ?? (() => new Date().toISOString());
   }
 
   async handle(symbol: string): Promise<void> {
-    const open = await this.tradeRepo.listActiveByModel(this.strategy.name);
-    const openForSymbol = open.filter((c) => c.symbol === symbol);
-    if (openForSymbol.length > 0) {
+    const { stillExposed } = await this.checkOpenTrades.execute({
+      model: this.strategy.name,
+      symbol,
+    });
+    if (stillExposed) {
       this.metrics.recordAlertOutcome(this.strategy.name, 'skipped_busy');
       log.info(
-        { model: this.strategy.name, symbol, openCount: openForSymbol.length },
+        { model: this.strategy.name, symbol },
         'alert skipped — symbol already has an active trade',
       );
       return;

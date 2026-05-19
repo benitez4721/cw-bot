@@ -10,6 +10,7 @@ import type { TradeContextRepository } from '../../../domain/trade/TradeContextR
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 import { OnScannerAlert } from '../../scanner/OnScannerAlert.js';
 import { PlaceTrailingBracketOrder } from '../../broker/PlaceTrailingBracketOrder.js';
+import type { CheckOpenTrades } from '../../trade/CheckOpenTrades.js';
 
 const strategy: EventStrategy = {
   name: 'HighOfDayAlert',
@@ -45,17 +46,20 @@ interface Fakes {
   tradeRepo: TradeContextRepository & {
     put: ReturnType<typeof vi.fn>;
   };
+  checkOpenTrades: CheckOpenTrades & {
+    execute: ReturnType<typeof vi.fn>;
+  };
   placeTrailing: PlaceTrailingBracketOrder;
   placeSpy: ReturnType<typeof vi.fn>;
   metrics: MetricsPort & { recordAlertOutcome: ReturnType<typeof vi.fn> };
 }
 
 function setup(opts: {
-  active?: TradeContext[];
+  stillExposed?: boolean;
   placeResult?: BracketOrderResult;
   quote?: { ask?: number; last?: number };
 }): Fakes {
-  const active = opts.active ?? [];
+  const stillExposed = opts.stillExposed ?? false;
   const placeResult: BracketOrderResult = opts.placeResult ?? {
     status: 'open',
     entryOrderId: 'E1',
@@ -75,14 +79,26 @@ function setup(opts: {
   } as unknown as BrokerPort;
 
   const tradeRepo = {
-    listActiveByModel: vi.fn(async () => active),
     put: vi.fn(async () => undefined),
   } as unknown as TradeContextRepository & {
     put: ReturnType<typeof vi.fn>;
   };
 
+  const checkOpenTrades = {
+    execute: vi.fn(async () => ({ stillExposed })),
+  } as unknown as CheckOpenTrades & {
+    execute: ReturnType<typeof vi.fn>;
+  };
+
   const placeTrailing = new PlaceTrailingBracketOrder(broker);
-  return { broker, tradeRepo, placeTrailing, placeSpy, metrics: makeMetrics() };
+  return {
+    broker,
+    tradeRepo,
+    checkOpenTrades,
+    placeTrailing,
+    placeSpy,
+    metrics: makeMetrics(),
+  };
 }
 
 beforeEach(() => {
@@ -97,6 +113,7 @@ describe('OnScannerAlert.handle', () => {
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
       metrics: f.metrics,
       now: () => 't0',
     });
@@ -130,33 +147,23 @@ describe('OnScannerAlert.handle', () => {
     );
   });
 
-  it('con trade activo en el mismo símbolo no opera', async () => {
-    const f = setup({
-      active: [
-        {
-          model: 'HighOfDayAlert',
-          symbol: 'ORGN',
-          side: 'BUY',
-          entryLimitPrice: 1.7,
-          evalStart: 't',
-          evalEnd: 't',
-          bracket: { entryOrderId: 'E1', stopOrderId: 'S1' },
-          indicators: null,
-          checks: [],
-          status: 'active',
-        },
-      ],
-    });
+  it('si CheckOpenTrades reporta still exposed no opera', async () => {
+    const f = setup({ stillExposed: true });
     const useCase = new OnScannerAlert({
       strategy,
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
       metrics: f.metrics,
     });
 
     await useCase.handle('ORGN');
 
+    expect(f.checkOpenTrades.execute).toHaveBeenCalledWith({
+      model: 'HighOfDayAlert',
+      symbol: 'ORGN',
+    });
     expect(f.placeSpy).not.toHaveBeenCalled();
     expect(f.tradeRepo.put).not.toHaveBeenCalled();
     expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
@@ -165,33 +172,26 @@ describe('OnScannerAlert.handle', () => {
     );
   });
 
-  it('con trade activo en otro símbolo sí abre — el lock es por símbolo', async () => {
-    const f = setup({
-      active: [
-        {
-          model: 'HighOfDayAlert',
-          symbol: 'OTRO',
-          side: 'BUY',
-          entryLimitPrice: 5,
-          evalStart: 't',
-          evalEnd: 't',
-          bracket: { entryOrderId: 'E-OTRO', stopOrderId: 'S-OTRO' },
-          indicators: null,
-          checks: [],
-          status: 'active',
-        },
-      ],
-    });
+  it('CheckOpenTrades reconcilia con el broker y luego abre cuando ya no hay exposición', async () => {
+    // Caso del bug: el repo tenía el trade marcado activo, pero el broker
+    // ya no tiene órdenes vivas. CheckOpenTrades cierra el contexto y
+    // devuelve stillExposed=false, permitiendo la nueva alerta.
+    const f = setup({ stillExposed: false });
     const useCase = new OnScannerAlert({
       strategy,
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
       metrics: f.metrics,
     });
 
     await useCase.handle('ORGN');
 
+    expect(f.checkOpenTrades.execute).toHaveBeenCalledWith({
+      model: 'HighOfDayAlert',
+      symbol: 'ORGN',
+    });
     expect(f.placeSpy).toHaveBeenCalledOnce();
     expect(f.tradeRepo.put).toHaveBeenCalledOnce();
     expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
@@ -214,6 +214,7 @@ describe('OnScannerAlert.handle', () => {
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
       metrics: f.metrics,
     });
 
@@ -233,6 +234,7 @@ describe('OnScannerAlert.handle', () => {
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
       metrics: f.metrics,
     });
 
@@ -252,6 +254,7 @@ describe('OnScannerAlert.handle', () => {
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
+      checkOpenTrades: f.checkOpenTrades,
       metrics: f.metrics,
     });
 

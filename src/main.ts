@@ -115,6 +115,7 @@ async function main() {
       broker,
       placeTrailingBracketOrder,
       tradeRepo,
+      checkOpenTrades,
       metrics,
     });
     return new AlertEventManager({
