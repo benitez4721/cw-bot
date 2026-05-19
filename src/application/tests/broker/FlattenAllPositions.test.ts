@@ -69,6 +69,7 @@ function makeMetrics(): MetricsPort {
     setMarketFeedConnected: vi.fn(),
     recordFlattenOutcome: vi.fn(),
     recordFlattenFailure: vi.fn(),
+    recordAlertOutcome: vi.fn(),
   };
 }
 

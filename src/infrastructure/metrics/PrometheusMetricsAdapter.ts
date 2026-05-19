@@ -6,6 +6,7 @@ import {
   collectDefaultMetrics,
 } from 'prom-client';
 import type {
+  AlertOutcome,
   DecisionAction,
   FlattenFailurePhase,
   FlattenOutcome,
@@ -33,6 +34,7 @@ export class PrometheusMetricsAdapter implements MetricsPort {
   private readonly marketFeedConnected: Gauge;
   private readonly flattenOutcomes: Counter<'outcome'>;
   private readonly flattenFailures: Counter<'phase'>;
+  private readonly alertOutcomes: Counter<'model' | 'outcome'>;
 
   constructor() {
     this.registry = new Registry();
@@ -118,6 +120,12 @@ export class PrometheusMetricsAdapter implements MetricsPort {
       labelNames: ['phase'],
       registers: [this.registry],
     });
+    this.alertOutcomes = new Counter({
+      name: 'alert_events_total',
+      help: 'Scanner alert lifecycle outcomes per event-driven model',
+      labelNames: ['model', 'outcome'],
+      registers: [this.registry],
+    });
   }
 
   recordDecision(symbol: string, action: DecisionAction): void {
@@ -175,5 +183,9 @@ export class PrometheusMetricsAdapter implements MetricsPort {
 
   recordFlattenFailure(phase: FlattenFailurePhase): void {
     this.flattenFailures.inc({ phase });
+  }
+
+  recordAlertOutcome(model: string, outcome: AlertOutcome): void {
+    this.alertOutcomes.inc({ model, outcome });
   }
 }

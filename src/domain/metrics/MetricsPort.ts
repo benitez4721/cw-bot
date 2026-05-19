@@ -21,6 +21,7 @@ export type TsOperation =
 export type OauthRefreshResult = 'success' | 'failure';
 export type FlattenOutcome = 'cancelled' | 'marketSent' | 'skipped';
 export type FlattenFailurePhase = 'cancel' | 'market' | 'persist';
+export type AlertOutcome = 'received' | 'opened' | 'skipped_busy' | 'rejected';
 
 export interface MetricsPort {
   recordDecision(symbol: string, action: DecisionAction): void;
@@ -42,4 +43,6 @@ export interface MetricsPort {
   // Pre-close flatten lifecycle (FlattenAllPositions use case).
   recordFlattenOutcome(outcome: FlattenOutcome): void;
   recordFlattenFailure(phase: FlattenFailurePhase): void;
+  // Event-driven model lifecycle (HighOfDayAlert via OnScannerAlert).
+  recordAlertOutcome(model: string, outcome: AlertOutcome): void;
 }
