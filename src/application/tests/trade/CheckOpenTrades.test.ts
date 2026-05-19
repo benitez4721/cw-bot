@@ -48,7 +48,7 @@ function buildDeps(s: Setup) {
     getOrders: vi.fn(async () => s.orders),
   } as unknown as BrokerPort;
   const tradeRepo = {
-    listActiveByModelAndSymbol: vi.fn(async () => s.contexts),
+    listActiveByModel: vi.fn(async () => s.contexts),
     put: vi.fn(async () => undefined),
   } as unknown as TradeContextRepository;
   const closeTrade = new CloseTrade(tradeRepo);

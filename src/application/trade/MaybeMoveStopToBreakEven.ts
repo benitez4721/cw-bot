@@ -39,10 +39,8 @@ export class MaybeMoveStopToBreakEven {
     lastPrice,
     threshold,
   }: MaybeMoveStopToBreakEvenInput): Promise<void> {
-    const contexts = await this.tradeRepo.listActiveByModelAndSymbol(
-      model,
-      symbol,
-    );
+    const all = await this.tradeRepo.listActiveByModel(model);
+    const contexts = all.filter((c) => c.symbol === symbol);
     for (const ctx of contexts) {
       if (ctx.breakEvenMoved) continue;
       const profitPct = profitFraction(

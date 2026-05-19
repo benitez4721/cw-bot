@@ -73,4 +73,61 @@ describe('RedisTradeContextRepository', () => {
     );
     expect((await repo.getByOrderId('M1'))?.bracket.entryOrderId).toBe('E1');
   });
+
+  it('listActiveByModel devuelve todos los trades activos del modelo (cross-symbol)', async () => {
+    await repo.put(
+      makeContext({
+        model: 'HighOfDayAlert',
+        symbol: 'AAPL',
+        bracket: { entryOrderId: 'E-AAPL', stopOrderId: 'S-AAPL' },
+      }),
+    );
+    await repo.put(
+      makeContext({
+        model: 'HighOfDayAlert',
+        symbol: 'MSFT',
+        bracket: { entryOrderId: 'E-MSFT', stopOrderId: 'S-MSFT' },
+      }),
+    );
+    await repo.put(
+      makeContext({
+        model: 'OtroModelo',
+        symbol: 'NVDA',
+        bracket: { entryOrderId: 'E-NVDA', stopOrderId: 'S-NVDA' },
+      }),
+    );
+
+    const hodTrades = await repo.listActiveByModel('HighOfDayAlert');
+    expect(hodTrades.map((c) => c.symbol).sort()).toEqual(['AAPL', 'MSFT']);
+  });
+
+  it('listActiveByModel excluye trades cerrados', async () => {
+    await repo.put(
+      makeContext({
+        model: 'HighOfDayAlert',
+        symbol: 'AAPL',
+        bracket: { entryOrderId: 'E-A', stopOrderId: 'S-A' },
+      }),
+    );
+    await repo.put(
+      makeContext({
+        model: 'HighOfDayAlert',
+        symbol: 'AAPL',
+        status: 'closed',
+        bracket: { entryOrderId: 'E-A', stopOrderId: 'S-A' },
+      }),
+    );
+
+    expect(await repo.listActiveByModel('HighOfDayAlert')).toHaveLength(0);
+  });
+
+  it('listActiveByModel devuelve [] cuando no hay trades del modelo', async () => {
+    await repo.put(
+      makeContext({
+        model: 'OtroModelo',
+        bracket: { entryOrderId: 'E-X', stopOrderId: 'S-X' },
+      }),
+    );
+    expect(await repo.listActiveByModel('HighOfDayAlert')).toEqual([]);
+  });
 });

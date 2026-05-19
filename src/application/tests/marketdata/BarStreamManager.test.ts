@@ -191,28 +191,10 @@ type FakeTradeRepo = TradeContextRepository & {
 
 function createTradeRepo(): FakeTradeRepo {
   const items = new Map<string, TradeContext>();
-  const active = new Map<string, Set<string>>();
-
-  const activeKey = (model: string, symbol: string) => `${model}:${symbol}`;
-  const ensureActiveSet = (key: string): Set<string> => {
-    let set = active.get(key);
-    if (!set) {
-      set = new Set<string>();
-      active.set(key, set);
-    }
-    return set;
-  };
 
   return {
     async put(ctx: TradeContext) {
       items.set(ctx.bracket.entryOrderId, ctx);
-      const key = activeKey(ctx.model, ctx.symbol);
-      const set = ensureActiveSet(key);
-      if (ctx.status === 'closed') {
-        set.delete(ctx.bracket.entryOrderId);
-      } else {
-        set.add(ctx.bracket.entryOrderId);
-      }
     },
     async getByOrderId(id: string) {
       return items.get(id);
@@ -225,14 +207,10 @@ function createTradeRepo(): FakeTradeRepo {
       }
       return out;
     },
-    async listActiveByModelAndSymbol(model, symbol) {
-      const key = activeKey(model, symbol);
-      const ids = active.get(key);
-      if (!ids) return [];
+    async listActiveByModel(model) {
       const out: TradeContext[] = [];
-      for (const id of ids) {
-        const ctx = items.get(id);
-        if (ctx) out.push(ctx);
+      for (const ctx of items.values()) {
+        if (ctx.model === model && ctx.status === 'active') out.push(ctx);
       }
       return out;
     },
@@ -245,8 +223,6 @@ function createTradeRepo(): FakeTradeRepo {
     },
     _seedActive(ctx) {
       items.set(ctx.bracket.entryOrderId, ctx);
-      const key = activeKey(ctx.model, ctx.symbol);
-      ensureActiveSet(key).add(ctx.bracket.entryOrderId);
     },
     _items: items,
   };
@@ -601,7 +577,9 @@ describe('BarStreamManager', () => {
     await s.feed.emitBar('AAPL', bar('2026-05-07T13:35:00.000Z', 105));
     expect(s.tradeRepo._items.get('entry-1')?.status).toBe('closed');
     expect(
-      await s.tradeRepo.listActiveByModelAndSymbol('MacdM1CrossOver', 'AAPL'),
+      (await s.tradeRepo.listActiveByModel('MacdM1CrossOver')).filter(
+        (c) => c.symbol === 'AAPL',
+      ),
     ).toHaveLength(0);
     expect(s.model.evaluate).toHaveBeenCalledOnce();
     s.manager.stop();

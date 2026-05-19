@@ -13,7 +13,7 @@ export class RedisTradeContextRepository implements TradeContextRepository {
   private readonly redis: Redis;
   private readonly indexKey: string;
   private readonly itemPrefix: string;
-  private readonly activePrefix: string;
+  private readonly modelActivePrefix: string;
   private readonly itemTtlSeconds: number;
 
   constructor(redis: Redis, options: RedisTradeContextRepositoryOptions = {}) {
@@ -21,13 +21,13 @@ export class RedisTradeContextRepository implements TradeContextRepository {
     const prefix = options.keyPrefix ?? 'cw:trade';
     this.indexKey = `${prefix}:idx`;
     this.itemPrefix = `${prefix}:item:`;
-    this.activePrefix = `${prefix}:active:`;
+    this.modelActivePrefix = `${prefix}:modelActive:`;
     this.itemTtlSeconds = options.itemTtlSeconds ?? DEFAULT_TTL_SECONDS;
   }
 
   async put(ctx: TradeContext): Promise<void> {
     const entryOrderId = ctx.bracket.entryOrderId;
-    const activeKey = this.activeKey(ctx.model, ctx.symbol);
+    const modelActiveKey = this.modelActiveKey(ctx.model);
     const serialized = JSON.stringify(ctx);
     const tx = this.redis
       .multi()
@@ -46,9 +46,9 @@ export class RedisTradeContextRepository implements TradeContextRepository {
       );
     }
     if (ctx.status === 'closed') {
-      tx.srem(activeKey, entryOrderId);
+      tx.srem(modelActiveKey, entryOrderId);
     } else {
-      tx.sadd(activeKey, entryOrderId);
+      tx.sadd(modelActiveKey, entryOrderId);
     }
     await tx.exec();
   }
@@ -73,11 +73,8 @@ export class RedisTradeContextRepository implements TradeContextRepository {
     return result;
   }
 
-  async listActiveByModelAndSymbol(
-    model: string,
-    symbol: string,
-  ): Promise<TradeContext[]> {
-    const setKey = this.activeKey(model, symbol);
+  async listActiveByModel(model: string): Promise<TradeContext[]> {
+    const setKey = this.modelActiveKey(model);
     const ids = await this.redis.smembers(setKey);
     if (ids.length === 0) return [];
 
@@ -128,8 +125,8 @@ export class RedisTradeContextRepository implements TradeContextRepository {
     return `${this.itemPrefix}${orderId}`;
   }
 
-  private activeKey(model: string, symbol: string): string {
-    return `${this.activePrefix}${model}:${symbol}`;
+  private modelActiveKey(model: string): string {
+    return `${this.modelActivePrefix}${model}`;
   }
 }
 

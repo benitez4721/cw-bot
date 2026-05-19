@@ -57,7 +57,7 @@ class FakeTradeContextRepository implements TradeContextRepository {
     }
     return out;
   }
-  async listActiveByModelAndSymbol(): Promise<TradeContext[]> {
+  async listActiveByModel(): Promise<TradeContext[]> {
     return [];
   }
   async listAllActive(): Promise<TradeContext[]> {

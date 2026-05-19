@@ -40,10 +40,8 @@ export class CheckOpenTrades {
     model,
     symbol,
   }: CheckOpenTradesInput): Promise<CheckOpenTradesResult> {
-    const contexts = await this.tradeRepo.listActiveByModelAndSymbol(
-      model,
-      symbol,
-    );
+    const all = await this.tradeRepo.listActiveByModel(model);
+    const contexts = all.filter((c) => c.symbol === symbol);
     if (contexts.length === 0) return { stillExposed: false };
 
     const orders = await this.broker.getOrders({ symbol });
