@@ -25,7 +25,7 @@ describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
     return new Response(JSON.stringify(body), { status: 200 });
   }
 
-  it('builds the correct time_series URL with timezone=UTC', async () => {
+  it('builds the correct time_series URL with timezone=UTC and prepost on 1min', async () => {
     fetchSpy.mockResolvedValueOnce(
       ok({
         status: 'ok',
@@ -54,6 +54,32 @@ describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
     expect(url.searchParams.get('timezone')).toBe('UTC');
     expect(url.searchParams.get('prepost')).toBe('true');
     expect(url.searchParams.get('apikey')).toBe('test-key');
+  });
+
+  it('omits prepost on intervals other than 1min', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      ok({
+        status: 'ok',
+        values: [
+          {
+            datetime: '2026-05-07 13:30:00',
+            open: '100',
+            high: '101',
+            low: '99',
+            close: '100.5',
+            volume: '1000',
+          },
+        ],
+      }),
+    );
+    await adapter.fetchHistoricalBars({
+      symbol: 'AAPL',
+      interval: '5min',
+      limit: 200,
+    });
+    const url = fetchSpy.mock.calls[0][0] as URL;
+    expect(url.searchParams.get('interval')).toBe('5min');
+    expect(url.searchParams.has('prepost')).toBe(false);
   });
 
   it('reverses DESC response to ASC and parses datetime as UTC', async () => {

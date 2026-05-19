@@ -19,13 +19,16 @@ export class TwelveDataHistoricalBarsAdapter implements HistoricalBarsPort {
     if (!Number.isInteger(input.limit) || input.limit <= 0) {
       throw new Error('limit must be a positive integer');
     }
-    const data = await this.client.request('time_series', {
+    // Twelve Data acepta prepost=true solo en interval=1min; para 5min y
+    // superiores devuelve 404. Omitirlo fuera de 1min.
+    const params: Record<string, string> = {
       symbol: input.symbol,
       interval: input.interval,
       outputsize: String(input.limit),
       timezone: 'UTC',
-      prepost: 'true',
-    });
+    };
+    if (input.interval === '1min') params.prepost = 'true';
+    const data = await this.client.request('time_series', params);
     const values = data.values ?? [];
     if (values.length === 0) {
       throw new Error(`Twelve Data: empty time_series for ${input.symbol}`);
