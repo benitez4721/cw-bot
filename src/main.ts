@@ -105,11 +105,13 @@ async function main() {
 
   const orderStreamMgr = new OrderStreamManager({
     stream: orderStreamAdapter,
+    accountId: env.TRADESTATION_ACCOUNT_ID!,
     tradeRepo,
     recordOrderFill,
   });
   const positionStreamMgr = new PositionStreamManager({
     stream: positionStreamAdapter,
+    accountId: env.TRADESTATION_ACCOUNT_ID!,
   });
 
   const alertManagers = eventStrategies.map((strategy) => {

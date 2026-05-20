@@ -48,6 +48,7 @@ export interface TradeStationOrderStreamAdapterOptions {
 }
 
 export class TradeStationOrderStreamAdapter implements OrderStreamPort {
+  private readonly client: TradeStationClient;
   private readonly conn: TradeStationStreamConnection;
   private readonly orderHandlers: OrderStreamHandler[] = [];
   private readonly connectionHandlers: StreamConnectionHandler[] = [];
@@ -56,6 +57,7 @@ export class TradeStationOrderStreamAdapter implements OrderStreamPort {
   private replayingPriorState = true;
 
   constructor(options: TradeStationOrderStreamAdapterOptions) {
+    this.client = options.client;
     this.conn = new TradeStationStreamConnection({
       client: options.client,
       pathBuilder: (acct) =>
@@ -117,6 +119,7 @@ export class TradeStationOrderStreamAdapter implements OrderStreamPort {
     const order = mapStreamOrder(tsOrder);
     const event: OrderEvent = {
       order,
+      accountId: this.client.accountId(),
       observedAt: new Date().toISOString(),
       origin: this.replayingPriorState ? 'priorState' : 'liveUpdate',
     };

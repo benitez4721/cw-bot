@@ -7,12 +7,16 @@ export type EventOrigin = 'priorState' | 'liveUpdate';
 
 export interface OrderEvent {
   order: OrderWithContext;
+  // TradeStation account que produjo el evento. Cada stream adapter se conecta
+  // contra UN account, así que el campo siempre se conoce en origen.
+  accountId: string;
   observedAt: string;
   origin: EventOrigin;
 }
 
 export interface PositionEvent {
   position: Position;
+  accountId: string;
   observedAt: string;
   origin: EventOrigin;
 }

@@ -15,6 +15,10 @@ export interface TradeContextBracket {
 
 export interface TradeContext {
   model: string;
+  // TradeStation account contra el que se enviaron las órdenes. Opcional para
+  // compat con contexts persistidos antes del refactor multi-account: los
+  // consumers resuelven `ctx.accountId ?? defaultAccountId` al elegir broker.
+  accountId?: string;
   symbol: string;
   side: OrderSide;
   entryLimitPrice: number;

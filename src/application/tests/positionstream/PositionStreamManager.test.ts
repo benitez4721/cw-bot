@@ -46,13 +46,18 @@ function makeEvent(
   p: Position,
   origin: 'priorState' | 'liveUpdate',
 ): PositionEvent {
-  return { position: p, observedAt: '2026-05-10T18:00:00Z', origin };
+  return {
+    position: p,
+    accountId: 'SIM12345',
+    observedAt: '2026-05-10T18:00:00Z',
+    origin,
+  };
 }
 
 describe('PositionStreamManager', () => {
   it('replays the current snapshot synchronously when subscribing', () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     stream.emit(makeEvent(pos({ symbol: 'AAPL' }), 'priorState'));
     stream.emit(makeEvent(pos({ symbol: 'NVDA' }), 'priorState'));
 
@@ -65,7 +70,7 @@ describe('PositionStreamManager', () => {
 
   it('removes positions from the snapshot when quantity reaches 0', () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     stream.emit(
       makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'),
     );
@@ -77,7 +82,7 @@ describe('PositionStreamManager', () => {
 
   it('still forwards quantity=0 events to live subscribers', () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     stream.emit(
       makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'),
     );
@@ -95,7 +100,7 @@ describe('PositionStreamManager', () => {
 
   it('does not replay closed positions to new subscribers', () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     stream.emit(
       makeEvent(pos({ symbol: 'AAPL', quantity: 100 }), 'liveUpdate'),
     );
@@ -108,7 +113,7 @@ describe('PositionStreamManager', () => {
 
   it('reconciles updates by overwriting the snapshot entry', () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     stream.emit(
       makeEvent(pos({ symbol: 'AAPL', unrealizedPnL: 0 }), 'priorState'),
     );
@@ -122,7 +127,7 @@ describe('PositionStreamManager', () => {
 
   it('stops delivering events after unsubscribe', () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     const received: PositionEvent[] = [];
     const sub = mgr.subscribe((e) => received.push(e));
     stream.emit(makeEvent(pos({ symbol: 'AAPL' }), 'liveUpdate'));
@@ -134,7 +139,7 @@ describe('PositionStreamManager', () => {
 
   it('start() connects the underlying stream', async () => {
     const stream = new FakePositionStream();
-    const mgr = new PositionStreamManager({ stream });
+    const mgr = new PositionStreamManager({ stream, accountId: 'SIM12345' });
     await mgr.start();
     expect(stream.connected).toBe(1);
     expect(mgr.isConnected()).toBe(true);

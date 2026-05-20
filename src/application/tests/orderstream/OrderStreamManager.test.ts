@@ -89,7 +89,12 @@ function order(overrides: Partial<Order> = {}): Order {
 }
 
 function makeEvent(o: Order, origin: 'priorState' | 'liveUpdate'): OrderEvent {
-  return { order: o, observedAt: '2026-05-10T18:00:00Z', origin };
+  return {
+    order: o,
+    accountId: 'SIM12345',
+    observedAt: '2026-05-10T18:00:00Z',
+    origin,
+  };
 }
 
 function makeContext(overrides: Partial<TradeContext> = {}): TradeContext {
@@ -122,6 +127,7 @@ function buildManager(): {
   const recordOrderFill = new RecordOrderFill(repo);
   const mgr = new OrderStreamManager({
     stream,
+    accountId: 'SIM12345',
     tradeRepo: repo,
     recordOrderFill,
     now: () => '2026-05-10T18:01:00Z',

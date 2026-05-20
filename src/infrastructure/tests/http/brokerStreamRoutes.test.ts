@@ -135,6 +135,7 @@ function makeOrderEvent(): OrderEvent {
       status: 'open',
       createdAt: '2026-05-10T18:00:00Z',
     },
+    accountId: 'SIM12345',
     observedAt: '2026-05-10T18:00:00Z',
     origin: 'liveUpdate',
   };
@@ -149,6 +150,7 @@ function makePositionEvent(): PositionEvent {
       marketValue: 18700,
       unrealizedPnL: 0,
     },
+    accountId: 'SIM12345',
     observedAt: '2026-05-10T18:00:00Z',
     origin: 'liveUpdate',
   };

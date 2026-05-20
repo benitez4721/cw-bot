@@ -15,6 +15,9 @@ export interface StreamSubscription {
 
 export interface PositionStreamManagerOptions {
   stream: PositionStreamPort;
+  // Account contra el que está conectado el `stream`. Lo usamos para
+  // enriquecer los eventos sintéticos del replay en `subscribe`.
+  accountId: string;
   now?: () => string;
 }
 
@@ -23,6 +26,7 @@ export interface PositionStreamManagerOptions {
 // (no la propaga al replay de futuros subscribers).
 export class PositionStreamManager {
   private readonly stream: PositionStreamPort;
+  private readonly accountId: string;
   private readonly now: () => string;
   private readonly positions = new Map<string, Position>();
   private readonly emitter = new EventEmitter();
@@ -30,6 +34,7 @@ export class PositionStreamManager {
 
   constructor(options: PositionStreamManagerOptions) {
     this.stream = options.stream;
+    this.accountId = options.accountId;
     this.now = options.now ?? (() => new Date().toISOString());
     this.stream.onPosition((event) => this.onUpstreamPosition(event));
     this.stream.onConnectionChange((connected) => {
@@ -59,7 +64,12 @@ export class PositionStreamManager {
     const observedAt = this.now();
     for (const position of this.positions.values()) {
       try {
-        handler({ position, observedAt, origin: 'priorState' });
+        handler({
+          position,
+          accountId: this.accountId,
+          observedAt,
+          origin: 'priorState',
+        });
       } catch (err) {
         log.warn({ err: errMsg(err) }, 'subscriber threw on snapshot replay');
       }

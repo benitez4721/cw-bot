@@ -18,6 +18,10 @@ export interface StreamSubscription {
 
 export interface OrderStreamManagerOptions {
   stream: OrderStreamPort;
+  // Account contra el que está conectado el `stream`. Cada manager es 1:1
+  // con un account; el replay sintético del snapshot lo usa para enriquecer
+  // los eventos del subscribe.
+  accountId: string;
   tradeRepo: TradeContextRepository;
   recordOrderFill: RecordOrderFill;
   // Inyectable para tests; default: () => new Date().toISOString().
@@ -33,6 +37,7 @@ export interface OrderStreamManagerOptions {
 // snapshot de indicadores junto con la orden.
 export class OrderStreamManager {
   private readonly stream: OrderStreamPort;
+  private readonly accountId: string;
   private readonly tradeRepo: TradeContextRepository;
   private readonly recordOrderFill: RecordOrderFill;
   private readonly now: () => string;
@@ -46,6 +51,7 @@ export class OrderStreamManager {
 
   constructor(options: OrderStreamManagerOptions) {
     this.stream = options.stream;
+    this.accountId = options.accountId;
     this.tradeRepo = options.tradeRepo;
     this.recordOrderFill = options.recordOrderFill;
     this.now = options.now ?? (() => new Date().toISOString());
@@ -86,7 +92,12 @@ export class OrderStreamManager {
     const observedAt = this.now();
     for (const order of this.orders.values()) {
       try {
-        handler({ order, observedAt, origin: 'priorState' });
+        handler({
+          order,
+          accountId: this.accountId,
+          observedAt,
+          origin: 'priorState',
+        });
       } catch (err) {
         log.warn({ err: errMsg(err) }, 'subscriber threw on snapshot replay');
       }

@@ -15,4 +15,7 @@ export interface DecisionStrategy {
   // soon as the position reaches this fraction of profit (e.g. 0.005 = 0.5%).
   // Strategies that omit this field keep their bracket untouched after entry.
   readonly trailToBreakEvenAtProfit?: number;
+  // TradeStation account override for this strategy. Cuando se omite, el
+  // composition root inyecta `env.TRADESTATION_ACCOUNT_ID` como default.
+  readonly accountId?: string;
 }
