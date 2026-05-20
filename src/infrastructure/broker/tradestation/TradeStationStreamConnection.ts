@@ -8,6 +8,8 @@ const STREAM_ACCEPT = 'application/vnd.tradestation.streams.v3+json';
 
 export interface TradeStationStreamConnectionOptions {
   client: TradeStationClient;
+  // Account contra el que se abre la conexión. Cada websocket es por cuenta.
+  accountId: string;
   // Path relativo al apiBase del client; recibe el accountId ya resuelto
   // (para que el caller pueda hacer encodeURIComponent una sola vez).
   pathBuilder: (accountId: string) => string;
@@ -28,6 +30,7 @@ export interface TradeStationStreamConnectionOptions {
 // mapearlos al dominio.
 export class TradeStationStreamConnection {
   private readonly client: TradeStationClient;
+  private readonly accountId: string;
   private readonly pathBuilder: (accountId: string) => string;
   private readonly onFrame: (frame: unknown) => void;
   private readonly onConnectionChange?: (connected: boolean) => void;
@@ -45,6 +48,7 @@ export class TradeStationStreamConnection {
 
   constructor(opts: TradeStationStreamConnectionOptions) {
     this.client = opts.client;
+    this.accountId = opts.accountId;
     this.pathBuilder = opts.pathBuilder;
     this.onFrame = opts.onFrame;
     this.onConnectionChange = opts.onConnectionChange;
@@ -87,7 +91,7 @@ export class TradeStationStreamConnection {
     }
 
     const url =
-      this.client.apiBase() + this.pathBuilder(this.client.accountId());
+      this.client.apiBase(this.accountId) + this.pathBuilder(this.accountId);
     this.abortController = new AbortController();
 
     let res: Response;

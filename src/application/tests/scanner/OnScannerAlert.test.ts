@@ -118,6 +118,7 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({});
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -160,6 +161,7 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ stillExposed: true });
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -189,6 +191,7 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ stillExposed: false });
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -222,6 +225,7 @@ describe('OnScannerAlert.handle', () => {
     });
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -243,6 +247,7 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ quote: { ask: undefined, last: 0 } });
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -264,6 +269,7 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ marketOpen: false });
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -288,6 +294,7 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ quote: { ask: undefined, last: 2 } });
     const useCase = new OnScannerAlert({
       strategy,
+      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,

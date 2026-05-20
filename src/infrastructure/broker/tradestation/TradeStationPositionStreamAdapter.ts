@@ -26,6 +26,7 @@ interface TsStreamPosition {
 
 export interface TradeStationPositionStreamAdapterOptions {
   client: TradeStationClient;
+  accountId: string;
   // Inyectables para tests (forwardeados al TradeStationStreamConnection).
   fetchFn?: typeof fetch;
   schedule?: (cb: () => void, ms: number) => NodeJS.Timeout;
@@ -33,16 +34,17 @@ export interface TradeStationPositionStreamAdapterOptions {
 }
 
 export class TradeStationPositionStreamAdapter implements PositionStreamPort {
-  private readonly client: TradeStationClient;
+  private readonly accountId: string;
   private readonly conn: TradeStationStreamConnection;
   private readonly positionHandlers: PositionStreamHandler[] = [];
   private readonly connectionHandlers: StreamConnectionHandler[] = [];
   private replayingPriorState = true;
 
   constructor(options: TradeStationPositionStreamAdapterOptions) {
-    this.client = options.client;
+    this.accountId = options.accountId;
     this.conn = new TradeStationStreamConnection({
       client: options.client,
+      accountId: options.accountId,
       pathBuilder: (acct) =>
         `/v3/brokerage/stream/accounts/${encodeURIComponent(acct)}/positions`,
       onFrame: (frame) => this.handleFrame(frame),
@@ -99,7 +101,7 @@ export class TradeStationPositionStreamAdapter implements PositionStreamPort {
     const position = mapStreamPosition(tsPos);
     const event: PositionEvent = {
       position,
-      accountId: this.client.accountId(),
+      accountId: this.accountId,
       observedAt: new Date().toISOString(),
       origin: this.replayingPriorState ? 'priorState' : 'liveUpdate',
     };

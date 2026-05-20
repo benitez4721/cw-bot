@@ -68,7 +68,12 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
       // Stop+TP cancelados (no aparecen) pero el Market M1 está open
       orders: [makeOrder('M1', 'open')],
     });
-    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+    const useCase = new CheckOpenTrades({
+      broker,
+      tradeRepo,
+      closeTrade,
+      defaultAccountId: 'SIM12345',
+    });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
     expect(result.stillExposed).toBe(true);
@@ -85,7 +90,12 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
       contexts: [ctx],
       orders: [], // ningún OrderID del bracket+market activo
     });
-    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+    const useCase = new CheckOpenTrades({
+      broker,
+      tradeRepo,
+      closeTrade,
+      defaultAccountId: 'SIM12345',
+    });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
     expect(result.stillExposed).toBe(false);
@@ -98,7 +108,12 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
       contexts: [ctx],
       orders: [makeOrder('S1', 'open')],
     });
-    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+    const useCase = new CheckOpenTrades({
+      broker,
+      tradeRepo,
+      closeTrade,
+      defaultAccountId: 'SIM12345',
+    });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
     expect(result.stillExposed).toBe(true);

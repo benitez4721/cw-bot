@@ -41,6 +41,10 @@ interface TsStreamOrder {
 
 export interface TradeStationOrderStreamAdapterOptions {
   client: TradeStationClient;
+  // Account contra el que abrir el websocket. Una instancia del adapter
+  // mantiene UN websocket; el composition root crea N instancias si hace
+  // falta cubrir varios accounts.
+  accountId: string;
   // Inyectables para tests (forwardeados al TradeStationStreamConnection).
   fetchFn?: typeof fetch;
   schedule?: (cb: () => void, ms: number) => NodeJS.Timeout;
@@ -48,7 +52,7 @@ export interface TradeStationOrderStreamAdapterOptions {
 }
 
 export class TradeStationOrderStreamAdapter implements OrderStreamPort {
-  private readonly client: TradeStationClient;
+  private readonly accountId: string;
   private readonly conn: TradeStationStreamConnection;
   private readonly orderHandlers: OrderStreamHandler[] = [];
   private readonly connectionHandlers: StreamConnectionHandler[] = [];
@@ -57,9 +61,10 @@ export class TradeStationOrderStreamAdapter implements OrderStreamPort {
   private replayingPriorState = true;
 
   constructor(options: TradeStationOrderStreamAdapterOptions) {
-    this.client = options.client;
+    this.accountId = options.accountId;
     this.conn = new TradeStationStreamConnection({
       client: options.client,
+      accountId: options.accountId,
       pathBuilder: (acct) =>
         `/v3/brokerage/stream/accounts/${encodeURIComponent(acct)}/orders`,
       onFrame: (frame) => this.handleFrame(frame),
@@ -119,7 +124,7 @@ export class TradeStationOrderStreamAdapter implements OrderStreamPort {
     const order = mapStreamOrder(tsOrder);
     const event: OrderEvent = {
       order,
-      accountId: this.client.accountId(),
+      accountId: this.accountId,
       observedAt: new Date().toISOString(),
       origin: this.replayingPriorState ? 'priorState' : 'liveUpdate',
     };

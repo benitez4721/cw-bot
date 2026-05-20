@@ -112,6 +112,7 @@ describe('TradeStationPositionStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationPositionStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,
@@ -142,6 +143,7 @@ describe('TradeStationPositionStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationPositionStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,
@@ -189,6 +191,7 @@ describe('TradeStationPositionStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationPositionStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,

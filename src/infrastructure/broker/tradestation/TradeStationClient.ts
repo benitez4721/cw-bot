@@ -19,7 +19,6 @@ export interface TradeStationClientConfig {
   clientId: string;
   clientSecret: string;
   refreshToken: string;
-  accountId: string;
   simBaseUrl: string;
   liveBaseUrl: string;
   signinUrl: string;
@@ -45,12 +44,11 @@ export class TradeStationClient {
     this.metrics = config.metrics;
   }
 
-  accountId(): string {
-    return this.config.accountId;
-  }
-
-  apiBase(): string {
-    return this.config.accountId.startsWith('SIM')
+  // SIM vs LIVE se decide per-request por el prefijo del accountId. Es función
+  // pura del accountId — el cliente ya no guarda un account global porque los
+  // métodos del broker / streams pasan el accountId que corresponda.
+  apiBase(accountId: string): string {
+    return accountId.startsWith('SIM')
       ? this.config.simBaseUrl
       : this.config.liveBaseUrl;
   }
@@ -91,11 +89,17 @@ export class TradeStationClient {
     path,
     body,
     operation,
+    accountId,
   }: {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE';
     path: string;
     body?: unknown;
     operation: TsOperation;
+    // El accountId define a qué `apiBase` (SIM o LIVE) se envía la request.
+    // Es required: cancelOrder/replaceStopPrice no lo necesitan en el path
+    // pero igual deben pegarle al ambiente correcto, así que los callers
+    // siempre lo proveen (resuelto contra el ctx o el default).
+    accountId: string;
   }): Promise<T> {
     let token: string;
     try {
@@ -104,7 +108,7 @@ export class TradeStationClient {
       this.metrics?.recordTsRequest(0, operation, 'auth');
       throw err;
     }
-    const url = this.apiBase() + path;
+    const url = this.apiBase(accountId) + path;
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,

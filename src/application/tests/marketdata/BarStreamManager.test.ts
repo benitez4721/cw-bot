@@ -362,6 +362,7 @@ function setup(
     tradeRepo,
     broker,
     closeTrade,
+    defaultAccountId: 'SIM12345',
   });
 
   const nowMs = { value: opts.initialNowMs ?? Date.now() };
@@ -373,6 +374,7 @@ function setup(
     historicalBars,
     barRepo,
     strategies,
+    defaultAccountId: 'SIM12345',
     placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
     recordTradeContext: recordContext as unknown as RecordTradeContext,
     checkOpenTrades,
@@ -665,12 +667,14 @@ describe('BarStreamManager', () => {
           watchlist: s.watchlist,
         },
       ],
+      defaultAccountId: 'SIM12345',
       placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
       recordTradeContext: s.recordContext as unknown as RecordTradeContext,
       checkOpenTrades: new CheckOpenTrades({
         tradeRepo: s.tradeRepo,
         broker: s.broker,
         closeTrade: new CloseTrade(s.tradeRepo),
+        defaultAccountId: 'SIM12345',
       }),
       marketHours: { isOpen: () => true },
       metrics: s.metrics,

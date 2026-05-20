@@ -9,6 +9,10 @@ type BuySignal = Extract<DecisionSignal<unknown>, { action: 'buy' }>;
 
 export interface RecordTradeContextInput {
   model: string;
+  // Account contra el que se envió el bracket. Se propaga al TradeContext
+  // para que el monitoreo (CheckOpenTrades, flatten, replaceStop) sepa a
+  // qué account ir.
+  accountId: string;
   bracket: TradeContextBracket;
   signal: BuySignal;
   evalStart: string;
@@ -20,6 +24,7 @@ export class RecordTradeContext {
 
   async execute({
     model,
+    accountId,
     bracket,
     signal,
     evalStart,
@@ -31,6 +36,7 @@ export class RecordTradeContext {
 
     const ctx: TradeContext = {
       model,
+      accountId,
       symbol: signal.symbol,
       side: signal.side,
       entryLimitPrice: signal.entryLimitPrice,

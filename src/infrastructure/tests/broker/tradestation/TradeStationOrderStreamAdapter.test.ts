@@ -123,6 +123,7 @@ describe('TradeStationOrderStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationOrderStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,
@@ -161,6 +162,7 @@ describe('TradeStationOrderStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationOrderStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,
@@ -202,6 +204,7 @@ describe('TradeStationOrderStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationOrderStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,
@@ -240,6 +243,7 @@ describe('TradeStationOrderStreamAdapter', () => {
     const t = fakeTimers();
     const adapter = new TradeStationOrderStreamAdapter({
       client: fakeClient(),
+      accountId: 'SIM12345',
       fetchFn,
       schedule: t.schedule,
       cancel: t.cancel,

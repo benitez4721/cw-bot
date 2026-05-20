@@ -54,6 +54,7 @@ async function main() {
     redis,
     metrics,
     broker,
+    defaultAccountId,
     orderStreamAdapter,
     positionStreamAdapter,
     tradeRepo,
@@ -90,6 +91,7 @@ async function main() {
     tradeRepo,
     broker,
     closeTrade,
+    defaultAccountId,
   });
   const maybeMoveStopToBreakEven = new MaybeMoveStopToBreakEven({
     tradeRepo,
@@ -105,18 +107,19 @@ async function main() {
 
   const orderStreamMgr = new OrderStreamManager({
     stream: orderStreamAdapter,
-    accountId: env.TRADESTATION_ACCOUNT_ID!,
+    accountId: defaultAccountId,
     tradeRepo,
     recordOrderFill,
   });
   const positionStreamMgr = new PositionStreamManager({
     stream: positionStreamAdapter,
-    accountId: env.TRADESTATION_ACCOUNT_ID!,
+    accountId: defaultAccountId,
   });
 
   const alertManagers = eventStrategies.map((strategy) => {
     const onAlert = new OnScannerAlert({
       strategy,
+      defaultAccountId,
       broker,
       placeTrailingBracketOrder,
       tradeRepo,
@@ -139,6 +142,7 @@ async function main() {
     historicalBars,
     barRepo,
     strategies,
+    defaultAccountId,
     placeBracketOrder,
     recordTradeContext,
     checkOpenTrades,

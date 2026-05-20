@@ -54,6 +54,7 @@ export class MaybeMoveStopToBreakEven {
         await this.broker.replaceStopPrice({
           orderId: ctx.bracket.stopOrderId,
           stopPrice: ctx.entryLimitPrice,
+          accountId: ctx.accountId,
         });
         await this.tradeRepo.put({ ...ctx, breakEvenMoved: true });
         log.info(

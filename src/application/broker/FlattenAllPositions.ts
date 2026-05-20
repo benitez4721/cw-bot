@@ -79,7 +79,10 @@ export class FlattenAllPositions {
       // Caso A — entry sin llenar
       if (entryOrder && isOrderActive(entryOrder.status)) {
         try {
-          await this.broker.cancelOrder({ orderId: ctx.bracket.entryOrderId });
+          await this.broker.cancelOrder({
+            orderId: ctx.bracket.entryOrderId,
+            accountId: ctx.accountId,
+          });
           this.metrics.recordFlattenOutcome('cancelled');
           log.info(
             {
@@ -119,7 +122,9 @@ export class FlattenAllPositions {
         ctx.bracket.takeProfitOrderId,
       ].filter((id): id is string => !!id);
       await Promise.allSettled(
-        exitIds.map((orderId) => this.broker.cancelOrder({ orderId })),
+        exitIds.map((orderId) =>
+          this.broker.cancelOrder({ orderId, accountId: ctx.accountId }),
+        ),
       );
 
       // Solo el primer ctx del símbolo envía el Market (qty agregada).
@@ -132,6 +137,7 @@ export class FlattenAllPositions {
             symbol: ctx.symbol,
             quantity: qty,
             side,
+            accountId: ctx.accountId,
           });
           if (
             !result.orderId ||

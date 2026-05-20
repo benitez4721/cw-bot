@@ -19,6 +19,9 @@ export interface CheckOpenTradesDeps {
   tradeRepo: TradeContextRepository;
   broker: BrokerPort;
   closeTrade: CloseTrade;
+  // Default cuando un ctx legacy no tiene `accountId` persistido. Inyectado
+  // desde main.ts (env.TRADESTATION_ACCOUNT_ID).
+  defaultAccountId: string;
 }
 
 // Checks whether (model, symbol) still has an open trade. Reconciles the
@@ -29,11 +32,13 @@ export class CheckOpenTrades {
   private readonly tradeRepo: TradeContextRepository;
   private readonly broker: BrokerPort;
   private readonly closeTrade: CloseTrade;
+  private readonly defaultAccountId: string;
 
   constructor(deps: CheckOpenTradesDeps) {
     this.tradeRepo = deps.tradeRepo;
     this.broker = deps.broker;
     this.closeTrade = deps.closeTrade;
+    this.defaultAccountId = deps.defaultAccountId;
   }
 
   async execute({
@@ -44,7 +49,18 @@ export class CheckOpenTrades {
     const contexts = all.filter((c) => c.symbol === symbol);
     if (contexts.length === 0) return { stillExposed: false };
 
-    const orders = await this.broker.getOrders({ symbol });
+    // Los contexts de (model, symbol) normalmente comparten el mismo
+    // accountId (la strategy lo decide), pero por seguridad consultamos por
+    // cada accountId distinto presente en los contexts.
+    const accountIdsToQuery = new Set(
+      contexts.map((c) => c.accountId ?? this.defaultAccountId),
+    );
+    const ordersByAccount = await Promise.all(
+      Array.from(accountIdsToQuery).map((accountId) =>
+        this.broker.getOrders({ symbol, accountId }),
+      ),
+    );
+    const orders = ordersByAccount.flat();
     const activeOrderIds = new Set(
       orders.filter(isOrderActive).map((o) => o.id),
     );

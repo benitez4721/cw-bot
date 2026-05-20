@@ -88,7 +88,10 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeBracketOrder({
       symbol: 'DXF',
       side: 'BUY',
@@ -140,7 +143,10 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeBracketOrder({
       symbol: 'PAYS',
       side: 'BUY',
@@ -178,7 +184,10 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeBracketOrder({
       symbol: 'PAYS',
       side: 'BUY',
@@ -227,7 +236,10 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeBracketOrder({
       symbol: 'QCOM',
       side: 'BUY',
@@ -254,7 +266,10 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
       apiBase: () => 'https://sim.api.tradestation.com',
       request: vi.fn(async () => ({ Orders: orders })),
     } as unknown as TradeStationClient;
-    return new TradeStationBrokerAdapter({ client });
+    return new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
   }
 
   it('mapea FilledPrice del root al filledPrice del Order', async () => {
@@ -394,7 +409,10 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
       },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeTrailingBracketOrder({
       symbol: 'ORGN',
       side: 'BUY',
@@ -449,7 +467,10 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
       },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeTrailingBracketOrder({
       symbol: 'ORGN',
       side: 'BUY',
@@ -470,7 +491,10 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
       detail: { Orders: [] },
     });
 
-    const broker = new TradeStationBrokerAdapter({ client });
+    const broker = new TradeStationBrokerAdapter({
+      client,
+      defaultAccountId: 'SIM12345',
+    });
     const result = await broker.placeTrailingBracketOrder({
       symbol: 'ORGN',
       side: 'BUY',

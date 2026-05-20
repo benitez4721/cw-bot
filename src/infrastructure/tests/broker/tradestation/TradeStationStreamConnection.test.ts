@@ -121,6 +121,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/v3/brokerage/stream/accounts/SIM/orders',
       onFrame,
       logName: 'test',
@@ -148,6 +149,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame,
       logName: 'test',
@@ -180,6 +182,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame,
       logName: 'test',
@@ -211,6 +214,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame,
       logName: 'test',
@@ -242,6 +246,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame,
       logName: 'test',
@@ -273,6 +278,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame,
       logName: 'test',
@@ -302,6 +308,7 @@ describe('TradeStationStreamConnection', () => {
     const onFrame = vi.fn();
     const conn = new TradeStationStreamConnection({
       client,
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame,
       logName: 'test',
@@ -326,6 +333,7 @@ describe('TradeStationStreamConnection', () => {
     const timers = makeFakeTimers();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame: () => {},
       logName: 'test',
@@ -360,6 +368,7 @@ describe('TradeStationStreamConnection', () => {
     const connectionChanges: boolean[] = [];
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame: () => {},
       onConnectionChange: (c) => connectionChanges.push(c),
@@ -394,6 +403,7 @@ describe('TradeStationStreamConnection', () => {
     const changes: boolean[] = [];
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame: () => {},
       onConnectionChange: (c) => changes.push(c),
@@ -416,6 +426,7 @@ describe('TradeStationStreamConnection', () => {
     const timers = makeFakeTimers();
     const conn = new TradeStationStreamConnection({
       client: fakeClient(),
+      accountId: 'SIM12345',
       pathBuilder: () => '/p',
       onFrame: () => {},
       logName: 'test',

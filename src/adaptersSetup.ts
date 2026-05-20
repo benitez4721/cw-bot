@@ -32,6 +32,11 @@ export interface Adapters {
   redis: Redis;
   metrics: PrometheusMetricsAdapter;
   broker: TradeStationBrokerAdapter;
+  // Cuentas TradeStation activas. Hoy es solo el default del env; cuando
+  // alguna estrategia declare `accountId` distinto, el set se ampliará en
+  // Fase 3 (streams multi-account).
+  accountIds: readonly string[];
+  defaultAccountId: string;
   orderStreamAdapter: TradeStationOrderStreamAdapter;
   positionStreamAdapter: TradeStationPositionStreamAdapter;
   tradeRepo: RedisTradeContextRepository;
@@ -55,23 +60,32 @@ export function setupAdapters(): Adapters {
     log.warn({ err: err.message }, 'redis error');
   });
 
+  const defaultAccountId = env.TRADESTATION_ACCOUNT_ID!;
+  // En Fase 2 sigue habiendo solo el account default. Fase 3 ampliará
+  // `accountIds` recolectando los `strategy.accountId` distintos.
+  const accountIds: readonly string[] = [defaultAccountId];
+
   const tradeStationClient = new TradeStationClient({
     clientId: env.TRADESTATION_CLIENT_ID!,
     clientSecret: env.TRADESTATION_CLIENT_SECRET || '',
     refreshToken: env.TRADESTATION_REFRESH_TOKEN!,
-    accountId: env.TRADESTATION_ACCOUNT_ID!,
     simBaseUrl: env.TRADESTATION_SIM_URL,
     liveBaseUrl: env.TRADESTATION_LIVE_URL,
     signinUrl: env.TRADESTATION_SIGNIN_URL,
     metrics,
   });
 
-  const broker = new TradeStationBrokerAdapter({ client: tradeStationClient });
+  const broker = new TradeStationBrokerAdapter({
+    client: tradeStationClient,
+    defaultAccountId,
+  });
   const orderStreamAdapter = new TradeStationOrderStreamAdapter({
     client: tradeStationClient,
+    accountId: defaultAccountId,
   });
   const positionStreamAdapter = new TradeStationPositionStreamAdapter({
     client: tradeStationClient,
+    accountId: defaultAccountId,
   });
 
   const tradeRepo = new RedisTradeContextRepository(redis);
@@ -144,6 +158,8 @@ export function setupAdapters(): Adapters {
     redis,
     metrics,
     broker,
+    accountIds,
+    defaultAccountId,
     orderStreamAdapter,
     positionStreamAdapter,
     tradeRepo,
