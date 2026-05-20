@@ -40,10 +40,20 @@ describe('RedisTradeContextRepository', () => {
     expect((await repo.getByOrderId('E1'))?.bracket.entryOrderId).toBe('E1');
   });
 
-  it('sin forcedExitOrderId, lookup por un OrderID arbitrario devuelve undefined', async () => {
+  it('lookup por un OrderID que no pertenece al bracket devuelve undefined', async () => {
     const ctx = makeContext();
     await repo.put(ctx);
-    expect(await repo.getByOrderId('M1')).toBeUndefined();
+    expect(await repo.getByOrderId('OTRO')).toBeUndefined();
+  });
+
+  it('indexa el mismo context bajo stopOrderId y takeProfitOrderId', async () => {
+    // OrderStreamManager llama getByOrderId(event.order.id) para enriquecer y
+    // disparar RecordOrderFill. Sin este dual-write los fills del stop/TP
+    // nunca encontrarían el context.
+    const ctx = makeContext();
+    await repo.put(ctx);
+    expect((await repo.getByOrderId('S1'))?.bracket.entryOrderId).toBe('E1');
+    expect((await repo.getByOrderId('T1'))?.bracket.entryOrderId).toBe('E1');
   });
 
   it('con forcedExitOrderId, lookup por ese OrderID devuelve el mismo context', async () => {

@@ -33,17 +33,17 @@ export class RedisTradeContextRepository implements TradeContextRepository {
       .multi()
       .sadd(this.indexKey, entryOrderId)
       .set(this.itemKey(entryOrderId), serialized, 'EX', this.itemTtlSeconds);
-    // Dual-write: si el trade fue flateado, indexamos también bajo el
-    // OrderID del Market opuesto. Permite que OrderStreamManager enriquezca
-    // el evento de ese Market con este TradeContext (mismo JSON) y el
-    // dashboard agrupe los 4 OrderIDs como un solo trade.
-    if (ctx.bracket.forcedExitOrderId) {
-      tx.set(
-        this.itemKey(ctx.bracket.forcedExitOrderId),
-        serialized,
-        'EX',
-        this.itemTtlSeconds,
-      );
+    // Dual-write bajo cada pierna del bracket (stop, take-profit, forced).
+    // OrderStreamManager hace getByOrderId(event.order.id) para enriquecer el
+    // evento; sin este dual-write los eventos de stop/TP no encontrarían el
+    // context y RecordOrderFill no podría persistir el exit fill.
+    const secondaryIds = [
+      ctx.bracket.stopOrderId,
+      ctx.bracket.takeProfitOrderId,
+      ctx.bracket.forcedExitOrderId,
+    ].filter((id): id is string => !!id && id !== entryOrderId);
+    for (const id of secondaryIds) {
+      tx.set(this.itemKey(id), serialized, 'EX', this.itemTtlSeconds);
     }
     if (ctx.status === 'closed') {
       tx.srem(modelActiveKey, entryOrderId);

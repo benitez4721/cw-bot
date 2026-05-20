@@ -28,4 +28,12 @@ export interface TradeContext {
   status: TradeContextStatus;
   // Set true once the trail has moved the stop to entry (one-shot per trade).
   breakEvenMoved?: boolean;
+  // Real fills capturados desde el OrderStreamPort. Opcionales porque (a) los
+  // contexts previos a este campo no los tienen y (b) un trade abierto puede
+  // tener entry lleno sin exit todavia.
+  entryFillPrice?: number;
+  entryFillQuantity?: number;
+  exitFillPrice?: number;
+  exitFillQuantity?: number;
+  exitLeg?: 'stop' | 'takeProfit' | 'forced';
 }

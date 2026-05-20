@@ -10,6 +10,7 @@ import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
 import { AlertEventManager } from './application/scanner/AlertEventManager.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
 import { MaybeMoveStopToBreakEven } from './application/trade/MaybeMoveStopToBreakEven.js';
+import { RecordOrderFill } from './application/trade/RecordOrderFill.js';
 import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
 import { ListWatchlist } from './application/watchlist/ListWatchlist.js';
@@ -83,6 +84,7 @@ async function main() {
   const placeBracketOrder = new PlaceBracketOrder(broker);
   const placeTrailingBracketOrder = new PlaceTrailingBracketOrder(broker);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
+  const recordOrderFill = new RecordOrderFill(tradeRepo);
   const closeTrade = new CloseTrade(tradeRepo);
   const checkOpenTrades = new CheckOpenTrades({
     tradeRepo,
@@ -104,6 +106,7 @@ async function main() {
   const orderStreamMgr = new OrderStreamManager({
     stream: orderStreamAdapter,
     tradeRepo,
+    recordOrderFill,
   });
   const positionStreamMgr = new PositionStreamManager({
     stream: positionStreamAdapter,

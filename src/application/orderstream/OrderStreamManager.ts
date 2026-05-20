@@ -6,7 +6,9 @@ import type {
 } from '../../domain/broker/BrokerStreamTypes.js';
 import type { OrderStreamPort } from '../../domain/broker/OrderStreamPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
+import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import type { RecordOrderFill } from '../trade/RecordOrderFill.js';
 
 const log = logger.child({ component: 'OrderStreamManager' });
 
@@ -17,6 +19,7 @@ export interface StreamSubscription {
 export interface OrderStreamManagerOptions {
   stream: OrderStreamPort;
   tradeRepo: TradeContextRepository;
+  recordOrderFill: RecordOrderFill;
   // Inyectable para tests; default: () => new Date().toISOString().
   now?: () => string;
 }
@@ -31,6 +34,7 @@ export interface OrderStreamManagerOptions {
 export class OrderStreamManager {
   private readonly stream: OrderStreamPort;
   private readonly tradeRepo: TradeContextRepository;
+  private readonly recordOrderFill: RecordOrderFill;
   private readonly now: () => string;
   private readonly orders = new Map<string, OrderWithContext>();
   private readonly emitter = new EventEmitter();
@@ -43,6 +47,7 @@ export class OrderStreamManager {
   constructor(options: OrderStreamManagerOptions) {
     this.stream = options.stream;
     this.tradeRepo = options.tradeRepo;
+    this.recordOrderFill = options.recordOrderFill;
     this.now = options.now ?? (() => new Date().toISOString());
     this.stream.onOrder((event) => this.enqueue(event));
     this.stream.onConnectionChange((connected) => {
@@ -145,14 +150,31 @@ export class OrderStreamManager {
 
   private async process(event: OrderEvent): Promise<void> {
     let enrichedOrder: OrderWithContext = event.order;
+    let context: TradeContext | undefined;
     try {
-      const context = await this.tradeRepo.getByOrderId(event.order.id);
+      context = await this.tradeRepo.getByOrderId(event.order.id);
       if (context) enrichedOrder = { ...event.order, context };
     } catch (err) {
       log.warn(
         { err: errMsg(err), orderId: event.order.id },
         'trade context lookup failed; emitting without context',
       );
+    }
+    // Persistir el fill (entry/stop/tp/forced) en el TradeContext para que
+    // el PnL real quede reconstruible sin consultar al broker. Idempotente:
+    // RecordOrderFill skipea writes si los valores ya coinciden.
+    if (context) {
+      try {
+        await this.recordOrderFill.execute({
+          ctx: context,
+          order: event.order,
+        });
+      } catch (err) {
+        log.warn(
+          { err: errMsg(err), orderId: event.order.id },
+          'recordOrderFill failed',
+        );
+      }
     }
     // Reconciliación: priorState reemplaza, liveUpdate también reemplaza.
     // No hay estado terminal que borre — el dashboard quiere ver historia.

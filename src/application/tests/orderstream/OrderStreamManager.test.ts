@@ -9,6 +9,7 @@ import type { OrderStreamPort } from '../../../domain/broker/OrderStreamPort.js'
 import type { TradeContextRepository } from '../../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 import { OrderStreamManager } from '../../orderstream/OrderStreamManager.js';
+import { RecordOrderFill } from '../../trade/RecordOrderFill.js';
 
 class FakeOrderStream implements OrderStreamPort {
   private orderHandlers: OrderStreamHandler[] = [];
@@ -43,8 +44,17 @@ class FakeTradeContextRepository implements TradeContextRepository {
     this.store.set(orderId, ctx);
   }
 
+  // Mirror del dual-write de RedisTradeContextRepository: indexa el ctx bajo
+  // entry + stop + tp + forced para que getByOrderId pueda enriquecer eventos
+  // de cualquier pierna del bracket.
   async put(ctx: TradeContext): Promise<void> {
-    this.store.set(ctx.bracket.entryOrderId, ctx);
+    const ids = [
+      ctx.bracket.entryOrderId,
+      ctx.bracket.stopOrderId,
+      ctx.bracket.takeProfitOrderId,
+      ctx.bracket.forcedExitOrderId,
+    ].filter((id): id is string => !!id);
+    for (const id of ids) this.store.set(id, ctx);
   }
   async getByOrderId(orderId: string): Promise<TradeContext | undefined> {
     return this.store.get(orderId);
@@ -109,9 +119,11 @@ function buildManager(): {
 } {
   const stream = new FakeOrderStream();
   const repo = new FakeTradeContextRepository();
+  const recordOrderFill = new RecordOrderFill(repo);
   const mgr = new OrderStreamManager({
     stream,
     tradeRepo: repo,
+    recordOrderFill,
     now: () => '2026-05-10T18:01:00Z',
   });
   return { stream, repo, mgr };
@@ -266,5 +278,65 @@ describe('OrderStreamManager', () => {
     await mgr.start();
     expect(stream.connected).toBe(1);
     expect(mgr.isConnected()).toBe(true);
+  });
+
+  it('persiste entryFillPrice cuando llega un fill de la pierna entry', async () => {
+    const { stream, repo, mgr } = buildManager();
+    const ctx = makeContext({
+      bracket: {
+        entryOrderId: 'E1',
+        stopOrderId: 'S1',
+        takeProfitOrderId: 'T1',
+      },
+    });
+    await repo.put(ctx);
+
+    stream.emit(
+      makeEvent(
+        order({
+          id: 'E1',
+          status: 'filled',
+          filledPrice: 187.42,
+          filledQuantity: 100,
+        }),
+        'liveUpdate',
+      ),
+    );
+    await mgr.idle();
+
+    const updated = await repo.getByOrderId('E1');
+    expect(updated?.entryFillPrice).toBe(187.42);
+    expect(updated?.entryFillQuantity).toBe(100);
+    expect(updated?.exitFillPrice).toBeUndefined();
+  });
+
+  it('persiste exitFillPrice y exitLeg cuando llega un fill de la pierna stop', async () => {
+    const { stream, repo, mgr } = buildManager();
+    const ctx = makeContext({
+      bracket: {
+        entryOrderId: 'E1',
+        stopOrderId: 'S1',
+        takeProfitOrderId: 'T1',
+      },
+    });
+    await repo.put(ctx);
+
+    stream.emit(
+      makeEvent(
+        order({
+          id: 'S1',
+          status: 'filled',
+          filledPrice: 185.0,
+          filledQuantity: 100,
+        }),
+        'liveUpdate',
+      ),
+    );
+    await mgr.idle();
+
+    const updated = await repo.getByOrderId('E1');
+    expect(updated?.exitFillPrice).toBe(185.0);
+    expect(updated?.exitFillQuantity).toBe(100);
+    expect(updated?.exitLeg).toBe('stop');
   });
 });
