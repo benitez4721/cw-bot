@@ -1,24 +1,31 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
-import type { OrderStreamManager } from '../../application/orderstream/OrderStreamManager.js';
-import type { PositionStreamManager } from '../../application/positionstream/PositionStreamManager.js';
+import type {
+  OrderEvent,
+  PositionEvent,
+} from '../../domain/broker/BrokerStreamTypes.js';
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
-
-export interface BrokerStreamRoutesOptions {
-  orderStream: OrderStreamManager;
-  positionStream: PositionStreamManager;
-}
 
 interface Subscription {
   unsubscribe(): void;
 }
 
+// Fachada estructural que cumple un Manager individual (1 stream = 1 account).
 interface SubscribableStream<E> {
-  // `subscribe` puede ser async (OrderStreamManager refresca contextos en
-  // Redis antes del replay) o sync (PositionStreamManager). El caller siempre
-  // hace `await` para uniformar el manejo.
+  // `subscribe` puede ser async (OrderStream refresca contextos en Redis
+  // antes del replay) o sync (PositionStream). El caller siempre hace
+  // `await` para uniformar el manejo.
   subscribe(handler: (event: E) => void): Promise<Subscription> | Subscription;
   onConnectionChange(handler: (connected: boolean) => void): Subscription;
+}
+
+// Multi-account: cada accountId tiene su propio Manager (un websocket por
+// cuenta). La ruta SSE hace fan-out sobre los N managers para que el cliente
+// vea un único stream "todas las orders / todas las positions". El consumer
+// distingue cada evento por `event.accountId`.
+export interface BrokerStreamRoutesOptions {
+  orderStreams: ReadonlyMap<string, SubscribableStream<OrderEvent>>;
+  positionStreams: ReadonlyMap<string, SubscribableStream<PositionEvent>>;
 }
 
 export const brokerStreamRoutes: FastifyPluginAsync<
@@ -26,19 +33,19 @@ export const brokerStreamRoutes: FastifyPluginAsync<
 > = async (server, opts) => {
   server.get('/api/broker/stream/orders', async (req, reply) => {
     reply.hijack();
-    await pipeManagerToSse(req, reply, opts.orderStream, 'order');
+    await pipeStreamsToSse(req, reply, opts.orderStreams, 'order');
   });
 
   server.get('/api/broker/stream/positions', async (req, reply) => {
     reply.hijack();
-    await pipeManagerToSse(req, reply, opts.positionStream, 'position');
+    await pipeStreamsToSse(req, reply, opts.positionStreams, 'position');
   });
 };
 
-async function pipeManagerToSse<E>(
+async function pipeStreamsToSse<E>(
   req: FastifyRequest,
   reply: FastifyReply,
-  manager: SubscribableStream<E>,
+  streams: ReadonlyMap<string, SubscribableStream<E>>,
   eventName: string,
 ): Promise<void> {
   setupSseHeaders(reply);
@@ -74,20 +81,32 @@ async function pipeManagerToSse<E>(
     }
   });
 
-  const sub = await manager.subscribe((event) => writeEvent(eventName, event));
-  // Si el cliente cerró mientras esperábamos el subscribe async (el manager
-  // hace lookup a Redis), des-suscribir inmediatamente: el cleanup no corrió
-  // porque sub aún no estaba pusheado.
+  // Fan-out: subscribe a cada manager en paralelo. Si el cliente cerró
+  // mientras esperábamos los subscribe async (el OrderStream consulta Redis
+  // antes del replay), unsubscribe inmediatamente — el cleanup todavía no
+  // tenía las subs registradas.
+  const managers = Array.from(streams.values());
+  const subs = await Promise.all(
+    managers.map((m) =>
+      m.subscribe((event: E) => writeEvent(eventName, event)),
+    ),
+  );
   if (closed) {
-    sub.unsubscribe();
+    for (const s of subs) s.unsubscribe();
     return;
   }
-  cleanups.push(() => sub.unsubscribe());
+  cleanups.push(() => {
+    for (const s of subs) s.unsubscribe();
+  });
 
-  const connSub = manager.onConnectionChange((connected) =>
-    writeEvent('connection', { connected }),
+  const connSubs = managers.map((m) =>
+    m.onConnectionChange((connected) =>
+      writeEvent('connection', { connected }),
+    ),
   );
-  cleanups.push(() => connSub.unsubscribe());
+  cleanups.push(() => {
+    for (const s of connSubs) s.unsubscribe();
+  });
 
   const heartbeat = setInterval(() => {
     if (reply.raw.writableEnded) return;

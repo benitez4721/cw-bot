@@ -55,8 +55,8 @@ async function main() {
     metrics,
     broker,
     defaultAccountId,
-    orderStreamAdapter,
-    positionStreamAdapter,
+    orderStreamAdaptersByAccount,
+    positionStreamAdaptersByAccount,
     tradeRepo,
     barRepo,
     marketHours,
@@ -105,16 +105,26 @@ async function main() {
   );
   const getOrders = new GetOrders(broker, tradeRepo);
 
-  const orderStreamMgr = new OrderStreamManager({
-    stream: orderStreamAdapter,
-    accountId: defaultAccountId,
-    tradeRepo,
-    recordOrderFill,
-  });
-  const positionStreamMgr = new PositionStreamManager({
-    stream: positionStreamAdapter,
-    accountId: defaultAccountId,
-  });
+  // Un manager por accountId. Cada uno mantiene su propio websocket y
+  // snapshot in-memory. brokerStreamRoutes hace fan-out sobre el Map para
+  // que la ruta SSE exponga un único stream "todas las orders / positions".
+  const orderStreamManagers = new Map(
+    Array.from(orderStreamAdaptersByAccount, ([accountId, stream]) => [
+      accountId,
+      new OrderStreamManager({
+        stream,
+        accountId,
+        tradeRepo,
+        recordOrderFill,
+      }),
+    ]),
+  );
+  const positionStreamManagers = new Map(
+    Array.from(positionStreamAdaptersByAccount, ([accountId, stream]) => [
+      accountId,
+      new PositionStreamManager({ stream, accountId }),
+    ]),
+  );
 
   const alertManagers = eventStrategies.map((strategy) => {
     const onAlert = new OnScannerAlert({
@@ -208,22 +218,28 @@ async function main() {
   }
   // Streams de broker arrancan warm: el adapter mantiene la conexión a TS
   // viva con reconexión interna. Cualquier error de start() es no fatal.
-  orderStreamMgr
-    .start()
-    .catch((err) =>
+  for (const [accountId, mgr] of orderStreamManagers) {
+    mgr.start().catch((err) =>
       log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        {
+          accountId,
+          err: err instanceof Error ? err.message : String(err),
+        },
         'order stream start failed',
       ),
     );
-  positionStreamMgr
-    .start()
-    .catch((err) =>
+  }
+  for (const [accountId, mgr] of positionStreamManagers) {
+    mgr.start().catch((err) =>
       log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        {
+          accountId,
+          err: err instanceof Error ? err.message : String(err),
+        },
         'position stream start failed',
       ),
     );
+  }
   grafana?.start();
   heartbeat?.start();
 
@@ -238,8 +254,8 @@ async function main() {
   await server.register(watchlistRoutes, { listWatchlist });
   await server.register(brokerRoutes, { getOrders });
   await server.register(brokerStreamRoutes, {
-    orderStream: orderStreamMgr,
-    positionStream: positionStreamMgr,
+    orderStreams: orderStreamManagers,
+    positionStreams: positionStreamManagers,
   });
 
   await server.listen({ port: env.PORT, host: env.HOST || '0.0.0.0' });
@@ -265,8 +281,8 @@ async function main() {
       heartbeat?.stop();
       grafana?.stop();
       barStream.stop();
-      orderStreamMgr.stop();
-      positionStreamMgr.stop();
+      for (const mgr of orderStreamManagers.values()) mgr.stop();
+      for (const mgr of positionStreamManagers.values()) mgr.stop();
       for (const scanner of scanners) scanner.stop();
       await server.close();
       await redis.quit();

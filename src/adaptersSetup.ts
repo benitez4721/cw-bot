@@ -32,13 +32,21 @@ export interface Adapters {
   redis: Redis;
   metrics: PrometheusMetricsAdapter;
   broker: TradeStationBrokerAdapter;
-  // Cuentas TradeStation activas. Hoy es solo el default del env; cuando
-  // alguna estrategia declare `accountId` distinto, el set se ampliará en
-  // Fase 3 (streams multi-account).
+  // Cuentas TradeStation activas. Incluye el default del env y cualquier
+  // `accountId` declarado por DecisionStrategy / EventStrategy. El composition
+  // root construye un stream adapter por cada entry y un Manager por encima.
   accountIds: readonly string[];
   defaultAccountId: string;
-  orderStreamAdapter: TradeStationOrderStreamAdapter;
-  positionStreamAdapter: TradeStationPositionStreamAdapter;
+  // Un stream adapter por accountId. Cada uno encapsula UN websocket contra
+  // el endpoint /v3/brokerage/stream/accounts/{accountId}/{orders,positions}.
+  orderStreamAdaptersByAccount: ReadonlyMap<
+    string,
+    TradeStationOrderStreamAdapter
+  >;
+  positionStreamAdaptersByAccount: ReadonlyMap<
+    string,
+    TradeStationPositionStreamAdapter
+  >;
   tradeRepo: RedisTradeContextRepository;
   barRepo: RedisBarRepository;
   marketHours: UsMarketHoursAdapter;
@@ -61,9 +69,6 @@ export function setupAdapters(): Adapters {
   });
 
   const defaultAccountId = env.TRADESTATION_ACCOUNT_ID!;
-  // En Fase 2 sigue habiendo solo el account default. Fase 3 ampliará
-  // `accountIds` recolectando los `strategy.accountId` distintos.
-  const accountIds: readonly string[] = [defaultAccountId];
 
   const tradeStationClient = new TradeStationClient({
     clientId: env.TRADESTATION_CLIENT_ID!,
@@ -78,14 +83,6 @@ export function setupAdapters(): Adapters {
   const broker = new TradeStationBrokerAdapter({
     client: tradeStationClient,
     defaultAccountId,
-  });
-  const orderStreamAdapter = new TradeStationOrderStreamAdapter({
-    client: tradeStationClient,
-    accountId: defaultAccountId,
-  });
-  const positionStreamAdapter = new TradeStationPositionStreamAdapter({
-    client: tradeStationClient,
-    accountId: defaultAccountId,
   });
 
   const tradeRepo = new RedisTradeContextRepository(redis);
@@ -154,21 +151,54 @@ export function setupAdapters(): Adapters {
     entryBufferBps: 50,
   };
 
+  const strategies = [superStrategy];
+  const eventStrategies = [highOfDayAlert];
+
+  // Set de cuentas TradeStation activas: el default del env + cualquier
+  // override declarado por estrategia. Por cada accountId distinto se abre
+  // un websocket de orders y otro de positions (cada stream TS es por cuenta).
+  const accountIds: readonly string[] = Array.from(
+    new Set<string>([
+      defaultAccountId,
+      ...strategies.flatMap((s) => (s.accountId ? [s.accountId] : [])),
+      ...eventStrategies.flatMap((s) => (s.accountId ? [s.accountId] : [])),
+    ]),
+  );
+
+  const orderStreamAdaptersByAccount = new Map(
+    accountIds.map((accountId) => [
+      accountId,
+      new TradeStationOrderStreamAdapter({
+        client: tradeStationClient,
+        accountId,
+      }),
+    ]),
+  );
+  const positionStreamAdaptersByAccount = new Map(
+    accountIds.map((accountId) => [
+      accountId,
+      new TradeStationPositionStreamAdapter({
+        client: tradeStationClient,
+        accountId,
+      }),
+    ]),
+  );
+
   return {
     redis,
     metrics,
     broker,
     accountIds,
     defaultAccountId,
-    orderStreamAdapter,
-    positionStreamAdapter,
+    orderStreamAdaptersByAccount,
+    positionStreamAdaptersByAccount,
     tradeRepo,
     barRepo,
     marketHours,
     marketFeed,
     historicalBars,
     scannerFeed,
-    strategies: [superStrategy],
-    eventStrategies: [highOfDayAlert],
+    strategies,
+    eventStrategies,
   };
 }

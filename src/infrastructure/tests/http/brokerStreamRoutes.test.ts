@@ -82,8 +82,12 @@ async function startServer(): Promise<ServerHandle> {
   const positionMgr = new FakePositionManager();
   const app = Fastify();
   await app.register(brokerStreamRoutes, {
-    orderStream: orderMgr as unknown as OrderStreamManager,
-    positionStream: positionMgr as unknown as PositionStreamManager,
+    orderStreams: new Map([
+      ['SIM12345', orderMgr as unknown as OrderStreamManager],
+    ]),
+    positionStreams: new Map([
+      ['SIM12345', positionMgr as unknown as PositionStreamManager],
+    ]),
   });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
