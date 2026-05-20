@@ -57,6 +57,7 @@ function makeBuySignal(
       { macd: 0.05, signal: 0.04, histogram: -0.01, timestamp: 't0' },
     ],
     vwap1min: { value: 99, timestamp: 't' },
+    atr5min: { value: 0.1, timestamp: 't' },
   };
   return {
     action: 'buy',
@@ -83,6 +84,7 @@ function makeHoldSignal(
       { macd: 0, signal: 0, histogram: 0, timestamp: 't0' },
     ],
     vwap1min: { value: 99, timestamp: 't' },
+    atr5min: { value: 0.1, timestamp: 't' },
   };
   return { action: 'hold', checks: [], snapshot };
 }

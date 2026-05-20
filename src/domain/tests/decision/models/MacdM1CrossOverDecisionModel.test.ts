@@ -23,12 +23,13 @@ function snapshot(
       { macd: 0.2, signal: 0.3, histogram: -0.1, timestamp: 't-1' },
     ],
     vwap1min: { value: 99, timestamp: 't' },
+    atr5min: { value: 0.4, timestamp: 't' },
     ...overrides,
   };
 }
 
 describe('MacdM1CrossOverDecisionModel', () => {
-  it('emits buy with dynamic quantity and percentage offsets when all rules pass', () => {
+  it('emits buy with dynamic quantity and ATR-derived offsets when all rules pass', () => {
     const model = new MacdM1CrossOverDecisionModel(DEPS);
     const result = model.evaluate(snapshot());
 
@@ -40,14 +41,14 @@ describe('MacdM1CrossOverDecisionModel', () => {
     expect(result.entryLimitPrice).toBe(100.1);
     // budget 25000 / base 100 = 250
     expect(result.quantity).toBe(250);
-    // last 100 * 0.01 = 1.00
-    expect(result.stopOffset).toBe(1);
-    // last 100 * 0.025 = 2.50
-    expect(result.takeProfitOffset).toBe(2.5);
+    // ATR=0.4, kStop=2 → stopOffset = 0.8
+    expect(result.stopOffset).toBe(0.8);
+    // rTakeProfit=2.5 → takeProfitOffset = 2.5 * 0.8 = 2.0
+    expect(result.takeProfitOffset).toBe(2);
     expect(result.checks.every((c) => c.passed)).toBe(true);
   });
 
-  it('uses ask as base for entry and quantity, but last for SL/TP offsets', () => {
+  it('uses ask for entry/qty, ATR for SL/TP', () => {
     const model = new MacdM1CrossOverDecisionModel(DEPS);
     const result = model.evaluate(
       snapshot({
@@ -61,9 +62,9 @@ describe('MacdM1CrossOverDecisionModel', () => {
     expect(result.entryLimitPrice).toBe(100.6);
     // budget 25000 / ask 100.5 = 248.756… → floor → 248
     expect(result.quantity).toBe(248);
-    // SL/TP use last (100), not ask
-    expect(result.stopOffset).toBe(1);
-    expect(result.takeProfitOffset).toBe(2.5);
+    // SL/TP no dependen ni de last ni de ask: solo del ATR del snapshot.
+    expect(result.stopOffset).toBe(0.8);
+    expect(result.takeProfitOffset).toBe(2);
   });
 
   it('holds when price is too high to afford a single share within the budget', () => {
@@ -217,5 +218,29 @@ describe('MacdM1CrossOverDecisionModel', () => {
       result.checks.find((c) => c.name === '1min histogram bullish crossover')
         ?.passed,
     ).toBe(false);
+  });
+
+  it('holds when ATR is not available (warm-up)', () => {
+    const model = new MacdM1CrossOverDecisionModel(DEPS);
+    const result = model.evaluate(snapshot({ atr5min: null }));
+
+    expect(result.action).toBe('hold');
+    expect(result.checks.find((c) => c.name === 'ATR available')?.passed).toBe(
+      false,
+    );
+  });
+
+  it('rounds ATR-derived offsets to 2 decimals', () => {
+    const model = new MacdM1CrossOverDecisionModel(DEPS);
+    // ATR=0.137 → stopOffset = 2 * 0.137 = 0.274 → 0.27
+    //              takeProfitOffset = 2.5 * 0.27 = 0.675 → 0.68
+    const result = model.evaluate(
+      snapshot({ atr5min: { value: 0.137, timestamp: 't' } }),
+    );
+
+    expect(result.action).toBe('buy');
+    if (result.action !== 'buy') return;
+    expect(result.stopOffset).toBe(0.27);
+    expect(result.takeProfitOffset).toBe(0.68);
   });
 });

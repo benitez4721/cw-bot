@@ -2,8 +2,9 @@ import type { BrokerPort } from '../../broker/BrokerPort.js';
 import type { Quote } from '../../broker/BrokerTypes.js';
 import type { BuildSnapshotInput, DecisionModel } from '../DecisionModel.js';
 import type { DecisionSignal, RuleCheck } from '../DecisionTypes.js';
+import { CacheUnderfilledError } from '../../indicators/IndicatorErrors.js';
 import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
-import type { MACD, VWAP } from '../../indicators/IndicatorTypes.js';
+import type { ATR, MACD, VWAP } from '../../indicators/IndicatorTypes.js';
 
 export interface MacdM1CrossOverSnapshot {
   symbol: string;
@@ -11,14 +12,18 @@ export interface MacdM1CrossOverSnapshot {
   macd5min: MACD;
   macd1minSeries: MACD[];
   vwap1min: VWAP;
+  atr5min: ATR | null;
 }
 
 const PARAMS = {
   tradeBudgetUsd: 25_000,
-  stopPercent: 0.01,
-  takeProfitPercent: 0.025,
   entryOffsetBps: 10,
   minHistogram1minCrossoverDelta: 0.002,
+  // Stop/TP basados en volatilidad. kStop=2 deja el stop fuera del ruido
+  // típico; rTakeProfit=2.5 preserva el R:R 2.5:1 independiente del símbolo.
+  atrPeriod: 14,
+  kStop: 2.0,
+  rTakeProfit: 2.5,
 } as const;
 
 export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOverSnapshot> {
@@ -34,13 +39,20 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
   async buildSnapshot({
     symbol,
   }: BuildSnapshotInput): Promise<MacdM1CrossOverSnapshot> {
-    const [quote, macd5min, macd1minSeries, vwap1min] = await Promise.all([
-      this.broker.getQuote({ symbol }),
-      this.indicators.getMACD({ symbol, interval: '5min' }),
-      this.indicators.getMACDSeries({ symbol, interval: '1min', limit: 2 }),
-      this.indicators.getVWAP({ symbol, interval: '1min' }),
-    ]);
-    return { symbol, quote, macd5min, macd1minSeries, vwap1min };
+    const [quote, macd5min, macd1minSeries, vwap1min, atr5min] =
+      await Promise.all([
+        this.broker.getQuote({ symbol }),
+        this.indicators.getMACD({ symbol, interval: '5min' }),
+        this.indicators.getMACDSeries({ symbol, interval: '1min', limit: 2 }),
+        this.indicators.getVWAP({ symbol, interval: '1min' }),
+        this.indicators
+          .getATR({ symbol, interval: '5min', period: PARAMS.atrPeriod })
+          .catch((err: unknown): ATR | null => {
+            if (err instanceof CacheUnderfilledError) return null;
+            throw err;
+          }),
+      ]);
+    return { symbol, quote, macd5min, macd1minSeries, vwap1min, atr5min };
   }
 
   evaluate(
@@ -53,14 +65,17 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
     const last = snapshot.quote.last;
     const base = snapshot.quote.ask ?? last;
     const cushion = base * (PARAMS.entryOffsetBps / 10_000);
+    // Non-null gracias al check 'ATR available' validado arriba.
+    const stopOffset = round2(PARAMS.kStop * snapshot.atr5min!.value);
+    const takeProfitOffset = round2(PARAMS.rTakeProfit * stopOffset);
     return {
       action: 'buy',
       symbol: snapshot.symbol,
       side: 'BUY',
       entryLimitPrice: round2(base + cushion),
       quantity: Math.floor(PARAMS.tradeBudgetUsd / base),
-      stopOffset: round2(last * PARAMS.stopPercent),
-      takeProfitOffset: round2(last * PARAMS.takeProfitPercent),
+      stopOffset,
+      takeProfitOffset,
       checks,
       snapshot,
     };
@@ -98,6 +113,7 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
         name: 'quantity > 0',
         passed: base > 0 && Math.floor(PARAMS.tradeBudgetUsd / base) > 0,
       },
+      { name: 'ATR available', passed: !!s.atr5min },
     ];
   }
 }
