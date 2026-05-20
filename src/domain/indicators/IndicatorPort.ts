@@ -1,4 +1,5 @@
 import type {
+  ATR,
   IndicatorInterval,
   IntradayInterval,
   MACD,
@@ -24,8 +25,15 @@ export interface VWAPInput {
   interval: IntradayInterval;
 }
 
+export interface ATRInput {
+  symbol: string;
+  interval: IntradayInterval;
+  period?: number;
+}
+
 export interface IndicatorPort {
   getMACD(input: MACDInput): Promise<MACD>;
   getMACDSeries(input: MACDSeriesInput): Promise<MACD[]>;
   getVWAP(input: VWAPInput): Promise<VWAP>;
+  getATR(input: ATRInput): Promise<ATR>;
 }

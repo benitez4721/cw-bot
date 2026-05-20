@@ -1,10 +1,15 @@
 import type {
+  ATRInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
-import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
+import type {
+  ATR,
+  MACD,
+  VWAP,
+} from '../../domain/indicators/IndicatorTypes.js';
 import { logger } from '../logging/logger.js';
 
 const log = logger.child({ component: 'AlphaVantageIndicatorAdapter' });
@@ -54,6 +59,10 @@ export class AlphaVantageIndicatorAdapter implements IndicatorPort {
     const series = pickSeries(data, 'Technical Analysis: VWAP');
     const [timestamp, latest] = pickLatest(series);
     return { value: parseNumber(latest['VWAP']), timestamp };
+  }
+
+  async getATR(_input: ATRInput): Promise<ATR> {
+    throw new Error('AlphaVantageIndicatorAdapter: getATR not implemented');
   }
 
   private async fetchMACDSeries(

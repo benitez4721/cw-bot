@@ -72,6 +72,54 @@ export function calcMACD(
   });
 }
 
+// True Range per bar (Wilder 1978).
+//   TR_0 = high_0 - low_0  (no previous close)
+//   TR_i = max(high_i - low_i,
+//              |high_i - close_{i-1}|,
+//              |low_i  - close_{i-1}|)
+// Branches 2 and 3 capture overnight/intrabar gaps that high-low alone misses.
+export function calcTrueRange(bars: Bar[]): number[] {
+  const result: number[] = new Array(bars.length);
+  if (bars.length === 0) return result;
+  result[0] = bars[0].high - bars[0].low;
+  for (let i = 1; i < bars.length; i++) {
+    const prevClose = bars[i - 1].close;
+    const hl = bars[i].high - bars[i].low;
+    const hc = Math.abs(bars[i].high - prevClose);
+    const lc = Math.abs(bars[i].low - prevClose);
+    result[i] = Math.max(hl, hc, lc);
+  }
+  return result;
+}
+
+// ATR with Wilder smoothing (alpha = 1/period).
+//   ATR_{period-1} = SMA of TR_0..TR_{period-1}  (seed)
+//   ATR_i (i >= period) = (ATR_{i-1} * (period - 1) + TR_i) / period
+// Returns an array aligned to `bars`. Indices 0..period-2 are NaN (no warm-up).
+//
+// Note: this is NOT calcEMA. calcEMA uses alpha = 2/(period+1) (modern EMA);
+// Wilder's RMA uses alpha = 1/period. Mixing them yields ~half the smoothing
+// and breaks comparisons against TradingView/Twelve Data.
+export function calcATR(bars: Bar[], period: number): number[] {
+  if (!Number.isInteger(period) || period <= 0) {
+    throw new Error(
+      `calcATR: period must be a positive integer, got ${period}`,
+    );
+  }
+  const result: number[] = new Array(bars.length).fill(NaN);
+  if (bars.length < period) return result;
+
+  const tr = calcTrueRange(bars);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += tr[i];
+  result[period - 1] = sum / period;
+
+  for (let i = period; i < bars.length; i++) {
+    result[i] = (result[i - 1] * (period - 1) + tr[i]) / period;
+  }
+  return result;
+}
+
 export function aggregateOneFiveMinuteBucket(bars1m: Bar[]): Bar {
   if (bars1m.length !== 5) {
     throw new Error(

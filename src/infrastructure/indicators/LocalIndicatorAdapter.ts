@@ -1,10 +1,12 @@
 import type {
+  ATRInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
+  ATR,
   IndicatorInterval,
   MACD,
   SeriesType,
@@ -16,6 +18,7 @@ import type {
   BarInterval,
 } from '../../domain/marketdata/MarketDataTypes.js';
 import {
+  calcATR,
   calcMACD,
   calcSessionVWAP,
   toEasternDate,
@@ -80,6 +83,29 @@ export class LocalIndicatorAdapter implements IndicatorPort {
       );
     }
     return { value, timestamp: bars[bars.length - 1].timestamp };
+  }
+
+  async getATR(input: ATRInput): Promise<ATR> {
+    const period = input.period ?? 14;
+    if (!Number.isInteger(period) || period <= 0) {
+      throw new Error('ATR: period must be a positive integer');
+    }
+    const interval = mapToBarInterval(input.interval);
+    const bars = await this.loadBars(input.symbol, interval);
+    if (bars.length < period) {
+      throw new CacheUnderfilledError(
+        `LocalIndicator: insufficient data for ATR(${period}) on ${input.symbol}`,
+      );
+    }
+    const series = calcATR(bars, period);
+    for (let i = series.length - 1; i >= 0; i--) {
+      if (!Number.isNaN(series[i])) {
+        return { value: series[i], timestamp: bars[i].timestamp };
+      }
+    }
+    throw new CacheUnderfilledError(
+      `LocalIndicator: no valid ATR value on ${input.symbol}`,
+    );
   }
 
   private async loadBars(

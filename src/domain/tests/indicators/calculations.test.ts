@@ -2,11 +2,17 @@ import { describe, it, expect } from 'vitest';
 import type { Bar } from '../../marketdata/MarketDataTypes.js';
 import {
   aggregateOneFiveMinuteBucket,
+  calcATR,
   calcEMA,
   calcMACD,
   calcSessionVWAP,
+  calcTrueRange,
   toEasternDate,
 } from '../../indicators/calculations.js';
+
+function bar(high: number, low: number, close: number, ts = 't'): Bar {
+  return { timestamp: ts, open: close, high, low, close, volume: 0 };
+}
 
 describe('calcEMA', () => {
   it('returns all NaN when input shorter than period', () => {
@@ -72,6 +78,75 @@ describe('calcMACD', () => {
     const last = macd[macd.length - 1];
     expect(last.macd).toBeGreaterThan(0);
     expect(last.signal).toBeGreaterThan(0);
+  });
+});
+
+describe('calcTrueRange', () => {
+  it('returns empty array for empty input', () => {
+    expect(calcTrueRange([])).toEqual([]);
+  });
+
+  it('uses high - low for the first bar (no previous close)', () => {
+    const tr = calcTrueRange([bar(10, 8, 9)]);
+    expect(tr).toEqual([2]);
+  });
+
+  it('picks the max of the three branches for subsequent bars', () => {
+    // bar0: high=10, low=8, close=9             -> TR0 = 2 (h-l)
+    // bar1: gap up, h=12, l=11, c=11.5          -> hl=1, |h-pc|=3, |l-pc|=2 -> 3
+    // bar2: gap down + wide, h=10, l=7, c=8     -> hl=3, |h-pc|=1.5, |l-pc|=4.5 -> 4.5
+    const tr = calcTrueRange([bar(10, 8, 9), bar(12, 11, 11.5), bar(10, 7, 8)]);
+    expect(tr[0]).toBeCloseTo(2, 10);
+    expect(tr[1]).toBeCloseTo(3, 10);
+    expect(tr[2]).toBeCloseTo(4.5, 10);
+  });
+});
+
+describe('calcATR', () => {
+  it('throws on invalid period', () => {
+    expect(() => calcATR([bar(1, 0, 0.5)], 0)).toThrow();
+    expect(() => calcATR([bar(1, 0, 0.5)], -1)).toThrow();
+    expect(() => calcATR([bar(1, 0, 0.5)], 1.5)).toThrow();
+  });
+
+  it('returns all NaN when input shorter than period', () => {
+    const result = calcATR([bar(1, 0, 0.5), bar(1, 0, 0.5)], 3);
+    expect(result).toHaveLength(2);
+    expect(result.every(Number.isNaN)).toBe(true);
+  });
+
+  it('seeds with SMA of TR at index period-1', () => {
+    // Three bars, all with TR=2 (flat). Seed = SMA(2,2,2) = 2.
+    const bars = [bar(10, 8, 9), bar(10, 8, 9), bar(10, 8, 9)];
+    const atr = calcATR(bars, 3);
+    expect(Number.isNaN(atr[0])).toBe(true);
+    expect(Number.isNaN(atr[1])).toBe(true);
+    expect(atr[2]).toBeCloseTo(2, 10);
+  });
+
+  it('applies Wilder smoothing (alpha = 1/period), NOT modern EMA alpha = 2/(period+1)', () => {
+    // TRs: [2, 2, 2, 5]
+    //   ATR[2] = (2+2+2)/3       = 2   (seed)
+    //   ATR[3] = (2*2 + 5)/3     = 3   <- Wilder
+    //   EMA[3] = 0.5*5 + 0.5*2   = 3.5 <- would fail this test
+    const bars = [
+      bar(10, 8, 9),
+      bar(10, 8, 9),
+      bar(10, 8, 9),
+      bar(14, 9, 10), // prevClose=9 -> hl=5, hc=5, lc=0 -> TR=5
+    ];
+    const atr = calcATR(bars, 3);
+    expect(atr[2]).toBeCloseTo(2, 10);
+    expect(atr[3]).toBeCloseTo(3, 10);
+  });
+
+  it('converges to constant on a flat true-range series', () => {
+    const bars = new Array(20).fill(0).map(() => bar(10, 8, 9));
+    const atr = calcATR(bars, 14);
+    // Every TR is 2, so ATR should be 2 from the seed onward.
+    for (let i = 13; i < bars.length; i++) {
+      expect(atr[i]).toBeCloseTo(2, 10);
+    }
   });
 });
 

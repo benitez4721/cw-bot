@@ -107,6 +107,54 @@ describe('LocalIndicatorAdapter', () => {
     });
   });
 
+  describe('getATR', () => {
+    it('returns ATR on a flat series (TR=1 per bar -> ATR=1)', async () => {
+      // makeBars uses high = c + 0.5, low = c - 0.5, so a constant close
+      // yields TR = 1 every bar.
+      repo._set('AAPL', '1min', makeBars(new Array(20).fill(7)));
+      const atr = await adapter.getATR({ symbol: 'AAPL', interval: '1min' });
+      expect(atr.value).toBeCloseTo(1, 10);
+      expect(atr.timestamp).toBeDefined();
+    });
+
+    it('honors a custom period', async () => {
+      repo._set('AAPL', '1min', makeBars(new Array(10).fill(7)));
+      const atr = await adapter.getATR({
+        symbol: 'AAPL',
+        interval: '1min',
+        period: 5,
+      });
+      expect(atr.value).toBeCloseTo(1, 10);
+    });
+
+    it('throws CacheUnderfilledError when bars shorter than period', async () => {
+      repo._set('AAPL', '1min', makeBars([1, 2, 3, 4, 5]));
+      await expect(
+        adapter.getATR({ symbol: 'AAPL', interval: '1min' }),
+      ).rejects.toThrow(/insufficient/);
+    });
+
+    it('throws CacheUnderfilledError when no bars cached', async () => {
+      await expect(
+        adapter.getATR({ symbol: 'AAPL', interval: '1min' }),
+      ).rejects.toThrow(/no cached bars/);
+    });
+
+    it('rejects non-positive period', async () => {
+      repo._set('AAPL', '1min', makeBars(new Array(20).fill(7)));
+      await expect(
+        adapter.getATR({ symbol: 'AAPL', interval: '1min', period: 0 }),
+      ).rejects.toThrow(/positive integer/);
+    });
+
+    it('rejects unsupported intervals', async () => {
+      repo._set('AAPL', '1min', makeBars(new Array(20).fill(7)));
+      await expect(
+        adapter.getATR({ symbol: 'AAPL', interval: '15min' }),
+      ).rejects.toThrow(/not supported/);
+    });
+  });
+
   describe('getVWAP', () => {
     it('returns session VWAP for the current ET date', async () => {
       // Two 1m bars in the same ET session as the fixed clock (2026-05-07).

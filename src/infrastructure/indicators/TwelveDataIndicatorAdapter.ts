@@ -1,10 +1,15 @@
 import type {
+  ATRInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
-import type { MACD, VWAP } from '../../domain/indicators/IndicatorTypes.js';
+import type {
+  ATR,
+  MACD,
+  VWAP,
+} from '../../domain/indicators/IndicatorTypes.js';
 import type {
   TwelveDataClient,
   TwelveDataResponse,
@@ -37,6 +42,10 @@ export class TwelveDataIndicatorAdapter implements IndicatorPort {
     });
     const latest = pickLatest(data);
     return { value: parseNumber(latest['vwap']), timestamp: latest.datetime };
+  }
+
+  async getATR(_input: ATRInput): Promise<ATR> {
+    throw new Error('TwelveDataIndicatorAdapter: getATR not implemented');
   }
 
   private async requestMACD(

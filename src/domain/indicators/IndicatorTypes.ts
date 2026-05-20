@@ -23,3 +23,8 @@ export interface MACD {
   histogram: number;
   timestamp: string;
 }
+
+export interface ATR {
+  value: number;
+  timestamp: string;
+}
