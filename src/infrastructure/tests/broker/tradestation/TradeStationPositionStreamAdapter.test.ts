@@ -128,6 +128,7 @@ describe('TradeStationPositionStreamAdapter', () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.position).toEqual({
       symbol: 'AIIO',
+      accountId: 'SIM12345',
       quantity: 2000,
       averagePrice: 0.979,
       marketValue: 1660,

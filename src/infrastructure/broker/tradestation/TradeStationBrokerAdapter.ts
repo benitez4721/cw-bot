@@ -443,6 +443,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
 
     return (response.Positions ?? []).map((p) => ({
       symbol: p.Symbol,
+      accountId,
       quantity: parseNumber(p.Quantity),
       averagePrice: parseNumber(p.AveragePrice),
       marketValue: parseNumber(p.MarketValue),

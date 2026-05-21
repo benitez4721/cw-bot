@@ -56,22 +56,20 @@ export class FlattenAllPositions {
       return;
     }
 
-    // Orders se concatenan: orderId es único cross-account, así que
-    // `orders.find(id)` no se confunde. Positions se mantienen indexadas por
-    // accountId para que la búsqueda por symbol no cruce cuentas.
+    // Cada Position trae su `accountId` poblado por el adapter, así que
+    // podemos concatenar plano y filtrar por accountId al matchear contra el
+    // ctx. Orders se concatenan también: orderId es único cross-account.
     const ordersAndPositions = await Promise.all(
       this.accountIds.map(async (accountId) => {
         const [orders, positions] = await Promise.all([
           this.broker.getOrders({ accountId }),
           this.broker.getPositions({ accountId }),
         ]);
-        return { accountId, orders, positions };
+        return { orders, positions };
       }),
     );
     const orders = ordersAndPositions.flatMap((r) => r.orders);
-    const positionsByAccount = new Map<string, Position[]>(
-      ordersAndPositions.map((r) => [r.accountId, r.positions]),
-    );
+    const positions = ordersAndPositions.flatMap((r) => r.positions);
 
     // Filtra contexts legacy sin accountId persistido — no podemos resolver
     // SIM/LIVE para cancelar/Market. Quedan en Redis hasta que CheckOpenTrades
@@ -98,7 +96,6 @@ export class FlattenAllPositions {
         // Garantizado por el filter de arriba (todos los ctx del grupo
         // comparten el accountId del key).
         const accountId = ctxs[0].accountId!;
-        const positions = positionsByAccount.get(accountId) ?? [];
         return this.flattenSymbol(ctxs, accountId, orders, positions);
       }),
     );
@@ -112,7 +109,10 @@ export class FlattenAllPositions {
   ): Promise<void> {
     let marketOrderId: string | null = null;
     const position = positions.find(
-      (p) => p.symbol === contexts[0].symbol && p.quantity !== 0,
+      (p) =>
+        p.accountId === accountId &&
+        p.symbol === contexts[0].symbol &&
+        p.quantity !== 0,
     );
 
     for (const ctx of contexts) {

@@ -98,10 +98,9 @@ export class TradeStationPositionStreamAdapter implements PositionStreamPort {
     if (typeof f.Symbol !== 'string') return;
 
     const tsPos = f as unknown as TsStreamPosition;
-    const position = mapStreamPosition(tsPos);
+    const position = mapStreamPosition(tsPos, this.accountId);
     const event: PositionEvent = {
       position,
-      accountId: this.accountId,
       observedAt: new Date().toISOString(),
       origin: this.replayingPriorState ? 'priorState' : 'liveUpdate',
     };
@@ -115,12 +114,13 @@ export class TradeStationPositionStreamAdapter implements PositionStreamPort {
   }
 }
 
-function mapStreamPosition(p: TsStreamPosition): Position {
+function mapStreamPosition(p: TsStreamPosition, accountId: string): Position {
   // Por consistencia con el broker REST (getPositions), 'quantity' va sin signo.
   // El long/short del frame no se expone al dominio porque Position no lo
   // modela hoy; el lado se infiere del trade context si hace falta.
   return {
     symbol: p.Symbol ?? '',
+    accountId,
     quantity: parseNumber(p.Quantity),
     averagePrice: parseNumber(p.AveragePrice),
     marketValue: parseNumber(p.MarketValue),

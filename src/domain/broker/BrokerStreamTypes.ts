@@ -15,8 +15,9 @@ export interface OrderEvent {
 }
 
 export interface PositionEvent {
+  // `position.accountId` lleva la cuenta dueña de la posición — no se duplica
+  // en el wrapper del evento.
   position: Position;
-  accountId: string;
   observedAt: string;
   origin: EventOrigin;
 }

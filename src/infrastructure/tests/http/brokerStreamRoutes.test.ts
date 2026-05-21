@@ -149,12 +149,12 @@ function makePositionEvent(): PositionEvent {
   return {
     position: {
       symbol: 'AAPL',
+      accountId: 'SIM12345',
       quantity: 100,
       averagePrice: 187,
       marketValue: 18700,
       unrealizedPnL: 0,
     },
-    accountId: 'SIM12345',
     observedAt: '2026-05-10T18:00:00Z',
     origin: 'liveUpdate',
   };

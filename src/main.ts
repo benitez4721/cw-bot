@@ -121,7 +121,7 @@ async function main() {
   const positionStreamManagers = new Map(
     Array.from(positionStreamAdaptersByAccount, ([accountId, stream]) => [
       accountId,
-      new PositionStreamManager({ stream, accountId }),
+      new PositionStreamManager({ stream }),
     ]),
   );
 

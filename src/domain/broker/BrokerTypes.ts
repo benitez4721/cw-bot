@@ -35,6 +35,10 @@ export interface Order {
 
 export interface Position {
   symbol: string;
+  // TradeStation account dueño de la posición. Lo setea el adapter al mapear
+  // la respuesta del broker / el frame del stream. Preserva la dimensión
+  // account cuando varias cuentas se mezclan en una sola lista.
+  accountId: string;
   quantity: number;
   averagePrice: number;
   marketValue: number;

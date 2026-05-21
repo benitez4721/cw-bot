@@ -47,6 +47,7 @@ function makeOrder(over: Partial<Order> = {}): Order {
 function makePosition(over: Partial<Position> = {}): Position {
   return {
     symbol: 'AAPL',
+    accountId: 'SIM12345',
     quantity: 100,
     averagePrice: 100,
     marketValue: 10_000,
@@ -400,8 +401,12 @@ describe('FlattenAllPositions', () => {
       ],
     };
     const positionsByAccount: Record<string, Position[]> = {
-      'SIM-A': [makePosition({ symbol: 'AAPL', quantity: 100 })],
-      'SIM-B': [makePosition({ symbol: 'AAPL', quantity: 250 })],
+      'SIM-A': [
+        makePosition({ symbol: 'AAPL', accountId: 'SIM-A', quantity: 100 }),
+      ],
+      'SIM-B': [
+        makePosition({ symbol: 'AAPL', accountId: 'SIM-B', quantity: 250 }),
+      ],
     };
 
     const marketCalls: Array<{
