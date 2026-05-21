@@ -18,7 +18,7 @@ const strategy: EventStrategy = {
   cwConfigId: 'cfg',
   quantity: 2000,
   trailingStopPercent: 8,
-  entryBufferBps: 50,
+  entryBufferBps: 0,
   accountId: 'SIM12345',
 };
 
@@ -138,8 +138,8 @@ describe('OnScannerAlert.handle', () => {
       quantity: 2000,
       trailingStopPercent: 8,
     });
-    // ask 1.7 * (1 + 50/10_000) = 1.7085
-    expect(call.entryLimitPrice).toBeCloseTo(1.7085, 6);
+    // limit = ask 1.7 (sin cushion)
+    expect(call.entryLimitPrice).toBeCloseTo(1.7, 6);
 
     expect(f.tradeRepo.put).toHaveBeenCalledOnce();
     const persisted = f.tradeRepo.put.mock.calls[0][0] as TradeContext;
@@ -285,7 +285,7 @@ describe('OnScannerAlert.handle', () => {
     );
   });
 
-  it('cae a last cuando no hay ask', async () => {
+  it('sin ask rechaza la alerta aunque haya last', async () => {
     const f = setup({ quote: { ask: undefined, last: 2 } });
     const useCase = new OnScannerAlert({
       strategy,
@@ -299,8 +299,11 @@ describe('OnScannerAlert.handle', () => {
 
     await useCase.handle('ORGN');
 
-    const call = f.placeSpy.mock.calls[0][0];
-    // last 2 * (1 + 50/10_000) = 2.01
-    expect(call.entryLimitPrice).toBeCloseTo(2.01, 6);
+    expect(f.placeSpy).not.toHaveBeenCalled();
+    expect(f.tradeRepo.put).not.toHaveBeenCalled();
+    expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlert',
+      'rejected',
+    );
   });
 });

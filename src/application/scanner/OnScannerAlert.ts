@@ -67,12 +67,16 @@ export class OnScannerAlert {
 
     const accountId = this.strategy.accountId;
     const quote = await this.broker.getQuote({ symbol, accountId });
-    const reference = quote.ask ?? quote.last;
-    if (!Number.isFinite(reference) || reference <= 0) {
+    const reference = quote.ask;
+    if (
+      reference === undefined ||
+      !Number.isFinite(reference) ||
+      reference <= 0
+    ) {
       this.metrics.recordAlertOutcome(this.strategy.name, 'rejected');
       log.warn(
         { model: this.strategy.name, symbol, quote },
-        'alert dropped — quote has no usable ask/last',
+        'alert dropped — quote has no usable ask',
       );
       return;
     }
