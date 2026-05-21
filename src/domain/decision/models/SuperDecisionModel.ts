@@ -23,22 +23,15 @@ export class SuperDecisionModel implements DecisionModel<SuperSnapshot> {
   readonly name = 'Super';
   private readonly broker: BrokerPort;
   private readonly indicators: IndicatorPort;
-  // Account contra el que se resuelve `getQuote`. Cada strategy construye el
-  // modelo con el accountId que ella misma declara.
-  private readonly accountId: string;
 
-  constructor(deps: {
-    broker: BrokerPort;
-    indicators: IndicatorPort;
-    accountId: string;
-  }) {
+  constructor(deps: { broker: BrokerPort; indicators: IndicatorPort }) {
     this.broker = deps.broker;
     this.indicators = deps.indicators;
-    this.accountId = deps.accountId;
   }
 
   async buildSnapshot({
     symbol,
+    accountId,
     triggerBar,
   }: BuildSnapshotInput): Promise<SuperSnapshot> {
     const triggerBarTimestamp = triggerBar?.timestamp;
@@ -54,7 +47,7 @@ export class SuperDecisionModel implements DecisionModel<SuperSnapshot> {
     }
 
     const [quote, macd5minSeries, vwap] = await Promise.all([
-      this.broker.getQuote({ symbol, accountId: this.accountId }),
+      this.broker.getQuote({ symbol, accountId }),
       this.indicators.getMACDSeries({
         symbol,
         interval: '5min',

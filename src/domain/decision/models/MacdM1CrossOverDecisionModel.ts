@@ -30,26 +30,19 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
   readonly name = 'MacdM1CrossOver';
   private readonly broker: BrokerPort;
   private readonly indicators: IndicatorPort;
-  // Account contra el que se resuelve `getQuote`. Cada strategy construye el
-  // modelo con el accountId que ella misma declara.
-  private readonly accountId: string;
 
-  constructor(deps: {
-    broker: BrokerPort;
-    indicators: IndicatorPort;
-    accountId: string;
-  }) {
+  constructor(deps: { broker: BrokerPort; indicators: IndicatorPort }) {
     this.broker = deps.broker;
     this.indicators = deps.indicators;
-    this.accountId = deps.accountId;
   }
 
   async buildSnapshot({
     symbol,
+    accountId,
   }: BuildSnapshotInput): Promise<MacdM1CrossOverSnapshot> {
     const [quote, macd5min, macd1minSeries, vwap1min, atr5min] =
       await Promise.all([
-        this.broker.getQuote({ symbol, accountId: this.accountId }),
+        this.broker.getQuote({ symbol, accountId }),
         this.indicators.getMACD({ symbol, interval: '5min' }),
         this.indicators.getMACDSeries({ symbol, interval: '1min', limit: 2 }),
         this.indicators.getVWAP({ symbol, interval: '1min' }),

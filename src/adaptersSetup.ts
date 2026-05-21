@@ -125,22 +125,17 @@ export function setupAdapters(): Adapters {
   const superWatchlist = new RedisWatchlistRepository(redis, {
     keyPrefix: 'cw:wl:super',
   });
+  const superModel = new SuperDecisionModel({ broker, indicators });
   // Cada estrategia declara explícitamente contra qué cuenta opera. El env
   // `TRADESTATION_ACCOUNT_ID` se usa acá como bootstrap por convención;
   // cambialo por una cuenta distinta si querés rutear los trades a otra.
-  const superAccountId = env.TRADESTATION_ACCOUNT_ID!;
-  const superModel = new SuperDecisionModel({
-    broker,
-    indicators,
-    accountId: superAccountId,
-  });
   const superStrategy: ConfiguredStrategy = {
     name: 'Super',
     model: superModel,
     watchlist: superWatchlist,
     trailToBreakEvenAtProfit: 0.005,
     cwConfigId: '69f6bec1f52a7e93e345cd0c',
-    accountId: superAccountId,
+    accountId: env.TRADESTATION_ACCOUNT_ID!,
   };
 
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager

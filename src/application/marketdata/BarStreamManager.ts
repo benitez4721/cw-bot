@@ -468,8 +468,10 @@ export class BarStreamManager {
         return;
       }
 
+      const accountId = strategy.accountId;
       const snapshot = await strategy.model.buildSnapshot({
         symbol,
+        accountId,
         triggerBar: bar,
       });
       log.info({ model: strategy.name, snapshot }, 'evaluating snapshot');
@@ -478,8 +480,6 @@ export class BarStreamManager {
 
       this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
-
-      const accountId = strategy.accountId;
       const result = await this.placeBracketOrder.execute({
         symbol: signal.symbol,
         side: signal.side,
