@@ -90,7 +90,6 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeBracketOrder({
       symbol: 'DXF',
@@ -99,6 +98,7 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       entryLimitPrice: 1.63,
       stopOffset: 0.2,
       takeProfitOffset: 0.35,
+      accountId: 'SIM12345',
     });
 
     expect(result.status).not.toBe('rejected');
@@ -145,7 +145,6 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeBracketOrder({
       symbol: 'PAYS',
@@ -154,6 +153,7 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       entryLimitPrice: 5.72,
       stopOffset: 0.2,
       takeProfitOffset: 0.35,
+      accountId: 'SIM12345',
     });
 
     expect(result.entryOrderId).toBe('O-entry');
@@ -186,7 +186,6 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeBracketOrder({
       symbol: 'PAYS',
@@ -195,6 +194,7 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       entryLimitPrice: 5.72,
       stopOffset: 0.2,
       takeProfitOffset: 0.35,
+      accountId: 'SIM12345',
     });
 
     expect(result.status).toBe('rejected');
@@ -238,7 +238,6 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeBracketOrder({
       symbol: 'QCOM',
@@ -247,6 +246,7 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
       entryLimitPrice: 203.36,
       stopOffset: 2.03,
       takeProfitOffset: 5.08,
+      accountId: 'SIM12345',
     });
 
     expect(result.status).toBe('open');
@@ -268,7 +268,6 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
     } as unknown as TradeStationClient;
     return new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
   }
 
@@ -283,7 +282,7 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
       },
     ]);
 
-    const [order] = await broker.getOrders({});
+    const [order] = await broker.getOrders({ accountId: 'SIM12345' });
 
     expect(order?.filledPrice).toBe(1.23);
   });
@@ -306,7 +305,7 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
       },
     ]);
 
-    const [order] = await broker.getOrders({});
+    const [order] = await broker.getOrders({ accountId: 'SIM12345' });
 
     expect(order?.filledPrice).toBe(187.32);
   });
@@ -321,7 +320,7 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
       },
     ]);
 
-    const [order] = await broker.getOrders({});
+    const [order] = await broker.getOrders({ accountId: 'SIM12345' });
 
     expect(order?.filledPrice).toBeUndefined();
   });
@@ -338,7 +337,7 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
       },
     ]);
 
-    const [order] = await broker.getOrders({});
+    const [order] = await broker.getOrders({ accountId: 'SIM12345' });
 
     expect(order?.advancedOptions).toBe('Trailing Stop');
   });
@@ -354,7 +353,7 @@ describe('TradeStationBrokerAdapter.getOrders', () => {
       },
     ]);
 
-    const [order] = await broker.getOrders({});
+    const [order] = await broker.getOrders({ accountId: 'SIM12345' });
 
     expect(order?.advancedOptions).toBeUndefined();
   });
@@ -411,7 +410,6 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeTrailingBracketOrder({
       symbol: 'ORGN',
@@ -419,6 +417,7 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
       quantity: 2000,
       entryLimitPrice: 1.7,
       trailingStopPercent: 8,
+      accountId: 'SIM12345',
     });
 
     expect(result.status).not.toBe('rejected');
@@ -469,7 +468,6 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeTrailingBracketOrder({
       symbol: 'ORGN',
@@ -477,6 +475,7 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
       quantity: 2000,
       entryLimitPrice: 1.7,
       trailingStopPercent: 8,
+      accountId: 'SIM12345',
     });
 
     expect(result.stopOrderId).toBe('O-stop');
@@ -493,7 +492,6 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
 
     const broker = new TradeStationBrokerAdapter({
       client,
-      defaultAccountId: 'SIM12345',
     });
     const result = await broker.placeTrailingBracketOrder({
       symbol: 'ORGN',
@@ -501,6 +499,7 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
       quantity: 2000,
       entryLimitPrice: 1.7,
       trailingStopPercent: 8,
+      accountId: 'SIM12345',
     });
 
     expect(result.status).toBe('rejected');

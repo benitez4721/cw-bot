@@ -99,23 +99,13 @@ interface TsCancelOrderResponse {
 
 export interface TradeStationBrokerAdapterOptions {
   client: TradeStationClient;
-  // Cuenta default cuando el input no especifica accountId. Es el valor de
-  // env.TRADESTATION_ACCOUNT_ID y se usa como fallback para estrategias /
-  // contexts sin override.
-  defaultAccountId: string;
 }
 
 export class TradeStationBrokerAdapter implements BrokerPort {
   private readonly client: TradeStationClient;
-  private readonly defaultAccountId: string;
 
   constructor(options: TradeStationBrokerAdapterOptions) {
     this.client = options.client;
-    this.defaultAccountId = options.defaultAccountId;
-  }
-
-  private resolveAccountId(accountId: string | undefined): string {
-    return accountId ?? this.defaultAccountId;
   }
 
   tokenStatus(): TokenStatus {
@@ -138,7 +128,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
         ? round2(cost + input.takeProfitOffset)
         : round2(cost - input.takeProfitOffset);
 
-    const accountId = this.resolveAccountId(input.accountId);
+    const accountId = input.accountId;
     const exitLeg = {
       AccountID: accountId,
       Symbol: input.symbol,
@@ -303,7 +293,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
   ): Promise<BracketOrderResult> {
     const cost = round2(input.entryLimitPrice);
     const exitSide: OrderSide = input.side === 'BUY' ? 'SELL' : 'BUY';
-    const accountId = this.resolveAccountId(input.accountId);
+    const accountId = input.accountId;
 
     const payload: Record<string, unknown> = {
       AccountID: accountId,
@@ -441,8 +431,8 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     };
   }
 
-  async getPositions(input: GetPositionsInput = {}): Promise<Position[]> {
-    const accountId = this.resolveAccountId(input.accountId);
+  async getPositions(input: GetPositionsInput): Promise<Position[]> {
+    const accountId = input.accountId;
     const account = encodeURIComponent(accountId);
     const response = await this.client.request<{ Positions?: TsPosition[] }>({
       method: 'GET',
@@ -460,11 +450,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     }));
   }
 
-  async getOrders({
-    symbol,
-    accountId: accountIdInput,
-  }: GetOrdersInput): Promise<Order[]> {
-    const accountId = this.resolveAccountId(accountIdInput);
+  async getOrders({ symbol, accountId }: GetOrdersInput): Promise<Order[]> {
     const account = encodeURIComponent(accountId);
     const path = symbol
       ? `/v3/brokerage/accounts/${account}/orders?Symbol=${encodeURIComponent(symbol)}`
@@ -483,9 +469,8 @@ export class TradeStationBrokerAdapter implements BrokerPort {
   async replaceStopPrice({
     orderId,
     stopPrice,
-    accountId: accountIdInput,
+    accountId,
   }: ReplaceStopPriceInput): Promise<void> {
-    const accountId = this.resolveAccountId(accountIdInput);
     await this.client.request<unknown>({
       method: 'PUT',
       path: `/v3/orderexecution/orders/${encodeURIComponent(orderId)}`,
@@ -500,11 +485,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
   // (terminal-state path observed in V2 and consistent with placeBracketOrder
   // V3 behavior). Both paths are swallowed with a warn so callers can fan out
   // cancels without racing on each individual leg's state.
-  async cancelOrder({
-    orderId,
-    accountId: accountIdInput,
-  }: CancelOrderInput): Promise<void> {
-    const accountId = this.resolveAccountId(accountIdInput);
+  async cancelOrder({ orderId, accountId }: CancelOrderInput): Promise<void> {
     try {
       const response = await this.client.request<TsCancelOrderResponse>({
         method: 'DELETE',
@@ -530,9 +511,8 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     symbol,
     quantity,
     side,
-    accountId: accountIdInput,
+    accountId,
   }: PlaceMarketOrderInput): Promise<OrderResult> {
-    const accountId = this.resolveAccountId(accountIdInput);
     const payload = {
       AccountID: accountId,
       Symbol: symbol,
@@ -575,11 +555,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     };
   }
 
-  async getQuote({
-    symbol,
-    accountId: accountIdInput,
-  }: GetQuoteInput): Promise<Quote> {
-    const accountId = this.resolveAccountId(accountIdInput);
+  async getQuote({ symbol, accountId }: GetQuoteInput): Promise<Quote> {
     const response = await this.client.request<TsQuoteResponse>({
       method: 'GET',
       path: `/v3/marketdata/quotes/${encodeURIComponent(symbol)}`,

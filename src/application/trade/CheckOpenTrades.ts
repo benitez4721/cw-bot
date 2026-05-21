@@ -19,9 +19,6 @@ export interface CheckOpenTradesDeps {
   tradeRepo: TradeContextRepository;
   broker: BrokerPort;
   closeTrade: CloseTrade;
-  // Default cuando un ctx legacy no tiene `accountId` persistido. Inyectado
-  // desde main.ts (env.TRADESTATION_ACCOUNT_ID).
-  defaultAccountId: string;
 }
 
 // Checks whether (model, symbol) still has an open trade. Reconciles the
@@ -32,13 +29,11 @@ export class CheckOpenTrades {
   private readonly tradeRepo: TradeContextRepository;
   private readonly broker: BrokerPort;
   private readonly closeTrade: CloseTrade;
-  private readonly defaultAccountId: string;
 
   constructor(deps: CheckOpenTradesDeps) {
     this.tradeRepo = deps.tradeRepo;
     this.broker = deps.broker;
     this.closeTrade = deps.closeTrade;
-    this.defaultAccountId = deps.defaultAccountId;
   }
 
   async execute({
@@ -51,10 +46,13 @@ export class CheckOpenTrades {
 
     // Los contexts de (model, symbol) normalmente comparten el mismo
     // accountId (la strategy lo decide), pero por seguridad consultamos por
-    // cada accountId distinto presente en los contexts.
-    const accountIdsToQuery = new Set(
-      contexts.map((c) => c.accountId ?? this.defaultAccountId),
-    );
+    // cada accountId distinto presente en los contexts. Los contexts legacy
+    // sin accountId persistido no se pueden verificar contra el broker — el
+    // loop de abajo los marca como cerrados con un warn.
+    const accountIdsToQuery = new Set<string>();
+    for (const c of contexts) {
+      if (c.accountId) accountIdsToQuery.add(c.accountId);
+    }
     const ordersByAccount = await Promise.all(
       Array.from(accountIdsToQuery).map((accountId) =>
         this.broker.getOrders({ symbol, accountId }),
@@ -67,6 +65,19 @@ export class CheckOpenTrades {
 
     let stillExposed = false;
     for (const ctx of contexts) {
+      if (!ctx.accountId) {
+        // No tenemos accountId → no podemos confirmar contra el broker.
+        // Cerramos el context (CloseTrade) y dejamos que la siguiente
+        // evaluación abra un nuevo trade si corresponde.
+        log.warn(
+          {
+            model,
+            symbol,
+            entryOrderId: ctx.bracket.entryOrderId,
+          },
+          'legacy trade context without accountId — closing without broker check',
+        );
+      }
       const bracketIds = [
         ctx.bracket.entryOrderId,
         ctx.bracket.stopOrderId,
@@ -76,7 +87,8 @@ export class CheckOpenTrades {
         // el context con la posición aún en transición.
         ctx.bracket.forcedExitOrderId,
       ].filter((id): id is string => !!id);
-      const hasActive = bracketIds.some((id) => activeOrderIds.has(id));
+      const hasActive =
+        !!ctx.accountId && bracketIds.some((id) => activeOrderIds.has(id));
       if (hasActive) {
         stillExposed = true;
         continue;

@@ -19,6 +19,7 @@ const strategy: EventStrategy = {
   quantity: 2000,
   trailingStopPercent: 8,
   entryBufferBps: 50,
+  accountId: 'SIM12345',
 };
 
 function makeMetrics(): MetricsPort & {
@@ -118,7 +119,6 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({});
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -161,7 +161,6 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ stillExposed: true });
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -191,7 +190,6 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ stillExposed: false });
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -225,7 +223,6 @@ describe('OnScannerAlert.handle', () => {
     });
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -247,7 +244,6 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ quote: { ask: undefined, last: 0 } });
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -269,7 +265,6 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ marketOpen: false });
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,
@@ -294,7 +289,6 @@ describe('OnScannerAlert.handle', () => {
     const f = setup({ quote: { ask: undefined, last: 2 } });
     const useCase = new OnScannerAlert({
       strategy,
-      defaultAccountId: 'SIM12345',
       broker: f.broker,
       placeTrailingBracketOrder: f.placeTrailing,
       tradeRepo: f.tradeRepo,

@@ -54,7 +54,7 @@ async function main() {
     redis,
     metrics,
     broker,
-    defaultAccountId,
+    accountIds,
     orderStreamAdaptersByAccount,
     positionStreamAdaptersByAccount,
     tradeRepo,
@@ -91,7 +91,6 @@ async function main() {
     tradeRepo,
     broker,
     closeTrade,
-    defaultAccountId,
   });
   const maybeMoveStopToBreakEven = new MaybeMoveStopToBreakEven({
     tradeRepo,
@@ -103,7 +102,7 @@ async function main() {
       repository: s.watchlist,
     })),
   );
-  const getOrders = new GetOrders(broker, tradeRepo);
+  const getOrders = new GetOrders(broker, accountIds, tradeRepo);
 
   // Un manager por accountId. Cada uno mantiene su propio websocket y
   // snapshot in-memory. brokerStreamRoutes hace fan-out sobre el Map para
@@ -129,7 +128,6 @@ async function main() {
   const alertManagers = eventStrategies.map((strategy) => {
     const onAlert = new OnScannerAlert({
       strategy,
-      defaultAccountId,
       broker,
       placeTrailingBracketOrder,
       tradeRepo,
@@ -145,14 +143,18 @@ async function main() {
     });
   });
 
-  const flattenAll = new FlattenAllPositions({ broker, tradeRepo, metrics });
+  const flattenAll = new FlattenAllPositions({
+    broker,
+    accountIds,
+    tradeRepo,
+    metrics,
+  });
 
   const barStream = new BarStreamManager({
     feed: marketFeed,
     historicalBars,
     barRepo,
     strategies,
-    defaultAccountId,
     placeBracketOrder,
     recordTradeContext,
     checkOpenTrades,

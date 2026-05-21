@@ -9,6 +9,7 @@ import {
 const DEPS = {
   broker: {} as BrokerPort,
   indicators: {} as IndicatorPort,
+  accountId: 'SIM12345',
 };
 
 function snapshot(

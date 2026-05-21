@@ -9,6 +9,7 @@ import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 function makeContext(over: Partial<TradeContext> = {}): TradeContext {
   return {
     model: 'm',
+    accountId: 'SIM12345',
     symbol: 'AAPL',
     side: 'BUY',
     entryLimitPrice: 100,
@@ -72,7 +73,6 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
       broker,
       tradeRepo,
       closeTrade,
-      defaultAccountId: 'SIM12345',
     });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
@@ -94,7 +94,6 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
       broker,
       tradeRepo,
       closeTrade,
-      defaultAccountId: 'SIM12345',
     });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
@@ -112,7 +111,6 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
       broker,
       tradeRepo,
       closeTrade,
-      defaultAccountId: 'SIM12345',
     });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });

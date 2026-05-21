@@ -12,6 +12,7 @@ const strategy: EventStrategy = {
   quantity: 2000,
   trailingStopPercent: 8,
   entryBufferBps: 50,
+  accountId: 'SIM12345',
 };
 
 class FakeFeed implements ScannerFeedPort {

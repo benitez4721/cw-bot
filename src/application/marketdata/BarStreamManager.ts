@@ -56,9 +56,6 @@ export interface BarStreamManagerOptions {
   historicalBars: HistoricalBarsPort;
   barRepo: BarRepository;
   strategies: DecisionStrategy[];
-  // Account default cuando una `strategy.accountId` viene undefined. Es el
-  // valor de env.TRADESTATION_ACCOUNT_ID inyectado desde main.ts.
-  defaultAccountId: string;
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
   checkOpenTrades: CheckOpenTrades;
@@ -89,7 +86,6 @@ export class BarStreamManager {
   private readonly historicalBars: HistoricalBarsPort;
   private readonly barRepo: BarRepository;
   private readonly strategies: DecisionStrategy[];
-  private readonly defaultAccountId: string;
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
   private readonly checkOpenTrades: CheckOpenTrades;
@@ -123,7 +119,6 @@ export class BarStreamManager {
     this.historicalBars = options.historicalBars;
     this.barRepo = options.barRepo;
     this.strategies = options.strategies;
-    this.defaultAccountId = options.defaultAccountId;
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
     this.checkOpenTrades = options.checkOpenTrades;
@@ -484,7 +479,7 @@ export class BarStreamManager {
       this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
 
-      const accountId = strategy.accountId ?? this.defaultAccountId;
+      const accountId = strategy.accountId;
       const result = await this.placeBracketOrder.execute({
         symbol: signal.symbol,
         side: signal.side,

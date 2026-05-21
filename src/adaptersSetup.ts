@@ -32,11 +32,10 @@ export interface Adapters {
   redis: Redis;
   metrics: PrometheusMetricsAdapter;
   broker: TradeStationBrokerAdapter;
-  // Cuentas TradeStation activas. Incluye el default del env y cualquier
-  // `accountId` declarado por DecisionStrategy / EventStrategy. El composition
-  // root construye un stream adapter por cada entry y un Manager por encima.
+  // Unión de los `accountId` declarados por las estrategias activas. Por cada
+  // accountId distinto se abre un websocket de orders y otro de positions
+  // (cada stream TS es por cuenta).
   accountIds: readonly string[];
-  defaultAccountId: string;
   // Un stream adapter por accountId. Cada uno encapsula UN websocket contra
   // el endpoint /v3/brokerage/stream/accounts/{accountId}/{orders,positions}.
   orderStreamAdaptersByAccount: ReadonlyMap<
@@ -68,8 +67,6 @@ export function setupAdapters(): Adapters {
     log.warn({ err: err.message }, 'redis error');
   });
 
-  const defaultAccountId = env.TRADESTATION_ACCOUNT_ID!;
-
   const tradeStationClient = new TradeStationClient({
     clientId: env.TRADESTATION_CLIENT_ID!,
     clientSecret: env.TRADESTATION_CLIENT_SECRET || '',
@@ -80,10 +77,7 @@ export function setupAdapters(): Adapters {
     metrics,
   });
 
-  const broker = new TradeStationBrokerAdapter({
-    client: tradeStationClient,
-    defaultAccountId,
-  });
+  const broker = new TradeStationBrokerAdapter({ client: tradeStationClient });
 
   const tradeRepo = new RedisTradeContextRepository(redis);
   const barRepo = new RedisBarRepository(redis);
@@ -131,13 +125,22 @@ export function setupAdapters(): Adapters {
   const superWatchlist = new RedisWatchlistRepository(redis, {
     keyPrefix: 'cw:wl:super',
   });
-  const superModel = new SuperDecisionModel({ broker, indicators });
+  // Cada estrategia declara explícitamente contra qué cuenta opera. El env
+  // `TRADESTATION_ACCOUNT_ID` se usa acá como bootstrap por convención;
+  // cambialo por una cuenta distinta si querés rutear los trades a otra.
+  const superAccountId = env.TRADESTATION_ACCOUNT_ID!;
+  const superModel = new SuperDecisionModel({
+    broker,
+    indicators,
+    accountId: superAccountId,
+  });
   const superStrategy: ConfiguredStrategy = {
     name: 'Super',
     model: superModel,
     watchlist: superWatchlist,
     trailToBreakEvenAtProfit: 0.005,
     cwConfigId: '69f6bec1f52a7e93e345cd0c',
+    accountId: superAccountId,
   };
 
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
@@ -149,21 +152,25 @@ export function setupAdapters(): Adapters {
     quantity: 2000,
     trailingStopPercent: 8,
     entryBufferBps: 50,
+    accountId: env.TRADESTATION_ACCOUNT_ID!,
   };
 
   const strategies = [superStrategy];
   const eventStrategies = [highOfDayAlert];
 
-  // Set de cuentas TradeStation activas: el default del env + cualquier
-  // override declarado por estrategia. Por cada accountId distinto se abre
-  // un websocket de orders y otro de positions (cada stream TS es por cuenta).
+  // Unión de cuentas declaradas por las estrategias. Por cada accountId
+  // distinto se abre un websocket de orders y otro de positions.
   const accountIds: readonly string[] = Array.from(
     new Set<string>([
-      defaultAccountId,
-      ...strategies.flatMap((s) => (s.accountId ? [s.accountId] : [])),
-      ...eventStrategies.flatMap((s) => (s.accountId ? [s.accountId] : [])),
+      ...strategies.map((s) => s.accountId),
+      ...eventStrategies.map((s) => s.accountId),
     ]),
   );
+  if (accountIds.length === 0) {
+    throw new Error(
+      'no accountIds configured — at least one strategy must declare accountId',
+    );
+  }
 
   const orderStreamAdaptersByAccount = new Map(
     accountIds.map((accountId) => [
@@ -189,7 +196,6 @@ export function setupAdapters(): Adapters {
     metrics,
     broker,
     accountIds,
-    defaultAccountId,
     orderStreamAdaptersByAccount,
     positionStreamAdaptersByAccount,
     tradeRepo,

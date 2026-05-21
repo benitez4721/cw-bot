@@ -4,5 +4,5 @@ export interface EventStrategy {
   readonly quantity: number;
   readonly trailingStopPercent: number;
   readonly entryBufferBps: number;
-  readonly accountId?: string;
+  readonly accountId: string;
 }

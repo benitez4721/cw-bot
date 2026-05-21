@@ -15,9 +15,10 @@ export interface TradeContextBracket {
 
 export interface TradeContext {
   model: string;
-  // TradeStation account contra el que se enviaron las órdenes. Opcional para
-  // compat con contexts persistidos antes del refactor multi-account: los
-  // consumers resuelven `ctx.accountId ?? defaultAccountId` al elegir broker.
+  // TradeStation account contra el que se enviaron las órdenes. Opcional sólo
+  // por compat con contexts persistidos antes del refactor multi-account; los
+  // contexts nuevos siempre lo traen (lo declara la strategy). Los consumers
+  // skipean los ctx sin accountId — no se puede resolver broker sin él.
   accountId?: string;
   symbol: string;
   side: OrderSide;

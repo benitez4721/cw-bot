@@ -56,9 +56,8 @@ export interface BracketOrderInput {
   entryLimitPrice: number;
   stopOffset: number;
   takeProfitOffset: number;
-  // Override de cuenta para esta orden. Si se omite, el adapter usa el
-  // defaultAccountId inyectado en su constructor.
-  accountId?: string;
+  // Cuenta TradeStation contra la que se envía la orden. Obligatorio.
+  accountId: string;
 }
 
 export interface TrailingBracketOrderInput {
@@ -67,7 +66,7 @@ export interface TrailingBracketOrderInput {
   side: OrderSide;
   entryLimitPrice: number;
   trailingStopPercent: number;
-  accountId?: string;
+  accountId: string;
 }
 
 export interface BracketOrderResult {

@@ -3,6 +3,7 @@ import type {
   Order,
   OrderSide,
   OrderStatus,
+  Position,
 } from '../../domain/broker/BrokerTypes.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
@@ -13,13 +14,16 @@ const log = logger.child({ component: 'FlattenAllPositions' });
 
 export interface FlattenAllPositionsDeps {
   broker: BrokerPort;
+  // Set de cuentas a barrer al traer orders/positions. Es la unión de los
+  // `accountId` declarados por las estrategias activas.
+  accountIds: readonly string[];
   tradeRepo: TradeContextRepository;
   metrics: MetricsPort;
 }
 
 // Cierre forzado pre-close de todas las posiciones / entries abiertos del bot.
 //
-// Por cada TradeContext activo (cross-model, cross-symbol):
+// Por cada TradeContext activo (cross-model, cross-symbol, cross-account):
 //   - Entry pendiente sin llenar → cancelOrder(entry). El OSO BRK cancela los
 //     exits automáticamente.
 //   - Posición abierta → cancela stop+TP del bracket y envía un Market opuesto
@@ -27,46 +31,84 @@ export interface FlattenAllPositionsDeps {
 //     `forcedExitOrderId` del TradeContext para que el dashboard agrupe el
 //     Market con el bracket original (4ta pierna del trade).
 //
-// Multi-context por símbolo (multi-estrategia) → un único Market por símbolo
-// y se propaga el mismo forcedExitOrderId a cada context del símbolo.
+// Multi-context por (accountId, symbol) → un único Market por (accountId,
+// symbol) y se propaga el mismo forcedExitOrderId a cada context del grupo.
+// Dos estrategias en accounts distintos con AAPL se cierran independientes
+// (cada account envía su propio Market) porque la position se busca solo en
+// el snapshot del accountId del grupo.
 export class FlattenAllPositions {
   private readonly broker: BrokerPort;
+  private readonly accountIds: readonly string[];
   private readonly tradeRepo: TradeContextRepository;
   private readonly metrics: MetricsPort;
 
   constructor(deps: FlattenAllPositionsDeps) {
     this.broker = deps.broker;
+    this.accountIds = deps.accountIds;
     this.tradeRepo = deps.tradeRepo;
     this.metrics = deps.metrics;
   }
 
   async execute(): Promise<void> {
-    const [orders, positions, activeContexts] = await Promise.all([
-      this.broker.getOrders({}),
-      this.broker.getPositions(),
-      this.tradeRepo.listAllActive(),
-    ]);
-
+    const activeContexts = await this.tradeRepo.listAllActive();
     if (activeContexts.length === 0) {
       log.info('no active trade contexts; nothing to flatten');
       return;
     }
 
-    const bySymbol = groupBySymbol(activeContexts);
+    // Orders se concatenan: orderId es único cross-account, así que
+    // `orders.find(id)` no se confunde. Positions se mantienen indexadas por
+    // accountId para que la búsqueda por symbol no cruce cuentas.
+    const ordersAndPositions = await Promise.all(
+      this.accountIds.map(async (accountId) => {
+        const [orders, positions] = await Promise.all([
+          this.broker.getOrders({ accountId }),
+          this.broker.getPositions({ accountId }),
+        ]);
+        return { accountId, orders, positions };
+      }),
+    );
+    const orders = ordersAndPositions.flatMap((r) => r.orders);
+    const positionsByAccount = new Map<string, Position[]>(
+      ordersAndPositions.map((r) => [r.accountId, r.positions]),
+    );
 
-    // Cross-symbol en paralelo; mismo símbolo serial para no carrera con
-    // qty agregada (un solo Market opuesto por símbolo).
+    // Filtra contexts legacy sin accountId persistido — no podemos resolver
+    // SIM/LIVE para cancelar/Market. Quedan en Redis hasta que CheckOpenTrades
+    // los cierre (vence el TTL en pocos días).
+    const flattenable = activeContexts.filter((ctx) => {
+      if (ctx.accountId) return true;
+      log.warn(
+        {
+          symbol: ctx.symbol,
+          model: ctx.model,
+          entryOrderId: ctx.bracket.entryOrderId,
+        },
+        'skipping legacy trade context without accountId',
+      );
+      return false;
+    });
+
+    const byAccountSymbol = groupByAccountAndSymbol(flattenable);
+
+    // Cross-grupo en paralelo; serial dentro del grupo (un solo Market
+    // opuesto por (account, symbol) con qty agregada).
     await Promise.allSettled(
-      Array.from(bySymbol.values()).map((ctxs) =>
-        this.flattenSymbol(ctxs, orders, positions),
-      ),
+      Array.from(byAccountSymbol.values()).map((ctxs) => {
+        // Garantizado por el filter de arriba (todos los ctx del grupo
+        // comparten el accountId del key).
+        const accountId = ctxs[0].accountId!;
+        const positions = positionsByAccount.get(accountId) ?? [];
+        return this.flattenSymbol(ctxs, accountId, orders, positions);
+      }),
     );
   }
 
   private async flattenSymbol(
     contexts: TradeContext[],
+    accountId: string,
     orders: Order[],
-    positions: Awaited<ReturnType<BrokerPort['getPositions']>>,
+    positions: Position[],
   ): Promise<void> {
     let marketOrderId: string | null = null;
     const position = positions.find(
@@ -81,7 +123,7 @@ export class FlattenAllPositions {
         try {
           await this.broker.cancelOrder({
             orderId: ctx.bracket.entryOrderId,
-            accountId: ctx.accountId,
+            accountId,
           });
           this.metrics.recordFlattenOutcome('cancelled');
           log.info(
@@ -123,11 +165,11 @@ export class FlattenAllPositions {
       ].filter((id): id is string => !!id);
       await Promise.allSettled(
         exitIds.map((orderId) =>
-          this.broker.cancelOrder({ orderId, accountId: ctx.accountId }),
+          this.broker.cancelOrder({ orderId, accountId }),
         ),
       );
 
-      // Solo el primer ctx del símbolo envía el Market (qty agregada).
+      // Solo el primer ctx del grupo envía el Market (qty agregada).
       // Los siguientes reusan el mismo forcedExitOrderId.
       if (!marketOrderId) {
         const side: OrderSide = position.quantity > 0 ? 'SELL' : 'BUY';
@@ -137,7 +179,7 @@ export class FlattenAllPositions {
             symbol: ctx.symbol,
             quantity: qty,
             side,
-            accountId: ctx.accountId,
+            accountId,
           });
           if (
             !result.orderId ||
@@ -202,12 +244,16 @@ function isOrderActive(status: OrderStatus): boolean {
   );
 }
 
-function groupBySymbol(contexts: TradeContext[]): Map<string, TradeContext[]> {
+// Asume que cada ctx tiene `accountId` seteado (el caller filtra legacy).
+function groupByAccountAndSymbol(
+  contexts: TradeContext[],
+): Map<string, TradeContext[]> {
   const out = new Map<string, TradeContext[]>();
   for (const ctx of contexts) {
-    const bucket = out.get(ctx.symbol) ?? [];
+    const key = `${ctx.accountId}:${ctx.symbol}`;
+    const bucket = out.get(key) ?? [];
     bucket.push(ctx);
-    out.set(ctx.symbol, bucket);
+    out.set(key, bucket);
   }
   return out;
 }

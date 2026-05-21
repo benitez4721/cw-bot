@@ -13,6 +13,7 @@ import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 function makeContext(over: Partial<TradeContext> = {}): TradeContext {
   return {
     model: 'test-model',
+    accountId: 'SIM12345',
     symbol: 'AAPL',
     side: 'BUY',
     entryLimitPrice: 100,
@@ -111,7 +112,12 @@ function setup(overrides: {
   } as unknown as TradeContextRepository;
 
   const metrics = makeMetrics();
-  const flatten = new FlattenAllPositions({ broker, tradeRepo, metrics });
+  const flatten = new FlattenAllPositions({
+    broker,
+    accountIds: ['SIM12345'],
+    tradeRepo,
+    metrics,
+  });
   return { broker, tradeRepo, metrics, flatten };
 }
 
@@ -134,7 +140,10 @@ describe('FlattenAllPositions', () => {
 
     await s.flatten.execute();
 
-    expect(s.broker.cancelOrder).toHaveBeenCalledWith({ orderId: 'E1' });
+    expect(s.broker.cancelOrder).toHaveBeenCalledWith({
+      orderId: 'E1',
+      accountId: 'SIM12345',
+    });
     expect(s.broker.placeMarketOrder).not.toHaveBeenCalled();
     expect(s.tradeRepo.put).not.toHaveBeenCalled();
     expect(s.metrics.recordFlattenOutcome).toHaveBeenCalledWith('cancelled');
@@ -152,14 +161,21 @@ describe('FlattenAllPositions', () => {
     await s.flatten.execute();
 
     // Cancela ambos exits del bracket
-    expect(s.broker.cancelOrder).toHaveBeenCalledWith({ orderId: 'S1' });
-    expect(s.broker.cancelOrder).toHaveBeenCalledWith({ orderId: 'T1' });
+    expect(s.broker.cancelOrder).toHaveBeenCalledWith({
+      orderId: 'S1',
+      accountId: 'SIM12345',
+    });
+    expect(s.broker.cancelOrder).toHaveBeenCalledWith({
+      orderId: 'T1',
+      accountId: 'SIM12345',
+    });
 
     // Market opuesto a LONG → SELL con qty=100
     expect(s.broker.placeMarketOrder).toHaveBeenCalledWith({
       symbol: 'AAPL',
       quantity: 100,
       side: 'SELL',
+      accountId: 'SIM12345',
     });
 
     // Persiste forcedExitOrderId en el context
@@ -187,6 +203,7 @@ describe('FlattenAllPositions', () => {
       symbol: 'AAPL',
       quantity: 50,
       side: 'BUY',
+      accountId: 'SIM12345',
     });
     expect(s.tradeRepo.put).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -269,6 +286,7 @@ describe('FlattenAllPositions', () => {
       symbol: 'AAPL',
       quantity: 200,
       side: 'SELL',
+      accountId: 'SIM12345',
     });
 
     // Ambos contexts persistidos con el mismo forcedExitOrderId
@@ -343,5 +361,123 @@ describe('FlattenAllPositions', () => {
     expect(s.broker.cancelOrder).not.toHaveBeenCalled();
     expect(s.broker.placeMarketOrder).not.toHaveBeenCalled();
     expect(s.tradeRepo.put).not.toHaveBeenCalled();
+  });
+
+  it('cross-account: dos AAPL en accounts distintos se cierran independientes', async () => {
+    // Dos contexts con mismo símbolo en accounts distintos. Cada account
+    // tiene su propia posición de AAPL y debe recibir su propio Market —
+    // si se confundieran, uno se cerraría con la qty del otro.
+    const ctxA = makeContext({
+      model: 'A',
+      accountId: 'SIM-A',
+      bracket: {
+        entryOrderId: 'E-A',
+        stopOrderId: 'S-A',
+        takeProfitOrderId: 'T-A',
+      },
+    });
+    const ctxB = makeContext({
+      model: 'B',
+      accountId: 'SIM-B',
+      bracket: {
+        entryOrderId: 'E-B',
+        stopOrderId: 'S-B',
+        takeProfitOrderId: 'T-B',
+      },
+    });
+
+    // Tracking por accountId de lo que devuelve el broker.
+    const ordersByAccount: Record<string, Order[]> = {
+      'SIM-A': [
+        makeOrder({ id: 'E-A', status: 'filled' }),
+        makeOrder({ id: 'S-A', status: 'open' }),
+        makeOrder({ id: 'T-A', status: 'open' }),
+      ],
+      'SIM-B': [
+        makeOrder({ id: 'E-B', status: 'filled' }),
+        makeOrder({ id: 'S-B', status: 'open' }),
+        makeOrder({ id: 'T-B', status: 'open' }),
+      ],
+    };
+    const positionsByAccount: Record<string, Position[]> = {
+      'SIM-A': [makePosition({ symbol: 'AAPL', quantity: 100 })],
+      'SIM-B': [makePosition({ symbol: 'AAPL', quantity: 250 })],
+    };
+
+    const marketCalls: Array<{
+      accountId: string | undefined;
+      qty: number;
+    }> = [];
+    const cancelCalls: Array<{
+      orderId: string;
+      accountId: string | undefined;
+    }> = [];
+
+    const broker = {
+      getOrders: vi.fn(async (input: { accountId?: string }) => {
+        return ordersByAccount[input.accountId ?? ''] ?? [];
+      }),
+      getPositions: vi.fn(async (input?: { accountId?: string }) => {
+        return positionsByAccount[input?.accountId ?? ''] ?? [];
+      }),
+      cancelOrder: vi.fn(
+        async (input: { orderId: string; accountId?: string }) => {
+          cancelCalls.push({
+            orderId: input.orderId,
+            accountId: input.accountId,
+          });
+        },
+      ),
+      placeMarketOrder: vi.fn(
+        async (input: {
+          symbol: string;
+          quantity: number;
+          accountId?: string;
+        }): Promise<OrderResult> => {
+          marketCalls.push({
+            accountId: input.accountId,
+            qty: input.quantity,
+          });
+          return {
+            orderId: `M-${input.accountId}`,
+            status: 'open',
+          };
+        },
+      ),
+    } as unknown as BrokerPort;
+
+    const tradeRepo = {
+      listAllActive: vi.fn(async () => [ctxA, ctxB]),
+      put: vi.fn(async () => undefined),
+    } as unknown as TradeContextRepository;
+
+    const flatten = new FlattenAllPositions({
+      broker,
+      accountIds: ['SIM-A', 'SIM-B'],
+      tradeRepo,
+      metrics: makeMetrics(),
+    });
+
+    await flatten.execute();
+
+    // Cada cuenta envió un Market con su qty (no se confundieron).
+    expect(
+      marketCalls.sort((a, b) =>
+        (a.accountId ?? '').localeCompare(b.accountId ?? ''),
+      ),
+    ).toEqual([
+      { accountId: 'SIM-A', qty: 100 },
+      { accountId: 'SIM-B', qty: 250 },
+    ]);
+
+    // Cada exit cancelado fue contra su accountId correcto.
+    const cancelsByAccount = new Map<string, string[]>();
+    for (const c of cancelCalls) {
+      const bucket = cancelsByAccount.get(c.accountId ?? '') ?? [];
+      bucket.push(c.orderId);
+      cancelsByAccount.set(c.accountId ?? '', bucket);
+    }
+    expect(cancelsByAccount.get('SIM-A')?.sort()).toEqual(['S-A', 'T-A']);
+    expect(cancelsByAccount.get('SIM-B')?.sort()).toEqual(['S-B', 'T-B']);
   });
 });

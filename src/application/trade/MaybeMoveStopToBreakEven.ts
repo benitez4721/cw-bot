@@ -43,6 +43,19 @@ export class MaybeMoveStopToBreakEven {
     const contexts = all.filter((c) => c.symbol === symbol);
     for (const ctx of contexts) {
       if (ctx.breakEvenMoved) continue;
+      if (!ctx.accountId) {
+        // Legacy ctx sin accountId: no podemos resolver SIM/LIVE para el
+        // replaceStop. CheckOpenTrades cerrará el context cuando corra.
+        log.warn(
+          {
+            model,
+            symbol,
+            entryOrderId: ctx.bracket.entryOrderId,
+          },
+          'skipping break-even move — legacy ctx without accountId',
+        );
+        continue;
+      }
       const profitPct = profitFraction(
         ctx.side,
         ctx.entryLimitPrice,

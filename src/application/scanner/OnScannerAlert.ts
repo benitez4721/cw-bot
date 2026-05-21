@@ -12,9 +12,6 @@ const log = logger.child({ component: 'OnScannerAlert' });
 
 export interface OnScannerAlertDeps {
   strategy: EventStrategy;
-  // Default cuando `strategy.accountId` viene undefined. Inyectado desde
-  // main.ts (env.TRADESTATION_ACCOUNT_ID).
-  defaultAccountId: string;
   broker: BrokerPort;
   placeTrailingBracketOrder: PlaceTrailingBracketOrder;
   tradeRepo: TradeContextRepository;
@@ -26,7 +23,6 @@ export interface OnScannerAlertDeps {
 
 export class OnScannerAlert {
   private readonly strategy: EventStrategy;
-  private readonly defaultAccountId: string;
   private readonly broker: BrokerPort;
   private readonly placeTrailingBracketOrder: PlaceTrailingBracketOrder;
   private readonly tradeRepo: TradeContextRepository;
@@ -37,7 +33,6 @@ export class OnScannerAlert {
 
   constructor(deps: OnScannerAlertDeps) {
     this.strategy = deps.strategy;
-    this.defaultAccountId = deps.defaultAccountId;
     this.broker = deps.broker;
     this.placeTrailingBracketOrder = deps.placeTrailingBracketOrder;
     this.tradeRepo = deps.tradeRepo;
@@ -70,7 +65,7 @@ export class OnScannerAlert {
       return;
     }
 
-    const accountId = this.strategy.accountId ?? this.defaultAccountId;
+    const accountId = this.strategy.accountId;
     const quote = await this.broker.getQuote({ symbol, accountId });
     const reference = quote.ask ?? quote.last;
     if (!Number.isFinite(reference) || reference <= 0) {
