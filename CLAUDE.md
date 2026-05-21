@@ -55,10 +55,10 @@ layer (e.g. `src/domain/tests/`, `src/application/tests/`,
 
 ### Key contracts
 
-- **`domain/broker/BrokerPort.ts`** — the abstraction every broker integration must implement: `placeBracketOrder`, `getPositions`, `getOrders`, `getQuote`, `replaceStopPrice`. Entry + bracket exits (stop/take-profit) are submitted as a single OSO/BRK payload — the port is intentionally bracket-shaped, not generic. There is no standalone "place order" / "cancel order" surface today; bracket exits are managed by the broker once submitted, and stop adjustments go through `replaceStopPrice`.
+- **`domain/broker/BrokerPort.ts`** — the abstraction every broker integration must implement: `placeBracketOrder`, `getPositions`, `getOrders`, `getQuote`, `replaceStopPrice`, `cancelOrder`, `placeMarketOrder`, `placeTrailingBracketOrder`. Entry + bracket exits (stop/take-profit) are submitted as a single OSO/BRK payload — the port is intentionally bracket-shaped, not generic. Bracket exits are managed by the broker once submitted, and stop adjustments go through `replaceStopPrice`. **Every input requires `accountId: string`** — the port is account-agnostic, each call routes to the cuenta indicada (no default implícito).
 - **`domain/broker/BrokerTypes.ts`** — canonical, broker-agnostic shapes (`OrderStatus`, `OrderType`, `OrderSide`, `Order`, `Position`, `Quote`, `BracketOrderInput`, `BracketOrderResult`). Adapters translate vendor strings into these enums.
-- **`domain/broker/OrderStreamPort.ts` / `PositionStreamPort.ts`** — push-stream ports for live order + position updates. Their managers (`application/orderstream`, `application/positionstream`) own subscription lifecycle and reconnect retries.
-- **`domain/decision/DecisionModel.ts` + `DecisionStrategy.ts`** — a `DecisionStrategy` bundles a `DecisionModel` (the signal logic) with a `WatchlistRepository` (the symbol universe it watches) and an optional trail-to-break-even threshold. Concrete models live in `domain/decision/models/` (`MacdM1CrossOverDecisionModel`, `SuperDecisionModel`).
+- **`domain/broker/OrderStreamPort.ts` / `PositionStreamPort.ts`** — push-stream ports for live order + position updates. Each stream instance está bound a UN account (los websockets de TS son por cuenta); el composition root crea N stream adapters + N managers (uno por accountId distinto declarado por las estrategias). `OrderEvent` y `PositionEvent` llevan `accountId: string` para que el consumer pueda distinguir.
+- **`domain/decision/DecisionModel.ts` + `DecisionStrategy.ts`** — un `DecisionStrategy` bundles a `DecisionModel`, una `WatchlistRepository`, opcionalmente `trailToBreakEvenAtProfit`, y un **`accountId` obligatorio** (cuenta TradeStation contra la que opera). Concrete models live in `domain/decision/models/` (`MacdM1CrossOverDecisionModel`, `SuperDecisionModel`); cada modelo recibe `accountId` por constructor para resolver `getQuote`. `EventStrategy` (event-driven, sin DecisionModel) también declara `accountId` obligatorio.
 - **`domain/marketdata/`** — `MarketFeedPort` (live bars push), `HistoricalBarsPort` (REST backfill), `BarRepository` (persistence). The bar stream manager bootstraps from `BarRepository` ∪ `HistoricalBarsPort`, then keeps the rolling window fresh from `MarketFeedPort`.
 - **`domain/scanner/ScannerFeedPort.ts`** — push feed of symbols entering / leaving a scanner config. Each strategy points at its own CW `config_id`, so watchlists stay decoupled.
 - **`domain/indicators/IndicatorPort.ts`** — indicator computation (MACD, EMA, …). The default adapter is `LocalIndicatorAdapter`, which computes from `BarRepository`; remote adapters (`TwelveDataIndicatorAdapter`, `AlphaVantageIndicatorAdapter`) exist for backfill/comparison.
@@ -133,8 +133,10 @@ All intra-repo imports must include the `.js` extension even though the source i
 
 ### TradeStation adapter — non-obvious behaviors
 
-- **Sim vs Live routing** is decided per-request by `config.accountId.startsWith('SIM')`. The same adapter handles both; there is no separate sim/live build.
-- **OAuth access tokens** are cached in memory with a refresh margin. Concurrent requests share a single in-flight refresh via `refreshPromise` (single-flight pattern) — preserve this when modifying `getAccessToken`/`refreshSession` in `TradeStationClient`.
+- **Multi-account architecture**: una sola instancia de `TradeStationClient` y una sola de `TradeStationBrokerAdapter` cubren todas las cuentas configuradas. El `client` no guarda `accountId`; `apiBase(accountId)` y `request({..., accountId})` lo reciben per-call. Cada estrategia declara su `accountId` y el adapter lo lee desde el input — no hay fallback.
+- **Sim vs Live routing** is decided per-request by `accountId.startsWith('SIM')` adentro de `TradeStationClient.apiBase(accountId)`. The same adapter handles both; there is no separate sim/live build.
+- **Streams son por cuenta**: el endpoint `/v3/brokerage/stream/accounts/{accountId}/{orders,positions}` requiere una conexión websocket por cuenta. `adaptersSetup` construye un `TradeStationOrderStreamAdapter` y un `TradeStationPositionStreamAdapter` por accountId (compartiendo el mismo `TradeStationClient`); `main.ts` instancia un manager por accountId. `brokerStreamRoutes` recibe `ReadonlyMap<accountId, Manager>` y hace fan-out en cada conexión SSE.
+- **OAuth access tokens** are cached in memory with a refresh margin. Concurrent requests share a single in-flight refresh via `refreshPromise` (single-flight pattern) — preserve this when modifying `getAccessToken`/`refreshSession` in `TradeStationClient`. La sesión OAuth se comparte entre cuentas (el refresh token es del OAuth app, no del account).
 - **Bracket payload shape**: `placeBracketOrder` submits a single Limit entry order with an OSO (`Type: 'BRK'`) holding two GTC exit legs (`StopMarket` + `Limit`). Stop/TP prices are computed off `entryLimitPrice` as a proxy for the fill — if the fill is better, exit offsets end up asymmetric in cents (accepted for v1, see comment in source).
 - **Status mapping**: TradeStation 3-letter status codes (`ACK`, `OPN`, `FLL`, `FPR`, `CAN`, `OUT`, `REJ`, `BRO`, `EXP`) map to the domain `OrderStatus` enum via `mapStatus` in `tradeStationMapping.ts`. Unknown codes default to `'pending'`.
 - **Leg detection in `getOrders`**: the adapter cross-references `OrderType` + `LimitPrice` / `StopPrice` against the bracket's computed `cost` / `takeProfitPrice` / `stopPrice` to classify each open order as entry / TP / stop. Keep this aligned with the payload shape produced by `placeBracketOrder`.
@@ -183,6 +185,13 @@ Required at startup (checked by `requireEnv()` in `main.ts`):
 `REDIS_URL`, `TRADESTATION_CLIENT_ID`, `TRADESTATION_REFRESH_TOKEN`,
 `TRADESTATION_ACCOUNT_ID`, `POLYGON_API_KEY`, `TWELVEDATA_API_KEY`,
 `CW_USER_ID`, `CW_API_KEY`. Missing values throw before the server binds.
+
+`TRADESTATION_ACCOUNT_ID` se usa hoy como bootstrap de la cuenta que las
+estrategias hardcodeadas en `adaptersSetup.ts` declaran (cada `accountId`
+es obligatorio en `DecisionStrategy` / `EventStrategy`). Si querés rutear
+una estrategia a otra cuenta, cambia el valor de `accountId` en esa
+strategy en `adaptersSetup.ts` — el composition root abre un websocket
+por cada accountId distinto automáticamente.
 
 Optional toggles worth knowing:
 
