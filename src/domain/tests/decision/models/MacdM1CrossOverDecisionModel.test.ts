@@ -39,7 +39,8 @@ describe('MacdM1CrossOverDecisionModel', () => {
     expect(result.side).toBe('BUY');
     // last=100, no ask → base=100, cushion=100 * 10/10000 = 0.1 → 100.10
     expect(result.entryLimitPrice).toBe(100.1);
-    // budget 25000 / base 100 = 250
+    // qByRisk = floor(250 / 0.8) = 312; qByBudget = floor(25000/100) = 250;
+    // quantity = min(312, 250) = 250 → cap por budget.
     expect(result.quantity).toBe(250);
     // ATR=0.4, kStop=2 → stopOffset = 0.8
     expect(result.stopOffset).toBe(0.8);
@@ -60,7 +61,8 @@ describe('MacdM1CrossOverDecisionModel', () => {
     if (result.action !== 'buy') return;
     // ask=100.5, cushion=100.5 * 10/10000 = 0.1005 → 100.60
     expect(result.entryLimitPrice).toBe(100.6);
-    // budget 25000 / ask 100.5 = 248.756… → floor → 248
+    // qByRisk = floor(250 / 0.8) = 312; qByBudget = floor(25000/100.5) = 248;
+    // quantity = min(312, 248) = 248 → cap por budget.
     expect(result.quantity).toBe(248);
     // SL/TP no dependen ni de last ni de ask: solo del ATR del snapshot.
     expect(result.stopOffset).toBe(0.8);
@@ -226,6 +228,50 @@ describe('MacdM1CrossOverDecisionModel', () => {
 
     expect(result.action).toBe('hold');
     expect(result.checks.find((c) => c.name === 'ATR available')?.passed).toBe(
+      false,
+    );
+  });
+
+  it('caps quantity by risk (1% of budget) when ATR is wide', () => {
+    const model = new MacdM1CrossOverDecisionModel(DEPS);
+    // ATR=2 → stopOffset = 4. maxRiskUsd = 25_000 * 0.01 = 250.
+    // qByRisk   = floor(250 / 4)        = 62
+    // qByBudget = floor(25_000 / 100)   = 250
+    // quantity  = min(62, 250) = 62 → cap por riesgo.
+    const result = model.evaluate(
+      snapshot({ atr5min: { value: 2, timestamp: 't' } }),
+    );
+
+    expect(result.action).toBe('buy');
+    if (result.action !== 'buy') return;
+    expect(result.stopOffset).toBe(4);
+    expect(result.quantity).toBe(62);
+    // Pérdida máxima en USD si pega el stop: 62 * 4 = 248 ≤ 250.
+    expect(result.quantity * result.stopOffset).toBeLessThanOrEqual(250);
+  });
+
+  it('keeps max risk per trade <= 1% of budget across ATR regimes', () => {
+    const model = new MacdM1CrossOverDecisionModel(DEPS);
+    const atrValues = [0.05, 0.4, 1.2, 3.7];
+    for (const value of atrValues) {
+      const result = model.evaluate(
+        snapshot({ atr5min: { value, timestamp: 't' } }),
+      );
+      expect(result.action).toBe('buy');
+      if (result.action !== 'buy') continue;
+      expect(result.quantity * result.stopOffset).toBeLessThanOrEqual(250);
+    }
+  });
+
+  it('holds when ATR is so wide that 1% risk budget cannot fund even one share', () => {
+    const model = new MacdM1CrossOverDecisionModel(DEPS);
+    // ATR=200 → stopOffset = 400 > maxRiskUsd (250) → qByRisk = 0 → hold.
+    const result = model.evaluate(
+      snapshot({ atr5min: { value: 200, timestamp: 't' } }),
+    );
+
+    expect(result.action).toBe('hold');
+    expect(result.checks.find((c) => c.name === 'quantity > 0')?.passed).toBe(
       false,
     );
   });

@@ -17,6 +17,10 @@ export interface MacdM1CrossOverSnapshot {
 
 const PARAMS = {
   tradeBudgetUsd: 25_000,
+  // Cap de pérdida por trade = 1% del budget (~250 USD). Iguala el techo
+  // de riesgo de Super, pero el stop se sigue anclando al ATR — la cuota
+  // se respeta achicando la quantity, no el ancho del stop.
+  maxRiskPercent: 0.01,
   entryOffsetBps: 10,
   minHistogram1minCrossoverDelta: 0.002,
   // Stop/TP basados en volatilidad. kStop=2 deja el stop fuera del ruido
@@ -74,7 +78,7 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
       symbol: snapshot.symbol,
       side: 'BUY',
       entryLimitPrice: round2(base + cushion),
-      quantity: Math.floor(PARAMS.tradeBudgetUsd / base),
+      quantity: computeQuantity(base, snapshot.atr5min),
       stopOffset,
       takeProfitOffset,
       checks,
@@ -112,11 +116,21 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
       { name: 'price > VWAP (1min)', passed: s.quote.last > s.vwap1min.value },
       {
         name: 'quantity > 0',
-        passed: base > 0 && Math.floor(PARAMS.tradeBudgetUsd / base) > 0,
+        passed: computeQuantity(base, s.atr5min) > 0,
       },
       { name: 'ATR available', passed: !!s.atr5min },
     ];
   }
+}
+
+function computeQuantity(base: number, atr: ATR | null): number {
+  if (atr === null || atr.value <= 0 || base <= 0) return 0;
+  const stopOffset = round2(PARAMS.kStop * atr.value);
+  if (stopOffset <= 0) return 0;
+  const maxRiskUsd = PARAMS.tradeBudgetUsd * PARAMS.maxRiskPercent;
+  const qByRisk = Math.floor(maxRiskUsd / stopOffset);
+  const qByBudget = Math.floor(PARAMS.tradeBudgetUsd / base);
+  return Math.min(qByRisk, qByBudget);
 }
 
 function round2(n: number): number {
