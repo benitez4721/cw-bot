@@ -20,7 +20,11 @@ export type TsOperation =
   | 'getQuote';
 export type OauthRefreshResult = 'success' | 'failure';
 export type FlattenOutcome = 'cancelled' | 'marketSent' | 'skipped';
-export type FlattenFailurePhase = 'cancel' | 'market' | 'persist';
+export type FlattenFailurePhase =
+  | 'cancel'
+  | 'cancelTimeout'
+  | 'market'
+  | 'persist';
 export type AlertOutcome =
   | 'received'
   | 'opened'

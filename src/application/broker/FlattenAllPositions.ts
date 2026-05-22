@@ -12,6 +12,16 @@ import { logger } from '../../infrastructure/logging/logger.js';
 
 const log = logger.child({ component: 'FlattenAllPositions' });
 
+// Tras enviar el DELETE de los exits del bracket, TradeStation puede demorar
+// en propagar el cancel a sus chequeos de riesgo. Si mandamos el Market antes
+// de que las legs queden en estado terminal, TS rechaza con
+// "you are long N shares with N remaining on sell orders". Poleamos getOrders
+// hasta confirmar terminal o agotar el timeout.
+const DEFAULT_PARAMS = {
+  cancelConfirmTimeoutMs: 3000,
+  cancelPollIntervalMs: 200,
+} as const;
+
 export interface FlattenAllPositionsDeps {
   broker: BrokerPort;
   // Set de cuentas a barrer al traer orders/positions. Es la unión de los
@@ -26,16 +36,18 @@ export interface FlattenAllPositionsDeps {
 // Por cada TradeContext activo (cross-model, cross-symbol, cross-account):
 //   - Entry pendiente sin llenar → cancelOrder(entry). El OSO BRK cancela los
 //     exits automáticamente.
-//   - Posición abierta → cancela stop+TP del bracket y envía un Market opuesto
-//     por el qty agregado de la posición. Persiste el OrderID del Market en
+//   - Posición abierta → cancela stop+TP del bracket, espera confirmación
+//     terminal en getOrders y recién ahí envía un Market opuesto por el qty
+//     agregado de la posición. Persiste el OrderID del Market en
 //     `forcedExitOrderId` del TradeContext para que el dashboard agrupe el
 //     Market con el bracket original (4ta pierna del trade).
 //
-// Multi-context por (accountId, symbol) → un único Market por (accountId,
-// symbol) y se propaga el mismo forcedExitOrderId a cada context del grupo.
-// Dos estrategias en accounts distintos con AAPL se cierran independientes
-// (cada account envía su propio Market) porque la position se busca solo en
-// el snapshot del accountId del grupo.
+// Multi-context por (accountId, symbol) → cancela las exits de TODOS los ctxs
+// del grupo en un único batch, espera confirmación, y manda un único Market
+// con qty agregada. El mismo forcedExitOrderId se propaga a cada context del
+// grupo. Dos estrategias en accounts distintos con AAPL se cierran
+// independientes porque la position se busca solo en el snapshot del
+// accountId del grupo.
 export class FlattenAllPositions {
   private readonly broker: BrokerPort;
   private readonly accountIds: readonly string[];
@@ -107,45 +119,22 @@ export class FlattenAllPositions {
     orders: Order[],
     positions: Position[],
   ): Promise<void> {
-    let marketOrderId: string | null = null;
+    const symbol = contexts[0].symbol;
     const position = positions.find(
       (p) =>
-        p.accountId === accountId &&
-        p.symbol === contexts[0].symbol &&
-        p.quantity !== 0,
+        p.accountId === accountId && p.symbol === symbol && p.quantity !== 0,
     );
 
+    // Clasificación por ctx → entry pendiente vs requiere market vs sin nada.
+    const ctxsWithEntryPending: TradeContext[] = [];
+    const ctxsToFlatten: TradeContext[] = [];
     for (const ctx of contexts) {
       const entryOrder = orders.find((o) => o.id === ctx.bracket.entryOrderId);
-
-      // Caso A — entry sin llenar
       if (entryOrder && isOrderActive(entryOrder.status)) {
-        try {
-          await this.broker.cancelOrder({
-            orderId: ctx.bracket.entryOrderId,
-            accountId,
-          });
-          this.metrics.recordFlattenOutcome('cancelled');
-          log.info(
-            {
-              symbol: ctx.symbol,
-              model: ctx.model,
-              entryOrderId: ctx.bracket.entryOrderId,
-            },
-            'entry cancelled before close',
-          );
-        } catch (err) {
-          this.metrics.recordFlattenFailure('cancel');
-          log.error(
-            { symbol: ctx.symbol, err: errMsg(err) },
-            'failed to cancel entry',
-          );
-        }
-        continue;
-      }
-
-      // Caso C — sin entry pendiente y sin posición
-      if (!position) {
+        ctxsWithEntryPending.push(ctx);
+      } else if (position) {
+        ctxsToFlatten.push(ctx);
+      } else {
         this.metrics.recordFlattenOutcome('skipped');
         log.info(
           {
@@ -155,66 +144,82 @@ export class FlattenAllPositions {
           },
           'no entry pending and no position; nothing to do',
         );
-        continue;
       }
+    }
 
-      // Caso B — posición abierta: cancela exits del bracket
-      const exitIds = [
-        ctx.bracket.stopOrderId,
-        ctx.bracket.takeProfitOrderId,
-      ].filter((id): id is string => !!id);
-      await Promise.allSettled(
-        exitIds.map((orderId) =>
-          this.broker.cancelOrder({ orderId, accountId }),
-        ),
+    // Caso A — cancela entries pendientes (el OSO BRK cancela sus exits).
+    await Promise.allSettled(
+      ctxsWithEntryPending.map((ctx) => this.cancelEntry(ctx, accountId)),
+    );
+
+    if (ctxsToFlatten.length === 0) return;
+
+    // Caso B — cancela TODAS las exits del grupo en un batch y espera
+    // confirmación terminal antes de mandar el Market. Sin la espera, TS
+    // rechaza el Market porque ve las exits viejas todavía pendientes en su
+    // chequeo de riesgo (mensaje: "N remaining on sell orders").
+    const allExitIds = ctxsToFlatten.flatMap((ctx) =>
+      [ctx.bracket.stopOrderId, ctx.bracket.takeProfitOrderId].filter(
+        (id): id is string => !!id,
+      ),
+    );
+    await Promise.allSettled(
+      allExitIds.map((orderId) =>
+        this.broker.cancelOrder({ orderId, accountId }),
+      ),
+    );
+
+    const cancelConfirmed = await this.waitOrdersTerminal(
+      allExitIds,
+      accountId,
+    );
+    if (!cancelConfirmed) {
+      this.metrics.recordFlattenFailure('cancelTimeout');
+      log.error(
+        { symbol, accountId, exitIds: allExitIds },
+        'bracket exits still active after cancel — skipping Market to avoid TS reject',
       );
+      return;
+    }
 
-      // Solo el primer ctx del grupo envía el Market (qty agregada).
-      // Los siguientes reusan el mismo forcedExitOrderId.
-      if (!marketOrderId) {
-        const side: OrderSide = position.quantity > 0 ? 'SELL' : 'BUY';
-        const qty = Math.abs(position.quantity);
-        try {
-          const result = await this.broker.placeMarketOrder({
-            symbol: ctx.symbol,
-            quantity: qty,
+    const side: OrderSide = position!.quantity > 0 ? 'SELL' : 'BUY';
+    const qty = Math.abs(position!.quantity);
+    let marketOrderId: string;
+    try {
+      const result = await this.broker.placeMarketOrder({
+        symbol,
+        quantity: qty,
+        side,
+        accountId,
+      });
+      if (
+        !result.orderId ||
+        result.status === 'rejected' ||
+        result.status === 'expired'
+      ) {
+        this.metrics.recordFlattenFailure('market');
+        log.error(
+          {
+            symbol,
             side,
-            accountId,
-          });
-          if (
-            !result.orderId ||
-            result.status === 'rejected' ||
-            result.status === 'expired'
-          ) {
-            this.metrics.recordFlattenFailure('market');
-            log.error(
-              {
-                symbol: ctx.symbol,
-                side,
-                qty,
-                status: result.status,
-                error: result.error,
-                message: result.message,
-              },
-              'placeMarketOrder rejected — position remains open',
-            );
-            continue;
-          }
-          marketOrderId = result.orderId;
-          log.info(
-            { symbol: ctx.symbol, side, qty, marketOrderId },
-            'flatten market sent',
-          );
-        } catch (err) {
-          this.metrics.recordFlattenFailure('market');
-          log.error(
-            { symbol: ctx.symbol, err: errMsg(err) },
-            'placeMarketOrder threw',
-          );
-          continue;
-        }
+            qty,
+            status: result.status,
+            error: result.error,
+            message: result.message,
+          },
+          'placeMarketOrder rejected — position remains open',
+        );
+        return;
       }
+      marketOrderId = result.orderId;
+      log.info({ symbol, side, qty, marketOrderId }, 'flatten market sent');
+    } catch (err) {
+      this.metrics.recordFlattenFailure('market');
+      log.error({ symbol, err: errMsg(err) }, 'placeMarketOrder threw');
+      return;
+    }
 
+    for (const ctx of ctxsToFlatten) {
       try {
         await this.tradeRepo.put({
           ...ctx,
@@ -234,6 +239,52 @@ export class FlattenAllPositions {
           'failed to persist forcedExitOrderId; market already sent',
         );
       }
+    }
+  }
+
+  private async cancelEntry(
+    ctx: TradeContext,
+    accountId: string,
+  ): Promise<void> {
+    try {
+      await this.broker.cancelOrder({
+        orderId: ctx.bracket.entryOrderId,
+        accountId,
+      });
+      this.metrics.recordFlattenOutcome('cancelled');
+      log.info(
+        {
+          symbol: ctx.symbol,
+          model: ctx.model,
+          entryOrderId: ctx.bracket.entryOrderId,
+        },
+        'entry cancelled before close',
+      );
+    } catch (err) {
+      this.metrics.recordFlattenFailure('cancel');
+      log.error(
+        { symbol: ctx.symbol, err: errMsg(err) },
+        'failed to cancel entry',
+      );
+    }
+  }
+
+  private async waitOrdersTerminal(
+    orderIds: readonly string[],
+    accountId: string,
+  ): Promise<boolean> {
+    if (orderIds.length === 0) return true;
+    const idSet = new Set(orderIds);
+    const deadline = Date.now() + DEFAULT_PARAMS.cancelConfirmTimeoutMs;
+    while (true) {
+      const currentOrders = await this.broker.getOrders({ accountId });
+      const stillActive = currentOrders.some(
+        (o) => idSet.has(o.id) && isOrderActive(o.status),
+      );
+      if (!stillActive) return true;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await sleep(Math.min(DEFAULT_PARAMS.cancelPollIntervalMs, remaining));
     }
   }
 }
@@ -260,4 +311,8 @@ function groupByAccountAndSymbol(
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

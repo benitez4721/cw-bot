@@ -88,13 +88,23 @@ function setup(overrides: {
   contexts?: TradeContext[];
   placeMarketResult?: OrderResult;
   placeMarketFn?: BrokerPort['placeMarketOrder'];
+  // Para simular cancel async: el segundo+ poll a getOrders devuelve este set.
+  // Si no se setea, getOrders siempre devuelve `orders` (snapshot inicial).
+  ordersAfterCancel?: Order[];
 }): Setup {
   const orders = overrides.orders ?? [];
   const positions = overrides.positions ?? [];
   const contexts = overrides.contexts ?? [];
 
+  let getOrdersCalls = 0;
   const broker = {
-    getOrders: vi.fn(async () => orders),
+    getOrders: vi.fn(async () => {
+      getOrdersCalls += 1;
+      if (getOrdersCalls === 1 || overrides.ordersAfterCancel === undefined) {
+        return orders;
+      }
+      return overrides.ordersAfterCancel;
+    }),
     getPositions: vi.fn(async () => positions),
     cancelOrder: vi.fn(async () => undefined),
     placeMarketOrder:
@@ -431,6 +441,12 @@ describe('FlattenAllPositions', () => {
             orderId: input.orderId,
             accountId: input.accountId,
           });
+          // Simula propagación inmediata del cancel — la order desaparece del
+          // próximo getOrders, así waitOrdersTerminal confirma sin esperar.
+          const bucket = ordersByAccount[input.accountId ?? ''] ?? [];
+          ordersByAccount[input.accountId ?? ''] = bucket.filter(
+            (o) => o.id !== input.orderId,
+          );
         },
       ),
       placeMarketOrder: vi.fn(
@@ -484,5 +500,115 @@ describe('FlattenAllPositions', () => {
     }
     expect(cancelsByAccount.get('SIM-A')?.sort()).toEqual(['S-A', 'T-A']);
     expect(cancelsByAccount.get('SIM-B')?.sort()).toEqual(['S-B', 'T-B']);
+  });
+
+  it('Caso B: NO manda Market mientras las exits siguen activas en getOrders', async () => {
+    // Caso real (log del 2026-05-21, GRRR): el DELETE responde OK pero TS aún
+    // ve las exits como pendientes en su chequeo de riesgo. Sin el wait, el
+    // Market se rechaza con "N remaining on sell orders".
+    const ctx = makeContext();
+
+    // Snapshot inicial: exits S1+T1 activas. Tras el cancel, desaparecen.
+    let ordersSnapshot: Order[] = [
+      makeOrder({ id: 'S1', status: 'open', side: 'SELL', type: 'StopMarket' }),
+      makeOrder({ id: 'T1', status: 'open', side: 'SELL', type: 'Limit' }),
+    ];
+    let cancelCount = 0;
+
+    const placeMarketOrder = vi.fn(
+      async (): Promise<OrderResult> => ({ orderId: 'M1', status: 'open' }),
+    );
+
+    const broker = {
+      getOrders: vi.fn(async () => ordersSnapshot),
+      getPositions: vi.fn(async () => [makePosition({ quantity: 100 })]),
+      cancelOrder: vi.fn(async () => {
+        cancelCount += 1;
+        // Aplaza la baja de la order hasta que ambos cancels hayan llegado,
+        // simulando la latencia de propagación de TS.
+        if (cancelCount >= 2) {
+          ordersSnapshot = ordersSnapshot.filter(
+            (o) => o.id !== 'S1' && o.id !== 'T1',
+          );
+        }
+      }),
+      placeMarketOrder,
+    } as unknown as BrokerPort;
+
+    const tradeRepo = {
+      listAllActive: vi.fn(async () => [ctx]),
+      put: vi.fn(async () => undefined),
+    } as unknown as TradeContextRepository;
+
+    const flatten = new FlattenAllPositions({
+      broker,
+      accountIds: ['SIM12345'],
+      tradeRepo,
+      metrics: makeMetrics(),
+    });
+
+    await flatten.execute();
+
+    // El Market se mandó UNA vez, después de que ambos cancels limpiaran las
+    // exits. cancelOrder se llamó 2 veces (S1+T1).
+    expect(broker.cancelOrder).toHaveBeenCalledTimes(2);
+    expect(placeMarketOrder).toHaveBeenCalledTimes(1);
+    expect(placeMarketOrder).toHaveBeenCalledWith({
+      symbol: 'AAPL',
+      quantity: 100,
+      side: 'SELL',
+      accountId: 'SIM12345',
+    });
+  });
+
+  it('Caso B: si exits no quedan terminales antes del timeout, no manda Market', async () => {
+    vi.useFakeTimers();
+    try {
+      const ctx = makeContext();
+      // S1 y T1 permanecen activas — cancel "se pierde" en TS.
+      const stuckExits: Order[] = [
+        makeOrder({ id: 'S1', status: 'open' }),
+        makeOrder({ id: 'T1', status: 'open' }),
+      ];
+
+      const placeMarketOrder = vi.fn(
+        async (): Promise<OrderResult> => ({ orderId: 'M1', status: 'open' }),
+      );
+
+      const broker = {
+        getOrders: vi.fn(async () => stuckExits),
+        getPositions: vi.fn(async () => [makePosition({ quantity: 100 })]),
+        cancelOrder: vi.fn(async () => undefined),
+        placeMarketOrder,
+      } as unknown as BrokerPort;
+
+      const tradeRepo = {
+        listAllActive: vi.fn(async () => [ctx]),
+        put: vi.fn(async () => undefined),
+      } as unknown as TradeContextRepository;
+
+      const metrics = makeMetrics();
+      const flatten = new FlattenAllPositions({
+        broker,
+        accountIds: ['SIM12345'],
+        tradeRepo,
+        metrics,
+      });
+
+      const promise = flatten.execute();
+      // Avanza más allá del cancelConfirmTimeoutMs (3000ms) para que el
+      // wait haga timeout. advanceTimersByTimeAsync flushea microtasks entre
+      // ticks así que los await getOrders + sleep iteran.
+      await vi.advanceTimersByTimeAsync(3500);
+      await promise;
+
+      expect(placeMarketOrder).not.toHaveBeenCalled();
+      expect(tradeRepo.put).not.toHaveBeenCalled();
+      expect(metrics.recordFlattenFailure).toHaveBeenCalledWith(
+        'cancelTimeout',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
