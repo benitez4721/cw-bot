@@ -118,7 +118,7 @@ export function setupAdapters(): Adapters {
     name: 'MacdM1CrossOver',
     model: macdM1CrossOverModel,
     watchlist: macdM1CrossOverWatchlist,
-    trailToBreakEvenAtProfit: 0.005,
+    trailToBreakEvenAtProfit: 0.01,
     cwConfigId: '69b85e8d373a8a104a52803b',
     accountId: env.TRADESTATION_ACCOUNT_ID_2!,
   };
@@ -134,7 +134,7 @@ export function setupAdapters(): Adapters {
     name: 'Super',
     model: superModel,
     watchlist: superWatchlist,
-    trailToBreakEvenAtProfit: 0.005,
+    trailToBreakEvenAtProfit: 0.01,
     cwConfigId: '69f6bec1f52a7e93e345cd0c',
     accountId: env.TRADESTATION_ACCOUNT_ID!,
   };
