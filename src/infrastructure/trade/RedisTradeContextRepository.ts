@@ -1,8 +1,15 @@
 import type Redis from 'ioredis';
-import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
+import type {
+  TradeContextPatch,
+  TradeContextRepository,
+} from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
+import { logger } from '../logging/logger.js';
+
+const log = logger.child({ component: 'RedisTradeContextRepository' });
 
 const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const PATCH_MAX_RETRIES = 5;
 
 export interface RedisTradeContextRepositoryOptions {
   keyPrefix?: string;
@@ -51,6 +58,64 @@ export class RedisTradeContextRepository implements TradeContextRepository {
       tx.sadd(modelActiveKey, entryOrderId);
     }
     await tx.exec();
+  }
+
+  // Read-modify-write atómico de un subset de campos. Usa WATCH+MULTI: si
+  // entre el GET y el EXEC otro caller escribió la key, EXEC retorna null y
+  // reintentamos. Pensado para baja contención (decenas de patches/día), por
+  // eso un cap chico de retries alcanza. Bracket se mergea campo a campo
+  // (preserva entry/stop/tp/forced no provistos); el resto del ctx se mergea
+  // shallow.
+  async patch(entryOrderId: string, partial: TradeContextPatch): Promise<void> {
+    const itemKey = this.itemKey(entryOrderId);
+    for (let attempt = 0; attempt < PATCH_MAX_RETRIES; attempt++) {
+      await this.redis.watch(itemKey);
+      const current = await this.redis.get(itemKey);
+      if (!current) {
+        await this.redis.unwatch();
+        log.warn(
+          { entryOrderId, partial },
+          'patch on missing ctx — no-op (TTL expired or never created)',
+        );
+        return;
+      }
+      const parsed = parseItem(current);
+      if (!parsed) {
+        await this.redis.unwatch();
+        log.warn({ entryOrderId }, 'patch on unparseable ctx — no-op');
+        return;
+      }
+      const merged: TradeContext = {
+        ...parsed,
+        ...partial,
+        bracket: { ...parsed.bracket, ...(partial.bracket ?? {}) },
+      };
+      const serialized = JSON.stringify(merged);
+      const secondaryIds = [
+        merged.bracket.stopOrderId,
+        merged.bracket.takeProfitOrderId,
+        merged.bracket.forcedExitOrderId,
+      ].filter((id): id is string => !!id && id !== entryOrderId);
+      const modelActiveKey = this.modelActiveKey(merged.model);
+
+      const tx = this.redis
+        .multi()
+        .set(itemKey, serialized, 'EX', this.itemTtlSeconds);
+      for (const id of secondaryIds) {
+        tx.set(this.itemKey(id), serialized, 'EX', this.itemTtlSeconds);
+      }
+      if (merged.status === 'closed') {
+        tx.srem(modelActiveKey, entryOrderId);
+      } else {
+        tx.sadd(modelActiveKey, entryOrderId);
+      }
+      const result = await tx.exec();
+      if (result !== null) return;
+    }
+    log.warn(
+      { entryOrderId, partial },
+      'patch hit max retries — gave up (high contention?)',
+    );
   }
 
   async getByOrderId(orderId: string): Promise<TradeContext | undefined> {

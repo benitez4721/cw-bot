@@ -5,11 +5,6 @@ export class CloseTrade {
 
   async execute(entryOrderId: string): Promise<void> {
     if (!entryOrderId) throw new Error('entryOrderId is required');
-
-    const ctx = await this.repository.getByOrderId(entryOrderId);
-    if (!ctx) return;
-    if (ctx.status === 'closed') return;
-
-    await this.repository.put({ ...ctx, status: 'closed' });
+    await this.repository.patch(entryOrderId, { status: 'closed' });
   }
 }

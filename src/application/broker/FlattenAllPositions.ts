@@ -221,9 +221,8 @@ export class FlattenAllPositions {
 
     for (const ctx of ctxsToFlatten) {
       try {
-        await this.tradeRepo.put({
-          ...ctx,
-          bracket: { ...ctx.bracket, forcedExitOrderId: marketOrderId },
+        await this.tradeRepo.patch(ctx.bracket.entryOrderId, {
+          bracket: { forcedExitOrderId: marketOrderId },
         });
         this.metrics.recordFlattenOutcome('marketSent');
       } catch (err) {

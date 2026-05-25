@@ -140,4 +140,54 @@ describe('RedisTradeContextRepository', () => {
     );
     expect(await repo.listActiveByModel('HighOfDayAlert')).toEqual([]);
   });
+
+  it('patch preserva campos no provistos del ctx', async () => {
+    await repo.put(
+      makeContext({ entryFillPrice: 99.5, entryFillQuantity: 100 }),
+    );
+    await repo.patch('E1', { exitFillPrice: 101.2, exitLeg: 'stop' });
+    const updated = await repo.getByOrderId('E1');
+    expect(updated?.entryFillPrice).toBe(99.5);
+    expect(updated?.entryFillQuantity).toBe(100);
+    expect(updated?.exitFillPrice).toBe(101.2);
+    expect(updated?.exitLeg).toBe('stop');
+    expect(updated?.status).toBe('active');
+  });
+
+  it('patch del bracket mergea campo a campo (preserva entry/stop/tp)', async () => {
+    await repo.put(makeContext());
+    await repo.patch('E1', { bracket: { forcedExitOrderId: 'M1' } });
+    const updated = await repo.getByOrderId('E1');
+    expect(updated?.bracket.entryOrderId).toBe('E1');
+    expect(updated?.bracket.stopOrderId).toBe('S1');
+    expect(updated?.bracket.takeProfitOrderId).toBe('T1');
+    expect(updated?.bracket.forcedExitOrderId).toBe('M1');
+  });
+
+  it('patch que agrega forcedExitOrderId indexa el ctx bajo ese id', async () => {
+    await repo.put(makeContext());
+    await repo.patch('E1', { bracket: { forcedExitOrderId: 'M1' } });
+    expect((await repo.getByOrderId('M1'))?.bracket.entryOrderId).toBe('E1');
+  });
+
+  it('patch con status closed remueve el ctx del set modelActive', async () => {
+    await repo.put(makeContext({ model: 'HighOfDayAlert' }));
+    expect(await repo.listActiveByModel('HighOfDayAlert')).toHaveLength(1);
+    await repo.patch('E1', { status: 'closed' });
+    expect(await repo.listActiveByModel('HighOfDayAlert')).toHaveLength(0);
+  });
+
+  it('patch sobre key inexistente es no-op (no crea ctx, no lanza)', async () => {
+    await expect(
+      repo.patch('NOEXISTE', { status: 'closed' }),
+    ).resolves.toBeUndefined();
+    expect(await repo.getByOrderId('NOEXISTE')).toBeUndefined();
+  });
+
+  it('patch escribe el merge en TODAS las dual-write keys (entry+stop+tp)', async () => {
+    await repo.put(makeContext());
+    await repo.patch('E1', { exitFillPrice: 95.0, exitLeg: 'stop' });
+    expect((await repo.getByOrderId('S1'))?.exitFillPrice).toBe(95.0);
+    expect((await repo.getByOrderId('T1'))?.exitFillPrice).toBe(95.0);
+  });
 });

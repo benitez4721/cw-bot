@@ -198,6 +198,15 @@ function createTradeRepo(): FakeTradeRepo {
     async put(ctx: TradeContext) {
       items.set(ctx.bracket.entryOrderId, ctx);
     },
+    async patch(entryOrderId, partial) {
+      const current = items.get(entryOrderId);
+      if (!current) return;
+      items.set(entryOrderId, {
+        ...current,
+        ...partial,
+        bracket: { ...current.bracket, ...(partial.bracket ?? {}) },
+      });
+    },
     async getByOrderId(id: string) {
       return items.get(id);
     },

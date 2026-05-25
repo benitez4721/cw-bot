@@ -1,5 +1,8 @@
 import type { Order } from '../../domain/broker/BrokerTypes.js';
-import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
+import type {
+  TradeContextPatch,
+  TradeContextRepository,
+} from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 
 export interface RecordOrderFillInput {
@@ -21,7 +24,7 @@ export class RecordOrderFill {
     const patch = buildPatch(leg, order, ctx);
     if (!patch) return;
 
-    await this.repository.put({ ...ctx, ...patch });
+    await this.repository.patch(ctx.bracket.entryOrderId, patch);
   }
 }
 
@@ -39,7 +42,7 @@ function buildPatch(
   leg: Leg,
   order: Order,
   ctx: TradeContext,
-): Partial<TradeContext> | undefined {
+): TradeContextPatch | undefined {
   const price = order.filledPrice;
   const qty = order.filledQuantity;
 

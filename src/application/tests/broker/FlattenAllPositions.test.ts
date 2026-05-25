@@ -119,7 +119,7 @@ function setup(overrides: {
     listAllActive: vi.fn(async () =>
       contexts.filter((c) => c.status === 'active'),
     ),
-    put: vi.fn(async () => undefined),
+    patch: vi.fn(async () => undefined),
   } as unknown as TradeContextRepository;
 
   const metrics = makeMetrics();
@@ -138,7 +138,7 @@ describe('FlattenAllPositions', () => {
     await s.flatten.execute();
     expect(s.broker.cancelOrder).not.toHaveBeenCalled();
     expect(s.broker.placeMarketOrder).not.toHaveBeenCalled();
-    expect(s.tradeRepo.put).not.toHaveBeenCalled();
+    expect(s.tradeRepo.patch).not.toHaveBeenCalled();
   });
 
   it('Caso A — entry pendiente: cancela entry y no envía Market', async () => {
@@ -156,7 +156,7 @@ describe('FlattenAllPositions', () => {
       accountId: 'SIM12345',
     });
     expect(s.broker.placeMarketOrder).not.toHaveBeenCalled();
-    expect(s.tradeRepo.put).not.toHaveBeenCalled();
+    expect(s.tradeRepo.patch).not.toHaveBeenCalled();
     expect(s.metrics.recordFlattenOutcome).toHaveBeenCalledWith('cancelled');
   });
 
@@ -189,13 +189,10 @@ describe('FlattenAllPositions', () => {
       accountId: 'SIM12345',
     });
 
-    // Persiste forcedExitOrderId en el context
-    expect(s.tradeRepo.put).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bracket: expect.objectContaining({ forcedExitOrderId: 'M1' }),
-        status: 'active',
-      }),
-    );
+    // Persiste forcedExitOrderId en el context via patch (no toca status)
+    expect(s.tradeRepo.patch).toHaveBeenCalledWith('E1', {
+      bracket: { forcedExitOrderId: 'M1' },
+    });
     expect(s.metrics.recordFlattenOutcome).toHaveBeenCalledWith('marketSent');
   });
 
@@ -216,11 +213,9 @@ describe('FlattenAllPositions', () => {
       side: 'BUY',
       accountId: 'SIM12345',
     });
-    expect(s.tradeRepo.put).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bracket: expect.objectContaining({ forcedExitOrderId: 'M9' }),
-      }),
-    );
+    expect(s.tradeRepo.patch).toHaveBeenCalledWith('E1', {
+      bracket: { forcedExitOrderId: 'M9' },
+    });
   });
 
   it('Caso C — sin entry pendiente y sin posición: marca skipped, sin side-effects', async () => {
@@ -235,7 +230,7 @@ describe('FlattenAllPositions', () => {
 
     expect(s.broker.cancelOrder).not.toHaveBeenCalled();
     expect(s.broker.placeMarketOrder).not.toHaveBeenCalled();
-    expect(s.tradeRepo.put).not.toHaveBeenCalled();
+    expect(s.tradeRepo.patch).not.toHaveBeenCalled();
     expect(s.metrics.recordFlattenOutcome).toHaveBeenCalledWith('skipped');
   });
 
@@ -255,7 +250,7 @@ describe('FlattenAllPositions', () => {
     await s.flatten.execute();
 
     expect(s.broker.placeMarketOrder).toHaveBeenCalled();
-    expect(s.tradeRepo.put).not.toHaveBeenCalled();
+    expect(s.tradeRepo.patch).not.toHaveBeenCalled();
     expect(s.metrics.recordFlattenFailure).toHaveBeenCalledWith('market');
   });
 
@@ -300,22 +295,19 @@ describe('FlattenAllPositions', () => {
       accountId: 'SIM12345',
     });
 
-    // Ambos contexts persistidos con el mismo forcedExitOrderId
-    const putCalls = (s.tradeRepo.put as unknown as ReturnType<typeof vi.fn>)
-      .mock.calls;
-    expect(putCalls).toHaveLength(2);
-    expect(putCalls[0][0]).toMatchObject({
-      bracket: {
-        entryOrderId: 'EA',
-        forcedExitOrderId: 'M_shared',
-      },
-    });
-    expect(putCalls[1][0]).toMatchObject({
-      bracket: {
-        entryOrderId: 'EB',
-        forcedExitOrderId: 'M_shared',
-      },
-    });
+    // Ambos contexts patcheados con el mismo forcedExitOrderId
+    const patchCalls = (
+      s.tradeRepo.patch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls;
+    expect(patchCalls).toHaveLength(2);
+    expect(patchCalls[0]).toEqual([
+      'EA',
+      { bracket: { forcedExitOrderId: 'M_shared' } },
+    ]);
+    expect(patchCalls[1]).toEqual([
+      'EB',
+      { bracket: { forcedExitOrderId: 'M_shared' } },
+    ]);
   });
 
   it('Cross-symbol procesa cada símbolo de forma independiente', async () => {
@@ -371,7 +363,7 @@ describe('FlattenAllPositions', () => {
 
     expect(s.broker.cancelOrder).not.toHaveBeenCalled();
     expect(s.broker.placeMarketOrder).not.toHaveBeenCalled();
-    expect(s.tradeRepo.put).not.toHaveBeenCalled();
+    expect(s.tradeRepo.patch).not.toHaveBeenCalled();
   });
 
   it('cross-account: dos AAPL en accounts distintos se cierran independientes', async () => {
@@ -469,7 +461,7 @@ describe('FlattenAllPositions', () => {
 
     const tradeRepo = {
       listAllActive: vi.fn(async () => [ctxA, ctxB]),
-      put: vi.fn(async () => undefined),
+      patch: vi.fn(async () => undefined),
     } as unknown as TradeContextRepository;
 
     const flatten = new FlattenAllPositions({
@@ -537,7 +529,7 @@ describe('FlattenAllPositions', () => {
 
     const tradeRepo = {
       listAllActive: vi.fn(async () => [ctx]),
-      put: vi.fn(async () => undefined),
+      patch: vi.fn(async () => undefined),
     } as unknown as TradeContextRepository;
 
     const flatten = new FlattenAllPositions({
@@ -584,7 +576,7 @@ describe('FlattenAllPositions', () => {
 
       const tradeRepo = {
         listAllActive: vi.fn(async () => [ctx]),
-        put: vi.fn(async () => undefined),
+        patch: vi.fn(async () => undefined),
       } as unknown as TradeContextRepository;
 
       const metrics = makeMetrics();
@@ -603,7 +595,7 @@ describe('FlattenAllPositions', () => {
       await promise;
 
       expect(placeMarketOrder).not.toHaveBeenCalled();
-      expect(tradeRepo.put).not.toHaveBeenCalled();
+      expect(tradeRepo.patch).not.toHaveBeenCalled();
       expect(metrics.recordFlattenFailure).toHaveBeenCalledWith(
         'cancelTimeout',
       );

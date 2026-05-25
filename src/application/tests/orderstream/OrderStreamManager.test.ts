@@ -56,6 +56,21 @@ class FakeTradeContextRepository implements TradeContextRepository {
     ].filter((id): id is string => !!id);
     for (const id of ids) this.store.set(id, ctx);
   }
+  async patch(
+    entryOrderId: string,
+    partial: Partial<TradeContext> & {
+      bracket?: Partial<TradeContext['bracket']>;
+    },
+  ): Promise<void> {
+    const current = this.store.get(entryOrderId);
+    if (!current) return;
+    const merged: TradeContext = {
+      ...current,
+      ...partial,
+      bracket: { ...current.bracket, ...(partial.bracket ?? {}) },
+    };
+    await this.put(merged);
+  }
   async getByOrderId(orderId: string): Promise<TradeContext | undefined> {
     return this.store.get(orderId);
   }
