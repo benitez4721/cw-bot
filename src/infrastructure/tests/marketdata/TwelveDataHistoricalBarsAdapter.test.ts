@@ -56,7 +56,7 @@ describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
     expect(url.searchParams.get('apikey')).toBe('test-key');
   });
 
-  it('omits prepost on intervals other than 1min', async () => {
+  it('sends prepost=true on 5min as well', async () => {
     fetchSpy.mockResolvedValueOnce(
       ok({
         status: 'ok',
@@ -79,7 +79,7 @@ describe('TwelveDataHistoricalBarsAdapter.fetchHistoricalBars', () => {
     });
     const url = fetchSpy.mock.calls[0][0] as URL;
     expect(url.searchParams.get('interval')).toBe('5min');
-    expect(url.searchParams.has('prepost')).toBe(false);
+    expect(url.searchParams.get('prepost')).toBe('true');
   });
 
   it('reverses DESC response to ASC and parses datetime as UTC', async () => {
