@@ -15,6 +15,7 @@ import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { CheckSyntheticStops } from '../trade/CheckSyntheticStops.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
+import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
@@ -76,6 +77,10 @@ export interface BarStreamManagerOptions {
   // entornos solo-RTH (DECISION_ENABLED apagado en pre).
   placeLimitOrder?: PlaceLimitOrder;
   checkSyntheticStops?: CheckSyntheticStops;
+  // Trailing stop sintetico para ctx pre con trailingStopPercent. Invocado
+  // antes de checkSyntheticStops para que el cross-check use el stop ya
+  // actualizado.
+  maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
   // Disparado una sola vez por día NY cuando el tick cae dentro de la
   // ventana 9:29 ET de un día hábil. Bot arranca el día con Redis limpio.
   flushRedis?: () => Promise<void>;
@@ -109,6 +114,7 @@ export class BarStreamManager {
   private lastPreFlattenedDay: string | null = null;
   private readonly placeLimitOrder?: PlaceLimitOrder;
   private readonly checkSyntheticStops?: CheckSyntheticStops;
+  private readonly maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
   private readonly flushRedis?: () => Promise<void>;
   private lastFlushedDay: string | null = null;
   // Sesion vista en el tick anterior. Sirve para detectar boundaries
@@ -147,6 +153,7 @@ export class BarStreamManager {
     this.flattenPrePositions = options.flattenPrePositions;
     this.placeLimitOrder = options.placeLimitOrder;
     this.checkSyntheticStops = options.checkSyntheticStops;
+    this.maybeTrailSyntheticStop = options.maybeTrailSyntheticStop;
     this.flushRedis = options.flushRedis;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
@@ -475,17 +482,32 @@ export class BarStreamManager {
     // manager no corre estrategias ni stops sintéticos.
     if (session !== 'pre' && session !== 'rth') return;
 
-    // CheckSyntheticStops corre una sola vez por symbol-bar (no por estrategia),
-    // porque opera sobre el ctx persistido y la estrategia es indistinguible
-    // para el monitor de stops sintéticos en pre.
-    if (session === 'pre' && this.checkSyntheticStops) {
-      try {
-        await this.checkSyntheticStops.execute(symbol, bar);
-      } catch (err) {
-        log.warn(
-          { symbol, err: errMsg(err) },
-          'checkSyntheticStops threw — continuing with strategies',
-        );
+    // En pre corren: (1) trailing sintético, que sube el stopPrice de ctx
+    // con trailingStopPercent siguiendo el high-watermark; (2) cross-check de
+    // stops/TPs sintéticos. Trailing primero para que el cross use el stop
+    // ya actualizado en el mismo bar. Ambos operan sobre el ctx persistido y
+    // son indistinguibles para la estrategia, por eso corren una sola vez
+    // por symbol-bar (no por estrategia).
+    if (session === 'pre') {
+      if (this.maybeTrailSyntheticStop) {
+        try {
+          await this.maybeTrailSyntheticStop.execute(symbol, bar);
+        } catch (err) {
+          log.warn(
+            { symbol, err: errMsg(err) },
+            'maybeTrailSyntheticStop threw — continuing',
+          );
+        }
+      }
+      if (this.checkSyntheticStops) {
+        try {
+          await this.checkSyntheticStops.execute(symbol, bar);
+        } catch (err) {
+          log.warn(
+            { symbol, err: errMsg(err) },
+            'checkSyntheticStops threw — continuing with strategies',
+          );
+        }
       }
     }
 

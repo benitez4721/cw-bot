@@ -46,6 +46,11 @@ export interface TradeContext {
   // flatten 9:20). Idempotencia entre bars de pre + entre CheckSyntheticStops
   // y FlattenPrePositions. Solo se setea en sesion pre.
   syntheticExitFired?: boolean;
+  // Solo se setea en sesion pre cuando el trade nacio con trailing
+  // (EventStrategy). MaybeTrailSyntheticStop sube el stopPrice bar-a-bar
+  // siguiendo el high-watermark. Si esta ausente, el stopPrice es fijo
+  // (DecisionStrategy pre).
+  trailingStopPercent?: number;
   // Opaque snapshot owned by whichever decision model produced the signal.
   // Persisted as-is for postmortem; not read back by application code.
   indicators: unknown;

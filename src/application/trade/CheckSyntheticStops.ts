@@ -57,8 +57,7 @@ export class CheckSyntheticStops {
         ctx.session === 'pre' &&
         !ctx.syntheticExitFired &&
         !!ctx.accountId &&
-        ctx.stopPrice !== undefined &&
-        ctx.takeProfitPrice !== undefined,
+        ctx.stopPrice !== undefined,
     );
     if (candidates.length === 0) return;
 
@@ -69,16 +68,20 @@ export class CheckSyntheticStops {
   }
 
   private shouldTrigger(ctx: TradeContext, bar: Bar): boolean {
-    // Validados en execute(); narrow para TS.
-    if (ctx.stopPrice === undefined || ctx.takeProfitPrice === undefined) {
-      return false;
-    }
+    // Validado en execute(); narrow para TS.
+    if (ctx.stopPrice === undefined) return false;
     // Usamos close (no high/low) para filtrar ruido de prints sueltos del pre,
     // a costa de demorar el exit hasta el cierre del minuto.
     if (ctx.side === 'BUY') {
-      return bar.close <= ctx.stopPrice || bar.close >= ctx.takeProfitPrice;
+      if (bar.close <= ctx.stopPrice) return true;
+      return (
+        ctx.takeProfitPrice !== undefined && bar.close >= ctx.takeProfitPrice
+      );
     }
-    return bar.close >= ctx.stopPrice || bar.close <= ctx.takeProfitPrice;
+    if (bar.close >= ctx.stopPrice) return true;
+    return (
+      ctx.takeProfitPrice !== undefined && bar.close <= ctx.takeProfitPrice
+    );
   }
 
   private async fireExit(ctx: TradeContext): Promise<void> {

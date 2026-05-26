@@ -200,6 +200,47 @@ describe('CheckSyntheticStops', () => {
     expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 
+  it('acepta ctx pre sin takeProfitPrice (alert EventStrategy) y dispara por stop', async () => {
+    const ctx = preContext({
+      takeProfitPrice: undefined,
+      trailingStopPercent: 8,
+    });
+    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const useCase = new CheckSyntheticStops({
+      broker,
+      tradeRepo,
+      placeLimitOrder,
+    });
+
+    await useCase.execute('AAPL', bar(178.5));
+
+    expect(placeLimitOrder.execute).toHaveBeenCalledTimes(1);
+    expect(tradeRepo.patch).toHaveBeenCalledWith('E1', {
+      syntheticExitFired: true,
+      bracket: { forcedExitOrderId: 'X-1' },
+    });
+  });
+
+  it('ctx pre sin TP no dispara cuando close esta arriba del stop', async () => {
+    const ctx = preContext({
+      takeProfitPrice: undefined,
+      trailingStopPercent: 8,
+    });
+    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const useCase = new CheckSyntheticStops({
+      broker,
+      tradeRepo,
+      placeLimitOrder,
+    });
+
+    // 500 lejos por arriba del stop 179: en el ctx clasico habria sido TP,
+    // pero ahora no hay TP definido — no debe disparar.
+    await useCase.execute('AAPL', bar(500));
+
+    expect(placeLimitOrder.execute).not.toHaveBeenCalled();
+    expect(tradeRepo.patch).not.toHaveBeenCalled();
+  });
+
   it('ignora ctx RTH aunque coincida con el symbol', async () => {
     const ctxRth: TradeContext = {
       ...preContext(),
