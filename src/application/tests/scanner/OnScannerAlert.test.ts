@@ -58,7 +58,11 @@ interface Fakes {
 }
 
 function makeMarketHours(isOpen: boolean): MarketHours {
-  return { isOpen: () => isOpen };
+  return {
+    isOpen: () => isOpen,
+    isConnected: () => isOpen,
+    session: () => (isOpen ? 'rth' : 'closed'),
+  };
 }
 
 function setup(opts: {

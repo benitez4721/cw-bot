@@ -323,7 +323,11 @@ function setup(
   } as unknown as BrokerPort;
 
   const marketOpen = { value: true };
-  const marketHours: MarketHours = { isOpen: () => marketOpen.value };
+  const marketHours: MarketHours = {
+    isOpen: () => marketOpen.value,
+    isConnected: () => marketOpen.value,
+    session: () => (marketOpen.value ? 'rth' : 'closed'),
+  };
 
   const metrics: MetricsPort = {
     recordDecision: vi.fn(),
@@ -684,7 +688,11 @@ describe('BarStreamManager', () => {
         broker: s.broker,
         closeTrade: new CloseTrade(s.tradeRepo),
       }),
-      marketHours: { isOpen: () => true },
+      marketHours: {
+        isOpen: () => true,
+        isConnected: () => true,
+        session: () => 'rth',
+      },
       metrics: s.metrics,
       bootstrapBars: 5,
       syncIntervalMs: 60_000,
