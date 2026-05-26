@@ -506,3 +506,126 @@ describe('TradeStationBrokerAdapter.placeTrailingBracketOrder', () => {
     expect(result.takeProfitOrderId).toBeUndefined();
   });
 });
+
+describe('TradeStationBrokerAdapter.placeLimitOrder', () => {
+  function fakeLimitClient(response: {
+    Orders?: Array<{
+      OrderID?: string;
+      Message?: string;
+      Error?: string;
+      Status?: string;
+    }>;
+    Errors?: Array<{ Error?: string; Message?: string }>;
+  }): { client: TradeStationClient; requests: Array<Record<string, unknown>> } {
+    const requests: Array<Record<string, unknown>> = [];
+    const client = {
+      accountId: () => 'SIM12345',
+      apiBase: () => 'https://sim.api.tradestation.com',
+      request: vi.fn(
+        async (req: { method: string; path: string; body?: unknown }) => {
+          requests.push({ method: req.method, path: req.path, body: req.body });
+          return response;
+        },
+      ),
+    } as unknown as TradeStationClient;
+    return { client, requests };
+  }
+
+  it('arma payload Limit standalone con Duration y Route del input', async () => {
+    const { client, requests } = fakeLimitClient({
+      Orders: [{ OrderID: 'O-1', Status: 'OPN' }],
+    });
+    const broker = new TradeStationBrokerAdapter({ client });
+
+    const result = await broker.placeLimitOrder({
+      symbol: 'AAPL',
+      quantity: 100,
+      side: 'BUY',
+      limitPrice: 180.555,
+      accountId: 'SIM12345',
+      duration: 'DYP',
+      route: 'ARCA',
+    });
+
+    expect(result.status).toBe('open');
+    expect(result.orderId).toBe('O-1');
+
+    expect(requests).toHaveLength(1);
+    const req = requests[0];
+    expect(req.method).toBe('POST');
+    expect(req.path).toBe('/v3/orderexecution/orders');
+    expect(req.body).toEqual({
+      AccountID: 'SIM12345',
+      Symbol: 'AAPL',
+      Quantity: '100',
+      OrderType: 'Limit',
+      LimitPrice: '180.56',
+      TradeAction: 'BUY',
+      TimeInForce: { Duration: 'DYP' },
+      Route: 'ARCA',
+    });
+    expect((req.body as Record<string, unknown>).OSOs).toBeUndefined();
+  });
+
+  it('default Route a Intelligent cuando no viene en el input', async () => {
+    const { client, requests } = fakeLimitClient({
+      Orders: [{ OrderID: 'O-2', Status: 'ACK' }],
+    });
+    const broker = new TradeStationBrokerAdapter({ client });
+
+    await broker.placeLimitOrder({
+      symbol: 'AAPL',
+      quantity: 50,
+      side: 'SELL',
+      limitPrice: 200,
+      accountId: 'SIM12345',
+      duration: 'DAY',
+    });
+
+    const req = requests[0];
+    expect((req.body as Record<string, unknown>).Route).toBe('Intelligent');
+    expect((req.body as Record<string, unknown>).TimeInForce).toEqual({
+      Duration: 'DAY',
+    });
+  });
+
+  it('devuelve rejected cuando TradeStation responde Error FAILED', async () => {
+    const { client } = fakeLimitClient({
+      Orders: [{ Error: 'FAILED', Message: 'insufficient buying power' }],
+    });
+    const broker = new TradeStationBrokerAdapter({ client });
+
+    const result = await broker.placeLimitOrder({
+      symbol: 'AAPL',
+      quantity: 100,
+      side: 'BUY',
+      limitPrice: 180,
+      accountId: 'SIM12345',
+      duration: 'DYP',
+    });
+
+    expect(result.status).toBe('rejected');
+    expect(result.error).toBe('FAILED');
+    expect(result.message).toBe('insufficient buying power');
+  });
+
+  it('devuelve rejected cuando la respuesta no trae Orders', async () => {
+    const { client } = fakeLimitClient({
+      Errors: [{ Error: 'BadRequest', Message: 'invalid symbol' }],
+    });
+    const broker = new TradeStationBrokerAdapter({ client });
+
+    const result = await broker.placeLimitOrder({
+      symbol: '',
+      quantity: 100,
+      side: 'BUY',
+      limitPrice: 180,
+      accountId: 'SIM12345',
+      duration: 'DAY',
+    });
+
+    expect(result.status).toBe('rejected');
+    expect(result.orderId).toBe('');
+    expect(result.error).toBe('BadRequest');
+  });
+});

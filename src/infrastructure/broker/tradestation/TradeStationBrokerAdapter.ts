@@ -13,6 +13,7 @@ import type {
   Order,
   OrderResult,
   OrderSide,
+  PlaceLimitOrderInput,
   Position,
   Quote,
   TrailingBracketOrderInput,
@@ -532,6 +533,41 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       accountId,
     });
 
+    return this.mapSingleOrderResponse(response);
+  }
+
+  async placeLimitOrder({
+    symbol,
+    quantity,
+    side,
+    limitPrice,
+    accountId,
+    duration,
+    route,
+  }: PlaceLimitOrderInput): Promise<OrderResult> {
+    const payload = {
+      AccountID: accountId,
+      Symbol: symbol,
+      Quantity: String(quantity),
+      OrderType: 'Limit',
+      LimitPrice: String(round2(limitPrice)),
+      TradeAction: side,
+      TimeInForce: { Duration: duration },
+      Route: route ?? 'Intelligent',
+    };
+
+    const response = await this.client.request<TsPlaceOrderResponse>({
+      method: 'POST',
+      path: '/v3/orderexecution/orders',
+      body: payload,
+      operation: 'placeLimit',
+      accountId,
+    });
+
+    return this.mapSingleOrderResponse(response);
+  }
+
+  private mapSingleOrderResponse(response: TsPlaceOrderResponse): OrderResult {
     const orders = response.Orders ?? [];
     const first = orders[0];
     const failed = orders.find((o) => o.Error === 'FAILED');

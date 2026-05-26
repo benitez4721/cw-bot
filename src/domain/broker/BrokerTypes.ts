@@ -53,6 +53,25 @@ export interface Quote {
   timestamp: string;
 }
 
+// Duration en TradeStation: 'DAY' (solo RTH) vs 'DYP' (Day+, cubre pre + RTH + post).
+// 'DYP' es la unica forma de que TS ejecute en extended hours, y solo acepta Limit.
+export type OrderDuration = 'DAY' | 'DYP';
+
+// Route: 'Intelligent' (smart-router default) o ECNs explicitas (ARCA / BATS) que
+// operan en extended hours. Con DYP conviene fijar ARCA o BATS, porque
+// Intelligent puede no rutear correctamente fuera de RTH.
+export type OrderRoute = 'Intelligent' | 'ARCA' | 'BATS';
+
+export interface PlaceLimitOrderInput {
+  symbol: string;
+  quantity: number;
+  side: OrderSide;
+  limitPrice: number;
+  accountId: string;
+  duration: OrderDuration;
+  route?: OrderRoute;
+}
+
 export interface BracketOrderInput {
   symbol: string;
   quantity: number;

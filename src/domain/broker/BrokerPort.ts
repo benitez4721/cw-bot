@@ -4,6 +4,7 @@ import type {
   Order,
   OrderResult,
   OrderSide,
+  PlaceLimitOrderInput,
   Position,
   Quote,
   TrailingBracketOrderInput,
@@ -62,4 +63,5 @@ export interface BrokerPort {
   replaceStopPrice(input: ReplaceStopPriceInput): Promise<void>;
   cancelOrder(input: CancelOrderInput): Promise<void>;
   placeMarketOrder(input: PlaceMarketOrderInput): Promise<OrderResult>;
+  placeLimitOrder(input: PlaceLimitOrderInput): Promise<OrderResult>;
 }
