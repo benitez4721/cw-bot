@@ -56,6 +56,13 @@ export class MaybeMoveStopToBreakEven {
         );
         continue;
       }
+      const stopOrderId = ctx.bracket.stopOrderId;
+      if (!stopOrderId) {
+        // Sesion pre: no hay StopMarket en el broker (stop sintetico). Mover
+        // a break-even en pre no aplica — el flatten 9:20 cerrara la posicion
+        // antes del open.
+        continue;
+      }
       const profitPct = profitFraction(
         ctx.side,
         ctx.entryLimitPrice,
@@ -65,7 +72,7 @@ export class MaybeMoveStopToBreakEven {
 
       try {
         await this.broker.replaceStopPrice({
-          orderId: ctx.bracket.stopOrderId,
+          orderId: stopOrderId,
           stopPrice: ctx.entryLimitPrice,
           accountId: ctx.accountId,
         });
@@ -77,7 +84,7 @@ export class MaybeMoveStopToBreakEven {
             model,
             symbol,
             entryOrderId: ctx.bracket.entryOrderId,
-            stopOrderId: ctx.bracket.stopOrderId,
+            stopOrderId,
             entry: ctx.entryLimitPrice,
             profitPct,
           },
@@ -88,7 +95,7 @@ export class MaybeMoveStopToBreakEven {
           {
             model,
             symbol,
-            stopOrderId: ctx.bracket.stopOrderId,
+            stopOrderId,
             err: err instanceof Error ? err.message : String(err),
           },
           'failed to move stop to break-even — will retry next bar',

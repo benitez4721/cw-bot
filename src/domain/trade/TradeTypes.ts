@@ -3,9 +3,18 @@ import type { RuleCheck } from '../decision/DecisionTypes.js';
 
 export type TradeContextStatus = 'active' | 'closed';
 
+// Sesion en la que se abrio el trade.
+// - 'rth': bracket OSO clasico (entry Limit + StopMarket + Limit exits en TS).
+// - 'pre': solo entry Limit en TS; stop/TP son sinteticos, gestionados por el
+//   bot via CheckSyntheticStops y FlattenPrePositions.
+// Opcional solo por compat con contexts persistidos antes del refactor pre-market.
+export type TradeContextSession = 'pre' | 'rth';
+
 export interface TradeContextBracket {
   entryOrderId: string;
-  stopOrderId: string;
+  // Opcional para soportar sesion pre, donde no hay StopMarket en el broker —
+  // el stop se gestiona sinteticamente desde el bot.
+  stopOrderId?: string;
   takeProfitOrderId?: string;
   // OrderID of the Market order used to flatten this trade pre-close.
   // Indexed in the trade repo alongside entryOrderId so the order stream
@@ -23,9 +32,20 @@ export interface TradeContext {
   symbol: string;
   side: OrderSide;
   entryLimitPrice: number;
+  // Precios objetivo para el exit. En sesion rth viven en stopOrderId /
+  // takeProfitOrderId del broker; en sesion pre se persisten aca porque no
+  // hay ordenes en TS que los representen, y CheckSyntheticStops los lee
+  // para decidir cuando disparar el exit Limit cross-the-spread.
+  stopPrice?: number;
+  takeProfitPrice?: number;
   evalStart: string;
   evalEnd: string;
   bracket: TradeContextBracket;
+  session?: TradeContextSession;
+  // True una vez que el bot mando un exit sintetico (trigger de stop/TP o
+  // flatten 9:20). Idempotencia entre bars de pre + entre CheckSyntheticStops
+  // y FlattenPrePositions. Solo se setea en sesion pre.
+  syntheticExitFired?: boolean;
   // Opaque snapshot owned by whichever decision model produced the signal.
   // Persisted as-is for postmortem; not read back by application code.
   indicators: unknown;

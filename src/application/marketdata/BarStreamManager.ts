@@ -510,6 +510,7 @@ export class BarStreamManager {
       ) {
         try {
           await this.recordTradeContext.execute({
+            session: 'rth',
             model: strategy.name,
             accountId,
             bracket: {
