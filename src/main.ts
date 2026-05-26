@@ -3,9 +3,12 @@ import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
 import { setupAdapters } from './adaptersSetup.js';
 import { FlattenAllPositions } from './application/broker/FlattenAllPositions.js';
+import { FlattenPrePositions } from './application/broker/FlattenPrePositions.js';
 import { PlaceBracketOrder } from './application/broker/PlaceBracketOrder.js';
+import { PlaceLimitOrder } from './application/broker/PlaceLimitOrder.js';
 import { PlaceTrailingBracketOrder } from './application/broker/PlaceTrailingBracketOrder.js';
 import { CheckOpenTrades } from './application/trade/CheckOpenTrades.js';
+import { CheckSyntheticStops } from './application/trade/CheckSyntheticStops.js';
 import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
 import { AlertEventManager } from './application/scanner/AlertEventManager.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
@@ -84,6 +87,7 @@ async function main() {
 
   const placeBracketOrder = new PlaceBracketOrder(broker);
   const placeTrailingBracketOrder = new PlaceTrailingBracketOrder(broker);
+  const placeLimitOrder = new PlaceLimitOrder(broker, metrics);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
   const recordOrderFill = new RecordOrderFill(tradeRepo);
   const closeTrade = new CloseTrade(tradeRepo);
@@ -149,6 +153,18 @@ async function main() {
     tradeRepo,
     metrics,
   });
+  const flattenPrePositions = new FlattenPrePositions({
+    broker,
+    accountIds,
+    tradeRepo,
+    placeLimitOrder,
+    metrics,
+  });
+  const checkSyntheticStops = new CheckSyntheticStops({
+    broker,
+    tradeRepo,
+    placeLimitOrder,
+  });
 
   const barStream = new BarStreamManager({
     feed: marketFeed,
@@ -156,12 +172,15 @@ async function main() {
     barRepo,
     strategies,
     placeBracketOrder,
+    placeLimitOrder,
     recordTradeContext,
     checkOpenTrades,
+    checkSyntheticStops,
     maybeMoveStopToBreakEven,
     marketHours,
     metrics,
     flattenAll,
+    flattenPrePositions,
     flushRedis: async () => {
       await redis.flushdb();
     },

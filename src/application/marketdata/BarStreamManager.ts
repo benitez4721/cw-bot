@@ -1,5 +1,5 @@
 import type { DecisionStrategy } from '../../domain/decision/DecisionStrategy.js';
-import type { MarketHours } from '../../domain/market/MarketHours.js';
+import type { MarketHours, Session } from '../../domain/market/MarketHours.js';
 import type { BarRepository } from '../../domain/marketdata/BarRepository.js';
 import type { HistoricalBarsPort } from '../../domain/marketdata/HistoricalBarsPort.js';
 import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
@@ -9,8 +9,11 @@ import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculatio
 import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import type { FlattenAllPositions } from '../broker/FlattenAllPositions.js';
+import type { FlattenPrePositions } from '../broker/FlattenPrePositions.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
+import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
+import type { CheckSyntheticStops } from '../trade/CheckSyntheticStops.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
@@ -62,9 +65,17 @@ export interface BarStreamManagerOptions {
   maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   marketHours: MarketHours;
   metrics: MetricsPort;
-  // Disparado una sola vez al detectarse la transición isOpen: true→false
+  // Disparado una sola vez al detectarse la transición rth → closed
   // (15:50 ET con UsMarketHoursAdapter). Opcional para tests legacy.
   flattenAll?: FlattenAllPositions;
+  // Disparado una sola vez al detectarse la transición pre → transition
+  // (9:20 ET con UsMarketHoursAdapter). Cierra las posiciones pre con Limit
+  // cross-the-spread antes de que arranque RTH. Opcional para tests legacy.
+  flattenPrePositions?: FlattenPrePositions;
+  // Usado en el branch pre de processStrategy. Opcional para tests legacy y
+  // entornos solo-RTH (DECISION_ENABLED apagado en pre).
+  placeLimitOrder?: PlaceLimitOrder;
+  checkSyntheticStops?: CheckSyntheticStops;
   // Disparado una sola vez por día NY cuando el tick cae dentro de la
   // ventana 9:29 ET de un día hábil. Bot arranca el día con Redis limpio.
   flushRedis?: () => Promise<void>;
@@ -94,8 +105,15 @@ export class BarStreamManager {
   private readonly metrics: MetricsPort;
   private readonly flattenAll?: FlattenAllPositions;
   private lastFlattenedDay: string | null = null;
+  private readonly flattenPrePositions?: FlattenPrePositions;
+  private lastPreFlattenedDay: string | null = null;
+  private readonly placeLimitOrder?: PlaceLimitOrder;
+  private readonly checkSyntheticStops?: CheckSyntheticStops;
   private readonly flushRedis?: () => Promise<void>;
   private lastFlushedDay: string | null = null;
+  // Sesion vista en el tick anterior. Sirve para detectar boundaries
+  // (pre→transition, rth→closed) sin depender del estado del feed.
+  private lastSession: Session | null = null;
   private readonly bootstrapBars: number;
   private readonly syncIntervalMs: number;
   private readonly now: () => number;
@@ -126,6 +144,9 @@ export class BarStreamManager {
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
     this.flattenAll = options.flattenAll;
+    this.flattenPrePositions = options.flattenPrePositions;
+    this.placeLimitOrder = options.placeLimitOrder;
+    this.checkSyntheticStops = options.checkSyntheticStops;
     this.flushRedis = options.flushRedis;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
@@ -212,10 +233,20 @@ export class BarStreamManager {
   private async tick(): Promise<void> {
     const nowDate = new Date(this.now());
     await this.triggerPreMarketFlush(nowDate);
-    const open = this.marketHours.isOpen(nowDate);
+    const session = this.marketHours.session(nowDate);
+    const connected = this.marketHours.isConnected(nowDate);
 
-    if (open && !this.feedConnected) {
-      log.info('market open — connecting feed');
+    // Boundary pre → transition (9:20 ET): flatten posiciones pre antes de
+    // RTH. Lo evaluamos antes de tocar feed/sync para que el flatten arranque
+    // aunque haya un connect fail en este mismo tick.
+    if (this.lastSession === 'pre' && session === 'transition') {
+      this.triggerPreFlatten(nowDate);
+    }
+
+    this.lastSession = session;
+
+    if (connected && !this.feedConnected) {
+      log.info({ session }, 'market connected — connecting feed');
       try {
         await this.feed.connect();
         this.feedConnected = true;
@@ -230,17 +261,17 @@ export class BarStreamManager {
       return;
     }
 
-    if (!open && this.feedConnected) {
+    if (!connected && this.feedConnected) {
       log.info('market closed — disconnecting feed');
       this.feed.disconnect();
       this.feedConnected = false;
       this.subscribed.clear();
       this.inFlight.clear();
-      this.triggerFlatten(nowDate);
+      this.triggerRthFlatten(nowDate);
       return;
     }
 
-    if (open && this.feedConnected) {
+    if (connected && this.feedConnected) {
       await this.syncWatchlist();
     }
   }
@@ -249,7 +280,7 @@ export class BarStreamManager {
   // segundos. Idempotencia diaria via `lastFlattenedDay` en TZ NY — sólo
   // un disparo por día calendario (sirve para evitar redisparos si el feed
   // re-conecta brevemente y vuelve a desconectarse).
-  private triggerFlatten(now: Date): void {
+  private triggerRthFlatten(now: Date): void {
     if (!this.flattenAll) return;
     const day = dayKeyFormatter.format(now);
     if (this.lastFlattenedDay === day) return;
@@ -257,6 +288,20 @@ export class BarStreamManager {
     log.info({ day }, 'market closed — running flatten');
     void this.flattenAll.execute().catch((err) => {
       log.error({ err: errMsg(err) }, 'flatten execution failed');
+    });
+  }
+
+  // Idempotente por día NY: marcamos lastPreFlattenedDay aunque el flatten
+  // falle, para evitar bucles en la ventana de 1 min entre pre y transition.
+  // Fire-and-forget para no bloquear el tick.
+  private triggerPreFlatten(now: Date): void {
+    if (!this.flattenPrePositions) return;
+    const day = dayKeyFormatter.format(now);
+    if (this.lastPreFlattenedDay === day) return;
+    this.lastPreFlattenedDay = day;
+    log.info({ day }, 'pre → transition — running pre flatten');
+    void this.flattenPrePositions.execute().catch((err) => {
+      log.error({ err: errMsg(err) }, 'pre flatten execution failed');
     });
   }
 
@@ -424,13 +469,31 @@ export class BarStreamManager {
   // symbol) and inFlight is keyed by `${name}:${symbol}`. Latency for the
   // last strategy drops from sum-of-strategies to max-of-strategies.
   private async processSymbol(symbol: string, bar: Bar): Promise<void> {
-    if (!this.marketHours.isOpen(new Date(this.now()))) return;
+    const session = this.marketHours.session(new Date(this.now()));
+    // Solo operamos en sesiones tradeables. 'transition' (9:20-9:30) y
+    // 'closed' caen acá: bars se siguen acumulando en barRepo pero el
+    // manager no corre estrategias ni stops sintéticos.
+    if (session !== 'pre' && session !== 'rth') return;
+
+    // CheckSyntheticStops corre una sola vez por symbol-bar (no por estrategia),
+    // porque opera sobre el ctx persistido y la estrategia es indistinguible
+    // para el monitor de stops sintéticos en pre.
+    if (session === 'pre' && this.checkSyntheticStops) {
+      try {
+        await this.checkSyntheticStops.execute(symbol, bar);
+      } catch (err) {
+        log.warn(
+          { symbol, err: errMsg(err) },
+          'checkSyntheticStops threw — continuing with strategies',
+        );
+      }
+    }
 
     await Promise.all(
       this.strategies.map(async (strategy) => {
         const watched = await strategy.watchlist.getBySymbol(symbol);
         if (!watched) return;
-        await this.processStrategy(strategy, symbol, bar);
+        await this.processStrategy(strategy, symbol, bar, session);
       }),
     );
   }
@@ -439,6 +502,7 @@ export class BarStreamManager {
     strategy: DecisionStrategy,
     symbol: string,
     bar: Bar,
+    session: 'pre' | 'rth',
   ): Promise<void> {
     const inFlightKey = `${strategy.name}:${symbol}`;
     if (this.inFlight.has(inFlightKey)) {
@@ -454,7 +518,10 @@ export class BarStreamManager {
         symbol,
       });
       if (stillExposed) {
+        // Break-even trailing solo aplica en RTH (en pre no hay StopMarket
+        // que mover; el flatten 9:20 cierra antes del open).
         if (
+          session === 'rth' &&
           this.maybeMoveStopToBreakEven &&
           strategy.trailToBreakEvenAtProfit !== undefined
         ) {
@@ -474,65 +541,20 @@ export class BarStreamManager {
         accountId,
         triggerBar: bar,
       });
-      log.info({ model: strategy.name, snapshot }, 'evaluating snapshot');
+      log.info(
+        { model: strategy.name, session, snapshot },
+        'evaluating snapshot',
+      );
       const signal = strategy.model.evaluate(snapshot);
       const evalEnd = new Date(this.now()).toISOString();
 
       this.metrics.recordDecision(symbol, signal.action);
       if (signal.action !== 'buy') return;
-      const result = await this.placeBracketOrder.execute({
-        symbol: signal.symbol,
-        side: signal.side,
-        entryLimitPrice: signal.entryLimitPrice,
-        quantity: signal.quantity,
-        stopOffset: signal.stopOffset,
-        takeProfitOffset: signal.takeProfitOffset,
-        accountId,
-      });
-      this.metrics.recordOrderResult(result.status);
-      log.info(
-        {
-          model: strategy.name,
-          symbol,
-          entryOrderId: result.entryOrderId,
-          stopOrderId: result.stopOrderId,
-          takeProfitOrderId: result.takeProfitOrderId,
-          status: result.status,
-        },
-        'bracket placed',
-      );
 
-      if (
-        result.entryOrderId &&
-        result.status !== 'rejected' &&
-        result.status !== 'cancelled' &&
-        result.status !== 'expired'
-      ) {
-        try {
-          await this.recordTradeContext.execute({
-            session: 'rth',
-            model: strategy.name,
-            accountId,
-            bracket: {
-              entryOrderId: result.entryOrderId,
-              stopOrderId: result.stopOrderId,
-              takeProfitOrderId: result.takeProfitOrderId,
-            },
-            signal,
-            evalStart,
-            evalEnd,
-          });
-        } catch (err) {
-          log.warn(
-            {
-              model: strategy.name,
-              symbol,
-              entryOrderId: result.entryOrderId,
-              err: errMsg(err),
-            },
-            'failed to persist trade context',
-          );
-        }
+      if (session === 'rth') {
+        await this.placeRthBracket(strategy, signal, evalStart, evalEnd);
+      } else {
+        await this.placePreLimit(strategy, signal, evalStart, evalEnd);
       }
     } catch (err) {
       log.error(
@@ -544,6 +566,140 @@ export class BarStreamManager {
       }
     } finally {
       this.inFlight.delete(inFlightKey);
+    }
+  }
+
+  private async placeRthBracket(
+    strategy: DecisionStrategy,
+    signal: Extract<
+      ReturnType<DecisionStrategy['model']['evaluate']>,
+      { action: 'buy' }
+    >,
+    evalStart: string,
+    evalEnd: string,
+  ): Promise<void> {
+    const accountId = strategy.accountId;
+    const result = await this.placeBracketOrder.execute({
+      symbol: signal.symbol,
+      side: signal.side,
+      entryLimitPrice: signal.entryLimitPrice,
+      quantity: signal.quantity,
+      stopOffset: signal.stopOffset,
+      takeProfitOffset: signal.takeProfitOffset,
+      accountId,
+    });
+    this.metrics.recordOrderResult(result.status);
+    log.info(
+      {
+        model: strategy.name,
+        symbol: signal.symbol,
+        entryOrderId: result.entryOrderId,
+        stopOrderId: result.stopOrderId,
+        takeProfitOrderId: result.takeProfitOrderId,
+        status: result.status,
+      },
+      'bracket placed',
+    );
+
+    if (
+      !result.entryOrderId ||
+      result.status === 'rejected' ||
+      result.status === 'cancelled' ||
+      result.status === 'expired'
+    ) {
+      return;
+    }
+    try {
+      await this.recordTradeContext.execute({
+        session: 'rth',
+        model: strategy.name,
+        accountId,
+        bracket: {
+          entryOrderId: result.entryOrderId,
+          stopOrderId: result.stopOrderId,
+          takeProfitOrderId: result.takeProfitOrderId,
+        },
+        signal,
+        evalStart,
+        evalEnd,
+      });
+    } catch (err) {
+      log.warn(
+        {
+          model: strategy.name,
+          symbol: signal.symbol,
+          entryOrderId: result.entryOrderId,
+          err: errMsg(err),
+        },
+        'failed to persist trade context',
+      );
+    }
+  }
+
+  private async placePreLimit(
+    strategy: DecisionStrategy,
+    signal: Extract<
+      ReturnType<DecisionStrategy['model']['evaluate']>,
+      { action: 'buy' }
+    >,
+    evalStart: string,
+    evalEnd: string,
+  ): Promise<void> {
+    if (!this.placeLimitOrder) {
+      log.warn(
+        { model: strategy.name, symbol: signal.symbol },
+        'pre signal ignored — placeLimitOrder not wired',
+      );
+      return;
+    }
+    const accountId = strategy.accountId;
+    const result = await this.placeLimitOrder.execute({
+      symbol: signal.symbol,
+      side: signal.side,
+      limitPrice: signal.entryLimitPrice,
+      quantity: signal.quantity,
+      accountId,
+      duration: 'DYP',
+      route: 'ARCA',
+    });
+    log.info(
+      {
+        model: strategy.name,
+        symbol: signal.symbol,
+        entryOrderId: result.orderId,
+        status: result.status,
+      },
+      'pre limit entry placed',
+    );
+
+    if (
+      !result.orderId ||
+      result.status === 'rejected' ||
+      result.status === 'cancelled' ||
+      result.status === 'expired'
+    ) {
+      return;
+    }
+    try {
+      await this.recordTradeContext.execute({
+        session: 'pre',
+        model: strategy.name,
+        accountId,
+        entryOrderId: result.orderId,
+        signal,
+        evalStart,
+        evalEnd,
+      });
+    } catch (err) {
+      log.warn(
+        {
+          model: strategy.name,
+          symbol: signal.symbol,
+          entryOrderId: result.orderId,
+          err: errMsg(err),
+        },
+        'failed to persist pre trade context',
+      );
     }
   }
 }

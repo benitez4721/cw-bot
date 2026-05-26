@@ -23,9 +23,12 @@ import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 import type { WatchlistRepository } from '../../../domain/watchlist/WatchlistRepository.js';
 import type { WatchedSymbol } from '../../../domain/watchlist/WatchlistTypes.js';
 import type { FlattenAllPositions } from '../../broker/FlattenAllPositions.js';
+import type { FlattenPrePositions } from '../../broker/FlattenPrePositions.js';
 import type { PlaceBracketOrder } from '../../broker/PlaceBracketOrder.js';
+import type { PlaceLimitOrder } from '../../broker/PlaceLimitOrder.js';
 import { CloseTrade } from '../../trade/CloseTrade.js';
 import { CheckOpenTrades } from '../../trade/CheckOpenTrades.js';
+import type { CheckSyntheticStops } from '../../trade/CheckSyntheticStops.js';
 import type { RecordTradeContext } from '../../trade/RecordTradeContext.js';
 import { BarStreamManager } from '../../marketdata/BarStreamManager.js';
 
@@ -1037,5 +1040,219 @@ describe('BarStreamManager', () => {
       expect(s.flushRedis).toHaveBeenCalledTimes(1);
       s.manager.stop();
     });
+  });
+});
+
+describe('BarStreamManager — branch pre', () => {
+  function preSetup() {
+    const session = { value: 'pre' as 'pre' | 'transition' | 'rth' | 'closed' };
+    const marketHours: MarketHours = {
+      session: () => session.value,
+      isOpen: () => session.value === 'rth',
+      isConnected: () =>
+        session.value === 'pre' ||
+        session.value === 'transition' ||
+        session.value === 'rth',
+    };
+
+    const feed = createFakeFeed();
+    const barRepo = createInMemoryBarRepo();
+    const historicalBars: HistoricalBarsPort = {
+      fetchHistoricalBars: vi.fn(async () => [
+        bar('2026-05-18T11:00:00Z', 100),
+        bar('2026-05-18T11:01:00Z', 100.5),
+      ]),
+    };
+    const tradeRepo = createTradeRepo();
+
+    const placeBracket = {
+      execute: vi.fn(async () => ({
+        status: 'open',
+        entryOrderId: 'E-rth',
+        stopOrderId: 'S-rth',
+        takeProfitOrderId: 'T-rth',
+      })),
+    };
+    const placeLimit = {
+      execute: vi.fn(async () => ({
+        orderId: 'E-pre',
+        status: 'open' as const,
+      })),
+    };
+    const checkSyntheticStops = {
+      execute: vi.fn(async () => undefined),
+    };
+    const flattenPre = { execute: vi.fn(async () => undefined) };
+    const flatten = { execute: vi.fn(async () => undefined) };
+    const recordContext = { execute: vi.fn(async () => undefined) };
+
+    const broker: BrokerPort = {
+      getPositions: vi.fn(async () => []),
+      getOrders: vi.fn(async () => []),
+      getQuote: vi.fn(),
+    } as unknown as BrokerPort;
+    const closeTrade = new CloseTrade(tradeRepo);
+    const checkOpenTrades = new CheckOpenTrades({
+      tradeRepo,
+      broker,
+      closeTrade,
+    });
+
+    const watchlist = createWatchlist([
+      { symbol: 'AAPL', status: 'active', createdAt: 1 },
+    ]);
+    const model: MockModel = {
+      name: 'MacdM1CrossOver',
+      buildSnapshot: vi.fn(async () => makeBuySignal('AAPL').snapshot),
+      evaluate: vi.fn(() => makeBuySignal('AAPL')),
+    };
+    const strategies: DecisionStrategy[] = [
+      {
+        name: 'MacdM1CrossOver',
+        model,
+        watchlist,
+        accountId: 'SIM12345',
+      },
+    ];
+
+    const metrics: MetricsPort = {
+      recordDecision: vi.fn(),
+      recordTick: vi.fn(),
+      recordOrderResult: vi.fn(),
+      recordTsRequest: vi.fn(),
+      recordOauthRefresh: vi.fn(),
+      setWatchlistSize: vi.fn(),
+      setScannerConnected: vi.fn(),
+      recordBarReceived: vi.fn(),
+      recordBarDedupSkip: vi.fn(),
+      recordBootstrapFailure: vi.fn(),
+      setMarketFeedConnected: vi.fn(),
+    } as unknown as MetricsPort;
+
+    const nowMs = { value: Date.UTC(2026, 4, 18, 12, 0, 0) }; // 08:00 ET pre
+
+    const manager = new BarStreamManager({
+      feed,
+      historicalBars,
+      barRepo,
+      strategies,
+      placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
+      placeLimitOrder: placeLimit as unknown as PlaceLimitOrder,
+      checkSyntheticStops:
+        checkSyntheticStops as unknown as CheckSyntheticStops,
+      recordTradeContext: recordContext as unknown as RecordTradeContext,
+      checkOpenTrades,
+      marketHours,
+      metrics,
+      flattenAll: flatten as unknown as FlattenAllPositions,
+      flattenPrePositions: flattenPre as unknown as FlattenPrePositions,
+      bootstrapBars: 2,
+      syncIntervalMs: 60_000,
+      now: () => nowMs.value,
+    });
+
+    return {
+      manager,
+      feed,
+      session,
+      placeBracket,
+      placeLimit,
+      checkSyntheticStops,
+      flattenPre,
+      flatten,
+      recordContext,
+      model,
+      nowMs,
+    };
+  }
+
+  it('en sesion pre, signal buy llama placeLimitOrder con Duration: DYP y Route: ARCA', async () => {
+    const s = preSetup();
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-18T12:01:00Z', 101));
+
+    expect(s.placeLimit.execute).toHaveBeenCalledTimes(1);
+    expect(s.placeLimit.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        duration: 'DYP',
+        route: 'ARCA',
+        symbol: 'AAPL',
+        side: 'BUY',
+      }),
+    );
+    expect(s.placeBracket.execute).not.toHaveBeenCalled();
+
+    expect(s.recordContext.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ session: 'pre', entryOrderId: 'E-pre' }),
+    );
+    s.manager.stop();
+  });
+
+  it('en sesion pre, cada bar invoca CheckSyntheticStops antes de las estrategias', async () => {
+    const s = preSetup();
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-18T12:01:00Z', 101));
+
+    expect(s.checkSyntheticStops.execute).toHaveBeenCalledWith(
+      'AAPL',
+      expect.objectContaining({ close: 101 }),
+    );
+    s.manager.stop();
+  });
+
+  it('en sesion transition no opera (skip placement y skip checkSyntheticStops)', async () => {
+    const s = preSetup();
+    await s.manager.start();
+    s.session.value = 'transition';
+    await s.feed.emitBar('AAPL', bar('2026-05-18T12:01:00Z', 101));
+
+    expect(s.placeLimit.execute).not.toHaveBeenCalled();
+    expect(s.placeBracket.execute).not.toHaveBeenCalled();
+    expect(s.checkSyntheticStops.execute).not.toHaveBeenCalled();
+    s.manager.stop();
+  });
+
+  it('boundary pre → transition dispara flattenPrePositions una sola vez por dia', async () => {
+    const s = preSetup();
+    await s.manager.start();
+    // Primer tick: estamos en pre (no dispara).
+    await s.manager.forceSync();
+    expect(s.flattenPre.execute).not.toHaveBeenCalled();
+
+    // Cruce a transition: dispara.
+    s.session.value = 'transition';
+    await s.manager.forceSync();
+    expect(s.flattenPre.execute).toHaveBeenCalledTimes(1);
+
+    // Otro tick en transition: no re-dispara (idempotencia diaria).
+    await s.manager.forceSync();
+    expect(s.flattenPre.execute).toHaveBeenCalledTimes(1);
+    s.manager.stop();
+  });
+
+  it('boundary rth → closed sigue disparando flattenAll RTH', async () => {
+    const s = preSetup();
+    s.session.value = 'rth';
+    await s.manager.start();
+
+    s.session.value = 'closed';
+    await s.manager.forceSync();
+    expect(s.flatten.execute).toHaveBeenCalledTimes(1);
+    expect(s.flattenPre.execute).not.toHaveBeenCalled();
+    s.manager.stop();
+  });
+
+  it('en sesion rth, signal buy sigue usando placeBracketOrder (sin cambios)', async () => {
+    const s = preSetup();
+    s.session.value = 'rth';
+    await s.manager.start();
+    await s.feed.emitBar('AAPL', bar('2026-05-18T14:31:00Z', 101));
+
+    expect(s.placeBracket.execute).toHaveBeenCalledTimes(1);
+    expect(s.placeLimit.execute).not.toHaveBeenCalled();
+    expect(s.recordContext.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ session: 'rth' }),
+    );
+    s.manager.stop();
   });
 });
