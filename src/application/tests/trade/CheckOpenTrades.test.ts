@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CheckOpenTrades } from '../../../application/trade/CheckOpenTrades.js';
 import { CloseTrade } from '../../../application/trade/CloseTrade.js';
 import type { BrokerPort } from '../../../domain/broker/BrokerPort.js';
-import type { Order } from '../../../domain/broker/BrokerTypes.js';
+import type { Order, Position } from '../../../domain/broker/BrokerTypes.js';
 import type { TradeContextRepository } from '../../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 
@@ -39,14 +39,29 @@ function makeOrder(id: string, status: Order['status'] = 'open'): Order {
   };
 }
 
+function makePosition(over: Partial<Position> = {}): Position {
+  return {
+    symbol: 'AAPL',
+    accountId: 'SIM12345',
+    quantity: 100,
+    averagePrice: 100,
+    marketValue: 10_000,
+    unrealizedPnL: 0,
+    ...over,
+  };
+}
+
 interface Setup {
   contexts: TradeContext[];
   orders: Order[];
+  positions?: Position[];
 }
 
 function buildDeps(s: Setup) {
+  const getPositions = vi.fn(async () => s.positions ?? []);
   const broker = {
     getOrders: vi.fn(async () => s.orders),
+    getPositions,
   } as unknown as BrokerPort;
   const tradeRepo = {
     listActiveByModel: vi.fn(async () => s.contexts),
@@ -54,7 +69,7 @@ function buildDeps(s: Setup) {
   } as unknown as TradeContextRepository;
   const closeTrade = new CloseTrade(tradeRepo);
   vi.spyOn(closeTrade, 'execute').mockResolvedValue(undefined);
-  return { broker, tradeRepo, closeTrade };
+  return { broker, tradeRepo, closeTrade, getPositions };
 }
 
 describe('CheckOpenTrades — forcedExitOrderId', () => {
@@ -116,5 +131,115 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
     expect(result.stillExposed).toBe(true);
     expect(closeTrade.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('CheckOpenTrades — sesion pre', () => {
+  it('ctx pre con entry filled + position abierta: stillExposed=true (no cierra)', async () => {
+    // El bot abrio una alert pre: entry Limit DYP, no hay StopMarket en
+    // broker. La entry llena y desaparece de las "ordenes activas". Sin
+    // fallback de positions, CheckOpenTrades cerraria el ctx aunque la
+    // posicion siga abierta — habilitando duplicados al llegar otra alerta.
+    const ctx = makeContext({
+      session: 'pre',
+      syntheticExitFired: false,
+      bracket: { entryOrderId: 'E1' },
+    });
+    const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
+      contexts: [ctx],
+      orders: [],
+      positions: [makePosition({ quantity: 2000 })],
+    });
+    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+
+    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
+
+    expect(getPositions).toHaveBeenCalledWith({ accountId: 'SIM12345' });
+    expect(result.stillExposed).toBe(true);
+    expect(closeTrade.execute).not.toHaveBeenCalled();
+  });
+
+  it('ctx pre sin orden activa ni position: cierra el ctx', async () => {
+    // Caso esperado tras un exit que llego y dejo flat la posicion fuera del
+    // tracking sintetico (ej. cierre manual desde otro lado).
+    const ctx = makeContext({
+      session: 'pre',
+      syntheticExitFired: false,
+      bracket: { entryOrderId: 'E1' },
+    });
+    const { broker, tradeRepo, closeTrade } = buildDeps({
+      contexts: [ctx],
+      orders: [],
+      positions: [],
+    });
+    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+
+    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
+
+    expect(result.stillExposed).toBe(false);
+    expect(closeTrade.execute).toHaveBeenCalledWith('E1');
+  });
+
+  it('ctx pre con syntheticExitFired=true no consulta positions (depende de la orden de exit)', async () => {
+    // Una vez disparado el exit sintetico, el residuo broker-side existe
+    // (forcedExitOrderId). Si esa orden ya no esta active, el trade esta
+    // cerrado — no necesitamos getPositions.
+    const ctx = makeContext({
+      session: 'pre',
+      syntheticExitFired: true,
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
+    });
+    const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
+      contexts: [ctx],
+      orders: [],
+    });
+    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+
+    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
+
+    expect(getPositions).not.toHaveBeenCalled();
+    expect(result.stillExposed).toBe(false);
+    expect(closeTrade.execute).toHaveBeenCalledWith('E1');
+  });
+
+  it('ctx pre con forcedExit todavia open: stillExposed=true por la orden, sin tocar positions', async () => {
+    const ctx = makeContext({
+      session: 'pre',
+      syntheticExitFired: true,
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
+    });
+    const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
+      contexts: [ctx],
+      orders: [makeOrder('X1', 'open')],
+    });
+    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+
+    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
+
+    expect(getPositions).not.toHaveBeenCalled();
+    expect(result.stillExposed).toBe(true);
+    expect(closeTrade.execute).not.toHaveBeenCalled();
+  });
+
+  it('ctx pre sin position pero en otra account: no marca stillExposed', async () => {
+    // Defensa contra positions cross-account: aunque haya una position en
+    // AAPL, si pertenece a otra cuenta, no es del ctx — no debe contar.
+    const ctx = makeContext({
+      accountId: 'SIM-A',
+      session: 'pre',
+      syntheticExitFired: false,
+      bracket: { entryOrderId: 'E1' },
+    });
+    const { broker, tradeRepo, closeTrade } = buildDeps({
+      contexts: [ctx],
+      orders: [],
+      positions: [makePosition({ accountId: 'SIM-B', quantity: 100 })],
+    });
+    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+
+    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
+
+    expect(result.stillExposed).toBe(false);
+    expect(closeTrade.execute).toHaveBeenCalledWith('E1');
   });
 });
