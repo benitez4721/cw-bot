@@ -15,7 +15,7 @@ const DEPS = {
 function bullishStructure(
   overrides: Partial<MarketStructure> = {},
 ): MarketStructure {
-  // barCount=106: con lookback=5, el HL "recién confirmado" tiene barIndex=100
+  // barCount=104: con lookback=3, el HL "recién confirmado" tiene barIndex=100
   return {
     swings: [
       { label: 'HH', price: 105, barIndex: 90, timestamp: 't90' },
@@ -28,8 +28,8 @@ function bullishStructure(
       },
     ],
     bullish: true,
-    barCount: 106,
-    timestamp: 't105',
+    barCount: 104,
+    timestamp: 't103',
     ...overrides,
   };
 }
