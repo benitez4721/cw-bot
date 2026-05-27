@@ -125,7 +125,7 @@ export class LocalIndicatorAdapter implements IndicatorPort {
         `LocalIndicator: insufficient data for MarketStructure(n=${n}) on ${input.symbol} (need ${2 * n + 1}, have ${bars.length})`,
       );
     }
-    return classifyMarketStructure(bars, n);
+    return classifyMarketStructure(bars, n, input.emaPeriod);
   }
 
   private async loadBars(

@@ -436,4 +436,25 @@ describe('classifyMarketStructure', () => {
     const result = classifyMarketStructure(uptrend(), 2);
     expect(result.timestamp).toBe(`t${uptrend().length - 1}`);
   });
+
+  it('sets barCount to bars.length', () => {
+    const bars = uptrend();
+    const result = classifyMarketStructure(bars, 2);
+    expect(result.barCount).toBe(bars.length);
+  });
+
+  it('annotates emaValue on swings when emaPeriod is provided', () => {
+    const result = classifyMarketStructure(uptrend(), 2, 3);
+    for (const s of result.swings) {
+      expect(s.emaValue).toBeDefined();
+      expect(typeof s.emaValue).toBe('number');
+    }
+  });
+
+  it('leaves emaValue undefined when emaPeriod is not provided', () => {
+    const result = classifyMarketStructure(uptrend(), 2);
+    for (const s of result.swings) {
+      expect(s.emaValue).toBeUndefined();
+    }
+  });
 });

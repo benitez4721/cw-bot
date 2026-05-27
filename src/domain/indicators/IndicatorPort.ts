@@ -36,6 +36,7 @@ export interface MarketStructureInput {
   symbol: string;
   interval: IntradayInterval;
   lookback?: number;
+  emaPeriod?: number;
 }
 
 export interface IndicatorPort {

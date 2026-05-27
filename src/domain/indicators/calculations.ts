@@ -250,20 +250,35 @@ export function detectSwingPivots(bars: Bar[], n: number): RawPivot[] {
 export function classifyMarketStructure(
   bars: Bar[],
   n: number,
+  emaPeriod?: number,
 ): MarketStructure {
   const empty: MarketStructure = {
     swings: [],
     bullish: false,
+    barCount: bars.length,
     timestamp: bars.length > 0 ? bars[bars.length - 1].timestamp : '',
   };
   if (bars.length < 2 * n + 1) return empty;
 
   const pivots = detectSwingPivots(bars, n);
+
+  const emaValues =
+    emaPeriod !== undefined
+      ? calcEMA(
+          bars.map((b) => b.close),
+          emaPeriod,
+        )
+      : undefined;
+
   const swings: SwingPoint[] = [];
   let prevHigh: RawPivot | null = null;
   let prevLow: RawPivot | null = null;
 
   for (const p of pivots) {
+    const emaValue = emaValues?.[p.barIndex];
+    const ema =
+      emaValue !== undefined && !Number.isNaN(emaValue) ? emaValue : undefined;
+
     if (p.kind === 'high') {
       if (prevHigh !== null) {
         const label: SwingLabel = p.price > prevHigh.price ? 'HH' : 'LH';
@@ -272,6 +287,7 @@ export function classifyMarketStructure(
           price: p.price,
           barIndex: p.barIndex,
           timestamp: p.timestamp,
+          emaValue: ema,
         });
       }
       prevHigh = p;
@@ -283,6 +299,7 @@ export function classifyMarketStructure(
           price: p.price,
           barIndex: p.barIndex,
           timestamp: p.timestamp,
+          emaValue: ema,
         });
       }
       prevLow = p;
@@ -304,6 +321,7 @@ export function classifyMarketStructure(
   return {
     swings,
     bullish,
+    barCount: bars.length,
     timestamp: bars[bars.length - 1].timestamp,
   };
 }

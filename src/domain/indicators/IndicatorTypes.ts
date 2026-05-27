@@ -36,10 +36,12 @@ export interface SwingPoint {
   price: number;
   barIndex: number;
   timestamp: string;
+  emaValue?: number;
 }
 
 export interface MarketStructure {
   swings: SwingPoint[];
   bullish: boolean;
+  barCount: number;
   timestamp: string;
 }
