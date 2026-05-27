@@ -37,6 +37,7 @@ export interface SwingPoint {
   barIndex: number;
   timestamp: string;
   emaValue?: number;
+  emaBounceConfirmed?: boolean;
 }
 
 export interface MarketStructure {

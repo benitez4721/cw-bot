@@ -294,12 +294,31 @@ export function classifyMarketStructure(
     } else {
       if (prevLow !== null) {
         const label: SwingLabel = p.price > prevLow.price ? 'HL' : 'LL';
+        let emaBounceConfirmed: boolean | undefined;
+        if (label === 'HL' && emaValues) {
+          emaBounceConfirmed = true;
+          for (let offset = 1; offset <= n; offset++) {
+            const idx = p.barIndex + offset;
+            if (idx >= bars.length) {
+              emaBounceConfirmed = false;
+              break;
+            }
+            if (
+              Number.isNaN(emaValues[idx]) ||
+              bars[idx].close <= emaValues[idx]
+            ) {
+              emaBounceConfirmed = false;
+              break;
+            }
+          }
+        }
         swings.push({
           label,
           price: p.price,
           barIndex: p.barIndex,
           timestamp: p.timestamp,
           emaValue: ema,
+          emaBounceConfirmed,
         });
       }
       prevLow = p;

@@ -25,6 +25,7 @@ function bullishStructure(
         barIndex: 100,
         timestamp: 't100',
         emaValue: 100,
+        emaBounceConfirmed: true,
       },
     ],
     bullish: true,
@@ -167,6 +168,55 @@ describe('MarketStructureDecisionModel', () => {
       }),
     );
     expect(result.action).toBe('hold');
+  });
+
+  it('holds when HL bounce is not confirmed', () => {
+    const model = new MarketStructureDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
+        structure: bullishStructure({
+          swings: [
+            { label: 'HH', price: 105, barIndex: 90, timestamp: 't90' },
+            {
+              label: 'HL',
+              price: 99,
+              barIndex: 100,
+              timestamp: 't100',
+              emaValue: 100,
+              emaBounceConfirmed: false,
+            },
+          ],
+        }),
+      }),
+    );
+    expect(result.action).toBe('hold');
+    expect(
+      result.checks.find((c) => c.name === 'HL bounce confirmed')?.passed,
+    ).toBe(false);
+  });
+
+  it('holds when emaBounceConfirmed is undefined', () => {
+    const model = new MarketStructureDecisionModel(DEPS);
+    const result = model.evaluate(
+      snapshot({
+        structure: bullishStructure({
+          swings: [
+            { label: 'HH', price: 105, barIndex: 90, timestamp: 't90' },
+            {
+              label: 'HL',
+              price: 99,
+              barIndex: 100,
+              timestamp: 't100',
+              emaValue: 100,
+            },
+          ],
+        }),
+      }),
+    );
+    expect(result.action).toBe('hold');
+    expect(
+      result.checks.find((c) => c.name === 'HL bounce confirmed')?.passed,
+    ).toBe(false);
   });
 
   it('uses ask price when available', () => {

@@ -109,6 +109,10 @@ export class MarketStructureDecisionModel implements DecisionModel<MarketStructu
           hl !== null && hl.emaValue !== undefined && hl.price <= hl.emaValue,
       },
       {
+        name: 'HL bounce confirmed',
+        passed: hl !== null && hl.emaBounceConfirmed === true,
+      },
+      {
         name: 'quantity > 0',
         passed:
           atr !== null &&

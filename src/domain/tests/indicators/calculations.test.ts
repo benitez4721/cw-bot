@@ -457,4 +457,55 @@ describe('classifyMarketStructure', () => {
       expect(s.emaValue).toBeUndefined();
     }
   });
+
+  it('sets emaBounceConfirmed true when confirmation bars close above EMA', () => {
+    const result = classifyMarketStructure(uptrend(), 2, 3);
+    const hls = result.swings.filter((s) => s.label === 'HL');
+    expect(hls.length).toBeGreaterThan(0);
+    for (const hl of hls) {
+      expect(hl.emaBounceConfirmed).toBeDefined();
+    }
+  });
+
+  it('sets emaBounceConfirmed false when a confirmation bar closes below EMA', () => {
+    const prices = uptrend();
+    const result = classifyMarketStructure(uptrend(), 2, 3);
+    const hl = result.swings.find((s) => s.label === 'HL');
+    if (!hl) throw new Error('expected HL in uptrend fixture');
+    const idx1 = hl.barIndex + 1;
+    const idx2 = hl.barIndex + 2;
+    const tweaked = [...prices];
+    tweaked[idx1] = bar(
+      tweaked[idx1].high,
+      tweaked[idx1].low,
+      0.01,
+      `t${idx1}`,
+    );
+    tweaked[idx2] = bar(
+      tweaked[idx2].high,
+      tweaked[idx2].low,
+      0.01,
+      `t${idx2}`,
+    );
+    const result2 = classifyMarketStructure(tweaked, 2, 3);
+    const hl2 = result2.swings.find(
+      (s) => s.label === 'HL' && s.barIndex === hl.barIndex,
+    );
+    expect(hl2?.emaBounceConfirmed).toBe(false);
+  });
+
+  it('leaves emaBounceConfirmed undefined on non-HL swings', () => {
+    const result = classifyMarketStructure(uptrend(), 2, 3);
+    const nonHL = result.swings.filter((s) => s.label !== 'HL');
+    for (const s of nonHL) {
+      expect(s.emaBounceConfirmed).toBeUndefined();
+    }
+  });
+
+  it('leaves emaBounceConfirmed undefined when emaPeriod is not provided', () => {
+    const result = classifyMarketStructure(uptrend(), 2);
+    for (const s of result.swings) {
+      expect(s.emaBounceConfirmed).toBeUndefined();
+    }
+  });
 });
