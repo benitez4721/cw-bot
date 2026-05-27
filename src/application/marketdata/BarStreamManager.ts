@@ -30,10 +30,10 @@ const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
-// Pre-market flush corre 1 min antes del open (9:29 ET) de cada día hábil
+// Flush corre 1 min antes del pre-market open (3:59 ET) de cada día hábil
 // para que el bot arranque el día con Redis limpio.
-const FLUSH_HOUR_NY = 9;
-const FLUSH_MINUTE_NY = 29;
+const FLUSH_HOUR_NY = 3;
+const FLUSH_MINUTE_NY = 59;
 
 const wallNyFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
@@ -313,8 +313,8 @@ export class BarStreamManager {
   }
 
   // Awaited: queremos que el flush termine antes de que el tick avance a
-  // sus ramas de feed/sync. En la práctica corre a 9:29 ET cuando feed está
-  // desconectado, así que no compite con el bootstrap (que ocurre a 9:30).
+  // sus ramas de feed/sync. En la práctica corre a 3:59 ET cuando feed está
+  // desconectado, así que no compite con el bootstrap (que ocurre a 4:00).
   // Idempotente por día NY: marcamos el día como flusheado-intentado aunque
   // el flush falle, para evitar bucles de reintento dentro de la ventana.
   private async triggerPreMarketFlush(now: Date): Promise<void> {

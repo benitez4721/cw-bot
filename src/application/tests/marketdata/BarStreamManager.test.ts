@@ -953,20 +953,20 @@ describe('BarStreamManager', () => {
   });
 
   describe('pre-market flush', () => {
-    // 2026-05-18 (Monday) 13:29 UTC = 09:29 EDT → ventana de flush.
-    const FLUSH_WINDOW = new Date('2026-05-18T13:29:00Z').getTime();
-    // 2026-05-18 (Monday) 13:28 UTC = 09:28 EDT → antes de la ventana.
-    const BEFORE_WINDOW = new Date('2026-05-18T13:28:00Z').getTime();
-    // 2026-05-18 (Monday) 13:30 UTC = 09:30 EDT → fuera de la ventana (open).
-    const AFTER_WINDOW = new Date('2026-05-18T13:30:00Z').getTime();
-    // 2026-05-19 (Tuesday) 13:29 UTC = 09:29 EDT → ventana del día siguiente.
-    const NEXT_DAY_FLUSH_WINDOW = new Date('2026-05-19T13:29:00Z').getTime();
-    // 2026-05-16 (Saturday) 13:29 UTC = 09:29 EDT.
-    const SATURDAY_FLUSH_WINDOW = new Date('2026-05-16T13:29:00Z').getTime();
-    // 2026-05-17 (Sunday) 13:29 UTC = 09:29 EDT.
-    const SUNDAY_FLUSH_WINDOW = new Date('2026-05-17T13:29:00Z').getTime();
+    // 2026-05-18 (Monday) 07:59 UTC = 03:59 EDT → ventana de flush.
+    const FLUSH_WINDOW = new Date('2026-05-18T07:59:00Z').getTime();
+    // 2026-05-18 (Monday) 07:58 UTC = 03:58 EDT → antes de la ventana.
+    const BEFORE_WINDOW = new Date('2026-05-18T07:58:00Z').getTime();
+    // 2026-05-18 (Monday) 08:00 UTC = 04:00 EDT → fuera de la ventana (pre-market open).
+    const AFTER_WINDOW = new Date('2026-05-18T08:00:00Z').getTime();
+    // 2026-05-19 (Tuesday) 07:59 UTC = 03:59 EDT → ventana del día siguiente.
+    const NEXT_DAY_FLUSH_WINDOW = new Date('2026-05-19T07:59:00Z').getTime();
+    // 2026-05-16 (Saturday) 07:59 UTC = 03:59 EDT.
+    const SATURDAY_FLUSH_WINDOW = new Date('2026-05-16T07:59:00Z').getTime();
+    // 2026-05-17 (Sunday) 07:59 UTC = 03:59 EDT.
+    const SUNDAY_FLUSH_WINDOW = new Date('2026-05-17T07:59:00Z').getTime();
 
-    it('flushea cuando el tick cae a 9:29 ET de un día hábil', async () => {
+    it('flushea cuando el tick cae a 3:59 ET de un día hábil', async () => {
       const s = setup({ initialNowMs: FLUSH_WINDOW });
       s.marketOpen.value = false;
       await s.manager.start();
@@ -987,13 +987,13 @@ describe('BarStreamManager', () => {
       s.manager.stop();
     });
 
-    it('idempotencia: dos ticks dentro del mismo minuto 9:29 → un solo flush', async () => {
+    it('idempotencia: dos ticks dentro del mismo minuto 3:59 → un solo flush', async () => {
       const s = setup({ initialNowMs: FLUSH_WINDOW });
       s.marketOpen.value = false;
       await s.manager.start();
       expect(s.flushRedis).toHaveBeenCalledTimes(1);
 
-      s.nowMs.value = FLUSH_WINDOW + 30_000; // 9:29:30 ET, sigue dentro
+      s.nowMs.value = FLUSH_WINDOW + 30_000; // 3:59:30 ET, sigue dentro
       await s.manager.forceSync();
       expect(s.flushRedis).toHaveBeenCalledTimes(1);
       s.manager.stop();
