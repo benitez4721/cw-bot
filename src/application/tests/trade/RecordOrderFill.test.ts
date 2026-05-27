@@ -93,6 +93,7 @@ describe('RecordOrderFill', () => {
       exitFillPrice: 97.5,
       exitFillQuantity: 100,
       exitLeg: 'stop',
+      status: 'closed',
     });
   });
 
@@ -105,6 +106,7 @@ describe('RecordOrderFill', () => {
 
     expect(patch.mock.calls[0][1].exitLeg).toBe('takeProfit');
     expect(patch.mock.calls[0][1].exitFillPrice).toBe(103.0);
+    expect(patch.mock.calls[0][1].status).toBe('closed');
   });
 
   it('marca exitLeg=forced en un fill del forcedExitOrderId', async () => {
@@ -123,6 +125,7 @@ describe('RecordOrderFill', () => {
 
     expect(patch.mock.calls[0][1].exitLeg).toBe('forced');
     expect(patch.mock.calls[0][1].exitFillPrice).toBe(99.8);
+    expect(patch.mock.calls[0][1].status).toBe('closed');
   });
 
   it('no escribe cuando filledPrice viene undefined (ACK/OPN previo al fill)', async () => {

@@ -62,7 +62,12 @@ function buildPatch(
   ) {
     return undefined;
   }
-  return { exitFillPrice: price, exitFillQuantity: qty, exitLeg };
+  return {
+    exitFillPrice: price,
+    exitFillQuantity: qty,
+    exitLeg,
+    status: 'closed',
+  };
 }
 
 function exitLegOf(
