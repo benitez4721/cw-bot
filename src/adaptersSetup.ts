@@ -13,6 +13,7 @@ import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/Twe
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
 import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
+import { MarketStructureDecisionModel } from './domain/decision/models/MarketStructureDecisionModel.js';
 import { SuperDecisionModel } from './domain/decision/models/SuperDecisionModel.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
@@ -139,6 +140,22 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID!,
   };
 
+  const marketStructureWatchlist = new RedisWatchlistRepository(redis, {
+    keyPrefix: 'cw:wl:mktstr',
+  });
+  const marketStructureModel = new MarketStructureDecisionModel({
+    broker,
+    indicators,
+  });
+  const marketStructureStrategy: ConfiguredStrategy = {
+    name: 'MarketStructure',
+    model: marketStructureModel,
+    watchlist: marketStructureWatchlist,
+    trailToBreakEvenAtProfit: 0.01,
+    cwConfigId: '69f6bec1f52a7e93e345cd0c',
+    accountId: env.TRADESTATION_ACCOUNT_ID_2!,
+  };
+
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
   // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
   // recibir cada NewAlert. Convive en paralelo con los DecisionStrategy.
@@ -151,7 +168,11 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID!,
   };
 
-  const strategies = [superStrategy, macdM1CrossOverStrategy];
+  const strategies = [
+    superStrategy,
+    macdM1CrossOverStrategy,
+    marketStructureStrategy,
+  ];
   const eventStrategies = [highOfDayAlert];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
