@@ -7,6 +7,8 @@ import {
   calcMACD,
   calcSessionVWAP,
   calcTrueRange,
+  classifyMarketStructure,
+  detectSwingPivots,
   toEasternDate,
 } from '../../indicators/calculations.js';
 
@@ -303,5 +305,135 @@ describe('toEasternDate', () => {
   it('handles after-midnight UTC that is still previous day in NY', () => {
     // 2026-05-07T03:00:00Z = 2026-05-06 23:00 EDT
     expect(toEasternDate('2026-05-07T03:00:00Z')).toBe('2026-05-06');
+  });
+});
+
+describe('detectSwingPivots', () => {
+  it('detects a swing high and swing low with N=2', () => {
+    const bars = [
+      bar(15, 13, 14, 't0'),
+      bar(14, 12, 13, 't1'),
+      bar(13, 11, 12, 't2'),
+      bar(12, 10, 11, 't3'),
+      bar(11, 9, 10, 't4'),
+      bar(12, 10, 11, 't5'),
+      bar(13, 11, 12, 't6'),
+      bar(14, 12, 13, 't7'),
+      bar(15, 13, 14, 't8'),
+      bar(14, 12, 13, 't9'),
+      bar(13, 11, 12, 't10'),
+    ];
+    const pivots = detectSwingPivots(bars, 2);
+    expect(pivots).toHaveLength(2);
+    expect(pivots[0]).toMatchObject({ kind: 'low', price: 9, barIndex: 4 });
+    expect(pivots[1]).toMatchObject({ kind: 'high', price: 15, barIndex: 8 });
+  });
+
+  it('enforces alternation — keeps the more extreme pivot', () => {
+    const bars = [
+      bar(18, 19, 18, 't0'),
+      bar(20, 19, 19, 't1'),
+      bar(19, 19, 19, 't2'),
+      bar(22, 19, 21, 't3'),
+      bar(21, 19, 20, 't4'),
+    ];
+    const pivots = detectSwingPivots(bars, 1);
+    const highs = pivots.filter((p) => p.kind === 'high');
+    expect(highs).toHaveLength(1);
+    expect(highs[0].price).toBe(22);
+  });
+
+  it('returns empty for series shorter than 2N+1', () => {
+    const bars = [bar(10, 8, 9, 't0'), bar(11, 9, 10, 't1')];
+    expect(detectSwingPivots(bars, 2)).toEqual([]);
+  });
+
+  it('returns empty for a flat series', () => {
+    const bars = Array.from({ length: 10 }, (_, i) => bar(10, 8, 9, `t${i}`));
+    expect(detectSwingPivots(bars, 2)).toEqual([]);
+  });
+});
+
+describe('classifyMarketStructure', () => {
+  function uptrend(): Bar[] {
+    const prices = [
+      [10, 8],
+      [9, 7],
+      [8, 5],
+      [9, 6],
+      [10, 7],
+      [13, 10],
+      [15, 12],
+      [14, 11],
+      [12, 8],
+      [11, 7],
+      [10, 8],
+      [12, 9],
+      [14, 11],
+      [16, 13],
+      [18, 15],
+      [17, 14],
+      [15, 11],
+      [14, 10],
+      [13, 11],
+      [15, 12],
+      [17, 14],
+      [19, 16],
+      [21, 18],
+      [20, 17],
+      [18, 15],
+      [17, 14],
+    ];
+    return prices.map(([h, l], i) => bar(h, l, (h + l) / 2, `t${i}`));
+  }
+
+  it('detects bullish structure (HH + HL)', () => {
+    const result = classifyMarketStructure(uptrend(), 2);
+    expect(result.bullish).toBe(true);
+    const labels = result.swings.map((s) => s.label);
+    expect(labels).toContain('HH');
+    expect(labels).toContain('HL');
+  });
+
+  it('detects non-bullish when highs descend', () => {
+    const bars = [
+      bar(20, 18, 19, 't0'),
+      bar(21, 19, 20, 't1'),
+      bar(22, 20, 21, 't2'),
+      bar(21, 19, 20, 't3'),
+      bar(20, 18, 19, 't4'),
+      bar(19, 17, 18, 't5'),
+      bar(18, 16, 17, 't6'),
+      bar(19, 17, 18, 't7'),
+      bar(20, 18, 19, 't8'),
+      bar(19, 17, 18, 't9'),
+      bar(18, 16, 17, 't10'),
+      bar(17, 15, 16, 't11'),
+      bar(16, 14, 15, 't12'),
+      bar(17, 15, 16, 't13'),
+      bar(18, 16, 17, 't14'),
+    ];
+    const result = classifyMarketStructure(bars, 2);
+    expect(result.bullish).toBe(false);
+  });
+
+  it('returns bullish false when not enough swings to classify', () => {
+    const bars = Array.from({ length: 7 }, (_, i) =>
+      bar(10 + i, 8 + i, 9 + i, `t${i}`),
+    );
+    const result = classifyMarketStructure(bars, 2);
+    expect(result.bullish).toBe(false);
+  });
+
+  it('returns empty swings and bullish false for series < 2N+1', () => {
+    const bars = [bar(10, 8, 9, 't0'), bar(11, 9, 10, 't1')];
+    const result = classifyMarketStructure(bars, 2);
+    expect(result.swings).toEqual([]);
+    expect(result.bullish).toBe(false);
+  });
+
+  it('sets timestamp to last bar timestamp', () => {
+    const result = classifyMarketStructure(uptrend(), 2);
+    expect(result.timestamp).toBe(`t${uptrend().length - 1}`);
   });
 });

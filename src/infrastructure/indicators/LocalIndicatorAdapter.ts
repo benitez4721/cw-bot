@@ -3,11 +3,13 @@ import type {
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
+  MarketStructureInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
   ATR,
   IndicatorInterval,
+  MarketStructure,
   MACD,
   SeriesType,
   VWAP,
@@ -21,6 +23,7 @@ import {
   calcATR,
   calcMACD,
   calcSessionVWAP,
+  classifyMarketStructure,
   toEasternDate,
 } from '../../domain/indicators/calculations.js';
 import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
@@ -106,6 +109,23 @@ export class LocalIndicatorAdapter implements IndicatorPort {
     throw new CacheUnderfilledError(
       `LocalIndicator: no valid ATR value on ${input.symbol}`,
     );
+  }
+
+  async getMarketStructure(
+    input: MarketStructureInput,
+  ): Promise<MarketStructure> {
+    const n = input.lookback ?? 3;
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new Error('MarketStructure: lookback must be a positive integer');
+    }
+    const interval = mapToBarInterval(input.interval);
+    const bars = await this.loadBars(input.symbol, interval);
+    if (bars.length < 2 * n + 1) {
+      throw new CacheUnderfilledError(
+        `LocalIndicator: insufficient data for MarketStructure(n=${n}) on ${input.symbol} (need ${2 * n + 1}, have ${bars.length})`,
+      );
+    }
+    return classifyMarketStructure(bars, n);
   }
 
   private async loadBars(

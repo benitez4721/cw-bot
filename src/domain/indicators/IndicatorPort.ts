@@ -3,6 +3,7 @@ import type {
   IndicatorInterval,
   IntradayInterval,
   MACD,
+  MarketStructure,
   SeriesType,
   VWAP,
 } from './IndicatorTypes.js';
@@ -31,9 +32,16 @@ export interface ATRInput {
   period?: number;
 }
 
+export interface MarketStructureInput {
+  symbol: string;
+  interval: IntradayInterval;
+  lookback?: number;
+}
+
 export interface IndicatorPort {
   getMACD(input: MACDInput): Promise<MACD>;
   getMACDSeries(input: MACDSeriesInput): Promise<MACD[]>;
   getVWAP(input: VWAPInput): Promise<VWAP>;
   getATR(input: ATRInput): Promise<ATR>;
+  getMarketStructure(input: MarketStructureInput): Promise<MarketStructure>;
 }

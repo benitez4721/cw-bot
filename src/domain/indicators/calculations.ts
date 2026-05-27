@@ -1,3 +1,8 @@
+import type {
+  MarketStructure,
+  SwingLabel,
+  SwingPoint,
+} from './IndicatorTypes.js';
 import type { Bar } from '../marketdata/MarketDataTypes.js';
 
 export interface MACDPoint {
@@ -172,4 +177,133 @@ const easternDateFormatter = new Intl.DateTimeFormat('en-CA', {
 
 export function toEasternDate(iso: string): string {
   return easternDateFormatter.format(new Date(iso));
+}
+
+// ---------------------------------------------------------------------------
+// Swing pivot detection & market structure
+// ---------------------------------------------------------------------------
+
+interface RawPivot {
+  kind: 'high' | 'low';
+  price: number;
+  barIndex: number;
+  timestamp: string;
+}
+
+function isSwingHigh(bars: Bar[], i: number, n: number): boolean {
+  for (let j = 1; j <= n; j++) {
+    if (bars[i].high <= bars[i - j].high) return false;
+    if (bars[i].high <= bars[i + j].high) return false;
+  }
+  return true;
+}
+
+function isSwingLow(bars: Bar[], i: number, n: number): boolean {
+  for (let j = 1; j <= n; j++) {
+    if (bars[i].low >= bars[i - j].low) return false;
+    if (bars[i].low >= bars[i + j].low) return false;
+  }
+  return true;
+}
+
+export function detectSwingPivots(bars: Bar[], n: number): RawPivot[] {
+  const candidates: RawPivot[] = [];
+  for (let i = n; i < bars.length - n; i++) {
+    if (isSwingHigh(bars, i, n)) {
+      candidates.push({
+        kind: 'high',
+        price: bars[i].high,
+        barIndex: i,
+        timestamp: bars[i].timestamp,
+      });
+    }
+    if (isSwingLow(bars, i, n)) {
+      candidates.push({
+        kind: 'low',
+        price: bars[i].low,
+        barIndex: i,
+        timestamp: bars[i].timestamp,
+      });
+    }
+  }
+
+  if (candidates.length === 0) return [];
+
+  const alternated: RawPivot[] = [candidates[0]];
+  for (let i = 1; i < candidates.length; i++) {
+    const last = alternated[alternated.length - 1];
+    const curr = candidates[i];
+    if (curr.kind === last.kind) {
+      if (curr.kind === 'high' && curr.price > last.price) {
+        alternated[alternated.length - 1] = curr;
+      } else if (curr.kind === 'low' && curr.price < last.price) {
+        alternated[alternated.length - 1] = curr;
+      }
+    } else {
+      alternated.push(curr);
+    }
+  }
+
+  return alternated;
+}
+
+export function classifyMarketStructure(
+  bars: Bar[],
+  n: number,
+): MarketStructure {
+  const empty: MarketStructure = {
+    swings: [],
+    bullish: false,
+    timestamp: bars.length > 0 ? bars[bars.length - 1].timestamp : '',
+  };
+  if (bars.length < 2 * n + 1) return empty;
+
+  const pivots = detectSwingPivots(bars, n);
+  const swings: SwingPoint[] = [];
+  let prevHigh: RawPivot | null = null;
+  let prevLow: RawPivot | null = null;
+
+  for (const p of pivots) {
+    if (p.kind === 'high') {
+      if (prevHigh !== null) {
+        const label: SwingLabel = p.price > prevHigh.price ? 'HH' : 'LH';
+        swings.push({
+          label,
+          price: p.price,
+          barIndex: p.barIndex,
+          timestamp: p.timestamp,
+        });
+      }
+      prevHigh = p;
+    } else {
+      if (prevLow !== null) {
+        const label: SwingLabel = p.price > prevLow.price ? 'HL' : 'LL';
+        swings.push({
+          label,
+          price: p.price,
+          barIndex: p.barIndex,
+          timestamp: p.timestamp,
+        });
+      }
+      prevLow = p;
+    }
+  }
+
+  let lastHighSwing: SwingPoint | undefined;
+  let lastLowSwing: SwingPoint | undefined;
+  for (let i = swings.length - 1; i >= 0; i--) {
+    const s = swings[i];
+    if (!lastHighSwing && (s.label === 'HH' || s.label === 'LH'))
+      lastHighSwing = s;
+    if (!lastLowSwing && (s.label === 'HL' || s.label === 'LL'))
+      lastLowSwing = s;
+    if (lastHighSwing && lastLowSwing) break;
+  }
+  const bullish = lastHighSwing?.label === 'HH' && lastLowSwing?.label === 'HL';
+
+  return {
+    swings,
+    bullish,
+    timestamp: bars[bars.length - 1].timestamp,
+  };
 }

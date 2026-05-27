@@ -3,11 +3,13 @@ import type {
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
+  MarketStructureInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
   ATR,
   MACD,
+  MarketStructure,
   VWAP,
 } from '../../domain/indicators/IndicatorTypes.js';
 import { logger } from '../logging/logger.js';
@@ -63,6 +65,14 @@ export class AlphaVantageIndicatorAdapter implements IndicatorPort {
 
   async getATR(_input: ATRInput): Promise<ATR> {
     throw new Error('AlphaVantageIndicatorAdapter: getATR not implemented');
+  }
+
+  async getMarketStructure(
+    _input: MarketStructureInput,
+  ): Promise<MarketStructure> {
+    throw new Error(
+      'AlphaVantageIndicatorAdapter: getMarketStructure not supported',
+    );
   }
 
   private async fetchMACDSeries(

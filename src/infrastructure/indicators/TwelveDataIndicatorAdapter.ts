@@ -3,11 +3,13 @@ import type {
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
+  MarketStructureInput,
   VWAPInput,
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
   ATR,
   MACD,
+  MarketStructure,
   VWAP,
 } from '../../domain/indicators/IndicatorTypes.js';
 import type {
@@ -46,6 +48,14 @@ export class TwelveDataIndicatorAdapter implements IndicatorPort {
 
   async getATR(_input: ATRInput): Promise<ATR> {
     throw new Error('TwelveDataIndicatorAdapter: getATR not implemented');
+  }
+
+  async getMarketStructure(
+    _input: MarketStructureInput,
+  ): Promise<MarketStructure> {
+    throw new Error(
+      'TwelveDataIndicatorAdapter: getMarketStructure not supported',
+    );
   }
 
   private async requestMACD(

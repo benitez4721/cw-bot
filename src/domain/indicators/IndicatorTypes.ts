@@ -28,3 +28,18 @@ export interface ATR {
   value: number;
   timestamp: string;
 }
+
+export type SwingLabel = 'HH' | 'HL' | 'LH' | 'LL';
+
+export interface SwingPoint {
+  label: SwingLabel;
+  price: number;
+  barIndex: number;
+  timestamp: string;
+}
+
+export interface MarketStructure {
+  swings: SwingPoint[];
+  bullish: boolean;
+  timestamp: string;
+}
