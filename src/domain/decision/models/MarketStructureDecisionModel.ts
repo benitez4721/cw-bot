@@ -18,7 +18,7 @@ export interface MarketStructureSnapshot {
 }
 
 const PARAMS = {
-  lookback: 5,
+  lookback: 3,
   emaPeriod: 18,
   tradeBudgetUsd: 25_000,
   maxRiskPercent: 0.01,
