@@ -129,6 +129,7 @@ export class TradeStationStreamConnection {
     }
 
     this.notifyConnection(true);
+    this.log.info({ accountId: this.accountId }, 'stream connected');
     try {
       await this.consume(res.body);
     } catch (err) {
