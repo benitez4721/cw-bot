@@ -148,6 +148,12 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
   }
 
   subscribe(configId: string): void {
+    // Idempotente: si ya estamos suscriptos al configId (ya sea pendiente de
+    // conexion o con el SUBSCRIBE ya enviado al WS), no re-enviar. Sin este
+    // guard, dos callers que comparten configId (ej. dos strategies con el
+    // mismo cwConfigId) provocan dos SUBSCRIBE al server, y CW puede entregar
+    // cada update por duplicado.
+    if (this.subscribedConfigs[configId]) return;
     this.subscribedConfigs[configId] = true;
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.sendSubscribe(configId);
@@ -159,6 +165,12 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
   }
 
   subscribeAlert(configId: string): void {
+    // Idempotente: si ya estamos suscriptos al alert configId, no re-enviar.
+    // Sin este guard, dos AlertEventManager que comparten cwConfigId (caso
+    // HighOfDayAlert + HighOfDayAlertEmaTrail) provocan dos SUBSCRIBE al
+    // server CW, y CW entrega cada NewAlert por duplicado al WS — cada copia
+    // genera invocaciones extra de los callbacks aguas abajo.
+    if (this.subscribedAlertConfigs[configId]) return;
     this.subscribedAlertConfigs[configId] = true;
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.sendSubscribeAlert(configId);

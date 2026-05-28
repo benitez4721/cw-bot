@@ -95,6 +95,70 @@ describe('ChartsWatcherScannerFeedAdapter — subscribeAlert', () => {
       action: 'subscribe',
     });
   });
+
+  it('idempotente: llamar dos veces con el mismo configId solo envia UN SUBSCRIBE', async () => {
+    // Caso real: dos AlertEventManager comparten cwConfigId (HighOfDayAlert +
+    // HighOfDayAlertEmaTrail). Sin idempotencia, CW recibe dos SUBSCRIBE y
+    // entrega cada NewAlert por duplicado.
+    const adapter = buildAdapter();
+    const connecting = adapter.connect();
+    lastFakeWs!.simulateOpen();
+    await connecting;
+
+    adapter.subscribeAlert('alert-shared');
+    adapter.subscribeAlert('alert-shared');
+
+    const subscribes = sentMessages
+      .map((s) => JSON.parse(s))
+      .filter(
+        (m) =>
+          m['@type'] === 'Alert' &&
+          m.action === 'subscribe' &&
+          m.config_id === 'alert-shared',
+      );
+    expect(subscribes).toHaveLength(1);
+  });
+
+  it('idempotente pre-connect: el segundo call no agrega un envio extra al open', async () => {
+    const adapter = buildAdapter();
+    const connecting = adapter.connect();
+    adapter.subscribeAlert('alert-pending');
+    adapter.subscribeAlert('alert-pending');
+    lastFakeWs!.simulateOpen();
+    await connecting;
+
+    const subscribes = sentMessages
+      .map((s) => JSON.parse(s))
+      .filter(
+        (m) =>
+          m['@type'] === 'Alert' &&
+          m.action === 'subscribe' &&
+          m.config_id === 'alert-pending',
+      );
+    expect(subscribes).toHaveLength(1);
+  });
+});
+
+describe('ChartsWatcherScannerFeedAdapter — subscribe (toplist)', () => {
+  it('idempotente: llamar dos veces con el mismo configId solo envia UN SUBSCRIBE', async () => {
+    const adapter = buildAdapter();
+    const connecting = adapter.connect();
+    lastFakeWs!.simulateOpen();
+    await connecting;
+
+    adapter.subscribe('toplist-shared');
+    adapter.subscribe('toplist-shared');
+
+    const subscribes = sentMessages
+      .map((s) => JSON.parse(s))
+      .filter(
+        (m) =>
+          m['@type'] === 'Toplist' &&
+          m.action === 'subscribe' &&
+          m.config_id === 'toplist-shared',
+      );
+    expect(subscribes).toHaveLength(1);
+  });
 });
 
 describe('ChartsWatcherScannerFeedAdapter — NewAlert dispatch', () => {
