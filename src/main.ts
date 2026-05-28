@@ -142,11 +142,15 @@ async function main() {
       strategy,
       broker,
       placeTrailingBracketOrder,
+      placeBracketOrder,
       placeLimitOrder,
       tradeRepo,
       checkOpenTrades,
       marketHours,
       metrics,
+      indicators,
+      barRepo,
+      historicalBars,
     });
     return new AlertEventManager({
       feed: scannerFeed,

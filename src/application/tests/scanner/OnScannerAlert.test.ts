@@ -7,15 +7,19 @@ import type {
   TrailingBracketOrderInput,
 } from '../../../domain/broker/BrokerTypes.js';
 import type { EventStrategy } from '../../../domain/decision/EventStrategy.js';
+import type { IndicatorPort } from '../../../domain/indicators/IndicatorPort.js';
 import type {
   MarketHours,
   Session,
 } from '../../../domain/market/MarketHours.js';
+import type { BarRepository } from '../../../domain/marketdata/BarRepository.js';
+import type { HistoricalBarsPort } from '../../../domain/marketdata/HistoricalBarsPort.js';
 import type { MetricsPort } from '../../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
 import { OnScannerAlert } from '../../scanner/OnScannerAlert.js';
 import { PlaceLimitOrder } from '../../broker/PlaceLimitOrder.js';
+import { PlaceBracketOrder } from '../../broker/PlaceBracketOrder.js';
 import { PlaceTrailingBracketOrder } from '../../broker/PlaceTrailingBracketOrder.js';
 import type { CheckOpenTrades } from '../../trade/CheckOpenTrades.js';
 
@@ -60,6 +64,8 @@ interface Fakes {
   };
   placeTrailing: PlaceTrailingBracketOrder;
   placeTrailingSpy: ReturnType<typeof vi.fn>;
+  placeBracket: PlaceBracketOrder;
+  placeBracketSpy: ReturnType<typeof vi.fn>;
   placeLimit: PlaceLimitOrder;
   placeLimitSpy: ReturnType<typeof vi.fn>;
   marketHours: MarketHours;
@@ -99,6 +105,11 @@ function setup(opts: {
   const placeLimitSpy = vi.fn(
     async (_i: PlaceLimitOrderInput) => placeLimitResult,
   );
+  const placeBracketSpy = vi.fn(async () => ({
+    status: 'open' as const,
+    entryOrderId: 'E1',
+    stopOrderId: 'S1',
+  }));
   const broker = {
     getQuote: vi.fn(async () => ({
       symbol: 'X',
@@ -107,6 +118,7 @@ function setup(opts: {
       timestamp: 't',
     })),
     placeTrailingBracketOrder: placeTrailingSpy,
+    placeBracketOrder: placeBracketSpy,
     placeLimitOrder: placeLimitSpy,
   } as unknown as BrokerPort;
 
@@ -124,6 +136,7 @@ function setup(opts: {
 
   const metrics = makeMetrics();
   const placeTrailing = new PlaceTrailingBracketOrder(broker);
+  const placeBracket = new PlaceBracketOrder(broker);
   const placeLimit = new PlaceLimitOrder(broker, metrics);
   return {
     broker,
@@ -131,6 +144,8 @@ function setup(opts: {
     checkOpenTrades,
     placeTrailing,
     placeTrailingSpy,
+    placeBracket,
+    placeBracketSpy,
     placeLimit,
     placeLimitSpy,
     marketHours: makeMarketHours(opts.session ?? 'rth'),
@@ -143,6 +158,7 @@ function build(f: Fakes, now?: () => string): OnScannerAlert {
     strategy,
     broker: f.broker,
     placeTrailingBracketOrder: f.placeTrailing,
+    placeBracketOrder: f.placeBracket,
     placeLimitOrder: f.placeLimit,
     tradeRepo: f.tradeRepo,
     checkOpenTrades: f.checkOpenTrades,
@@ -388,5 +404,305 @@ describe('OnScannerAlert.handle — PRE', () => {
       'HighOfDayAlert',
       'rejected',
     );
+  });
+});
+
+// ============================================================================
+// Suite EMA: variante de la EventStrategy con trail por EMA en lugar de %.
+// El stop inicial se calcula al submit con la EMA actual; la rama rth manda
+// placeBracketOrder (sin TP); la rama pre manda placeLimitOrder + stop
+// sintetico inicial.
+// ============================================================================
+
+const emaStrategy: EventStrategy = {
+  name: 'HighOfDayAlertEmaTrail',
+  cwConfigId: 'cfg',
+  quantity: 2000,
+  trailMode: 'ema',
+  emaTrailPeriod: 18,
+  emaTrailBufferBps: 16,
+  entryBufferBps: 0,
+  accountId: 'SIM12345',
+};
+
+interface EmaFakes {
+  broker: BrokerPort;
+  tradeRepo: TradeContextRepository & { put: ReturnType<typeof vi.fn> };
+  checkOpenTrades: CheckOpenTrades & {
+    execute: ReturnType<typeof vi.fn>;
+  };
+  placeTrailing: PlaceTrailingBracketOrder;
+  placeBracket: PlaceBracketOrder;
+  placeBracketSpy: ReturnType<typeof vi.fn>;
+  placeLimit: PlaceLimitOrder;
+  placeLimitSpy: ReturnType<typeof vi.fn>;
+  marketHours: MarketHours;
+  metrics: MetricsPort & { recordAlertOutcome: ReturnType<typeof vi.fn> };
+  indicators: { getEMA: ReturnType<typeof vi.fn> };
+  barRepo: {
+    get: ReturnType<typeof vi.fn>;
+    set: ReturnType<typeof vi.fn>;
+    append: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+  };
+  historicalBars: { fetchHistoricalBars: ReturnType<typeof vi.fn> };
+}
+
+function emaSetup(
+  opts: {
+    session?: Session;
+    quote?: { ask?: number; last?: number };
+    emaValue?: number;
+    cachedBars?: number;
+    placeBracketResult?: BracketOrderResult;
+    placeLimitResult?: OrderResult;
+    indicatorsThrows?: boolean;
+  } = {},
+): EmaFakes {
+  const quote = opts.quote ?? { ask: 100, last: 100 };
+  const placeBracketResult: BracketOrderResult = opts.placeBracketResult ?? {
+    status: 'open',
+    entryOrderId: 'E1',
+    stopOrderId: 'S1',
+  };
+  const placeLimitResult: OrderResult = opts.placeLimitResult ?? {
+    orderId: 'PRE1',
+    status: 'open',
+  };
+  const placeBracketSpy = vi.fn(async () => placeBracketResult);
+  const placeLimitSpy = vi.fn(async () => placeLimitResult);
+  const placeTrailingSpy = vi.fn();
+  const broker = {
+    getQuote: vi.fn(async () => ({
+      symbol: 'X',
+      last: quote.last ?? 0,
+      ask: quote.ask,
+      timestamp: 't',
+    })),
+    placeTrailingBracketOrder: placeTrailingSpy,
+    placeBracketOrder: placeBracketSpy,
+    placeLimitOrder: placeLimitSpy,
+  } as unknown as BrokerPort;
+
+  const tradeRepo = {
+    put: vi.fn(async () => undefined),
+  } as unknown as TradeContextRepository & {
+    put: ReturnType<typeof vi.fn>;
+  };
+  const checkOpenTrades = {
+    execute: vi.fn(async () => ({ stillExposed: false })),
+  } as unknown as CheckOpenTrades & {
+    execute: ReturnType<typeof vi.fn>;
+  };
+  const metrics = makeMetrics();
+  const placeTrailing = new PlaceTrailingBracketOrder(broker);
+  const placeBracket = new PlaceBracketOrder(broker);
+  const placeLimit = new PlaceLimitOrder(broker, metrics);
+
+  // Bars en cache simuladas. Si opts.cachedBars >= period, no se invoca
+  // historicalBars.fetchHistoricalBars.
+  const cached = opts.cachedBars ?? 30;
+  const cachedArr = Array.from({ length: cached }, (_, i) => ({
+    timestamp: `t${i}`,
+    open: 99,
+    high: 100,
+    low: 98,
+    close: 99 + (i % 3),
+    volume: 1000,
+  }));
+  const barRepo = {
+    get: vi.fn(async () => cachedArr),
+    set: vi.fn(async () => undefined),
+    append: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
+  };
+  const historicalBars = {
+    fetchHistoricalBars: vi.fn(async () => cachedArr),
+  };
+  const emaValue = opts.emaValue ?? 100;
+  const indicators = {
+    getEMA: opts.indicatorsThrows
+      ? vi.fn(async () => {
+          throw new Error('insufficient bars');
+        })
+      : vi.fn(async () => ({ value: emaValue, timestamp: 't' })),
+  };
+
+  return {
+    broker,
+    tradeRepo,
+    checkOpenTrades,
+    placeTrailing,
+    placeBracket,
+    placeBracketSpy,
+    placeLimit,
+    placeLimitSpy,
+    marketHours: makeMarketHours(opts.session ?? 'rth'),
+    metrics,
+    indicators,
+    barRepo,
+    historicalBars,
+  };
+}
+
+function emaBuild(f: EmaFakes, now?: () => string): OnScannerAlert {
+  return new OnScannerAlert({
+    strategy: emaStrategy,
+    broker: f.broker,
+    placeTrailingBracketOrder: f.placeTrailing,
+    placeBracketOrder: f.placeBracket,
+    placeLimitOrder: f.placeLimit,
+    tradeRepo: f.tradeRepo,
+    checkOpenTrades: f.checkOpenTrades,
+    marketHours: f.marketHours,
+    metrics: f.metrics,
+    indicators: f.indicators as unknown as IndicatorPort,
+    barRepo: f.barRepo as unknown as BarRepository,
+    historicalBars: f.historicalBars as unknown as HistoricalBarsPort,
+    now,
+  });
+}
+
+describe('OnScannerAlert.handle — trail EMA (rth)', () => {
+  it('abre placeBracketOrder con stopOffset = entry - EMA*(1-bps/10000); persiste ctx con emaTrailPeriod/BufferBps', async () => {
+    // EMA=100, bps=16 → stop = 100 * (1 - 16/10000) = 99.84.
+    // entry = ask * (1 + 0) = 100 (entryBufferBps=0).
+    // stopOffset = 100 - 99.84 = 0.16.
+    const f = emaSetup({});
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.placeBracketSpy).toHaveBeenCalledOnce();
+    const call = f.placeBracketSpy.mock.calls[0][0];
+    expect(call).toMatchObject({
+      symbol: 'ORGN',
+      side: 'BUY',
+      quantity: 2000,
+      accountId: 'SIM12345',
+    });
+    expect(call.entryLimitPrice).toBeCloseTo(100, 6);
+    expect(call.stopOffset).toBeCloseTo(0.16, 6);
+    expect(call.takeProfitOffset).toBeUndefined();
+
+    expect(f.tradeRepo.put).toHaveBeenCalledOnce();
+    const persisted = f.tradeRepo.put.mock.calls[0][0] as TradeContext;
+    expect(persisted).toMatchObject({
+      model: 'HighOfDayAlertEmaTrail',
+      symbol: 'ORGN',
+      side: 'BUY',
+      session: 'rth',
+      status: 'active',
+      emaTrailPeriod: 18,
+      emaTrailBufferBps: 16,
+      bracket: { entryOrderId: 'E1', stopOrderId: 'S1' },
+    });
+    expect(persisted.stopPrice).toBeCloseTo(99.84, 6);
+    expect(persisted.trailingStopPercent).toBeUndefined();
+  });
+
+  it('bootstrap on-demand: si barRepo.get devuelve menos que period, llama historicalBars.fetchHistoricalBars y barRepo.set antes de getEMA', async () => {
+    const f = emaSetup({ cachedBars: 3 });
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.historicalBars.fetchHistoricalBars).toHaveBeenCalledWith(
+      expect.objectContaining({ symbol: 'ORGN', interval: '1min' }),
+    );
+    expect(f.barRepo.set).toHaveBeenCalled();
+    expect(f.placeBracketSpy).toHaveBeenCalledOnce();
+  });
+
+  it('skip bootstrap cuando barRepo.get ya tiene >= period barras', async () => {
+    const f = emaSetup({ cachedBars: 50 });
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.historicalBars.fetchHistoricalBars).not.toHaveBeenCalled();
+    expect(f.barRepo.set).not.toHaveBeenCalled();
+  });
+
+  it('getEMA lanza → outcome rejected y NO se persiste ctx', async () => {
+    const f = emaSetup({ indicatorsThrows: true });
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.tradeRepo.put).not.toHaveBeenCalled();
+    expect(f.placeBracketSpy).not.toHaveBeenCalled();
+    expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlertEmaTrail',
+      'rejected',
+    );
+  });
+
+  it('EMA por encima del entry: stop derivado >= entry → outcome rejected', async () => {
+    // EMA=200, entry=100 → stop = 199.68 > entry → rechazo.
+    const f = emaSetup({ emaValue: 200 });
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.placeBracketSpy).not.toHaveBeenCalled();
+    expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlertEmaTrail',
+      'rejected',
+    );
+  });
+
+  it('placeBracketOrder rejected por broker no persiste ctx', async () => {
+    const f = emaSetup({
+      placeBracketResult: {
+        status: 'rejected',
+        entryOrderId: '',
+        stopOrderId: '',
+        error: 'NO_LIQUIDITY',
+      },
+    });
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.tradeRepo.put).not.toHaveBeenCalled();
+    expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlertEmaTrail',
+      'rejected',
+    );
+  });
+});
+
+describe('OnScannerAlert.handle — trail EMA (pre)', () => {
+  it('abre Limit DYP+ARCA y persiste ctx pre con stopPrice = EMA*(1-bps) y emaTrailPeriod/BufferBps', async () => {
+    const f = emaSetup({ session: 'pre' });
+    const useCase = emaBuild(f, () => 't0');
+
+    await useCase.handle('ORGN');
+
+    expect(f.placeLimitSpy).toHaveBeenCalledOnce();
+    expect(f.placeLimitSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'ORGN',
+        side: 'BUY',
+        duration: 'DYP',
+        route: 'ARCA',
+      }),
+    );
+    expect(f.placeBracketSpy).not.toHaveBeenCalled();
+
+    const persisted = f.tradeRepo.put.mock.calls[0][0] as TradeContext;
+    expect(persisted).toMatchObject({
+      model: 'HighOfDayAlertEmaTrail',
+      symbol: 'ORGN',
+      session: 'pre',
+      status: 'active',
+      syntheticExitFired: false,
+      emaTrailPeriod: 18,
+      emaTrailBufferBps: 16,
+      bracket: { entryOrderId: 'PRE1' },
+    });
+    expect(persisted.stopPrice).toBeCloseTo(99.84, 6);
+    expect(persisted.bracket.stopOrderId).toBeUndefined();
   });
 });

@@ -170,12 +170,27 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID!,
   };
 
+  // Variante paralela del mismo alert (mismo cwConfigId, misma cuenta) con
+  // trail por EMA 18 en lugar de % fijo. Convive con highOfDayAlert: cada
+  // alert dispara DOS trades (uno por strategy); CheckOpenTrades filtra por
+  // model.name asi que no se bloquean entre si.
+  const highOfDayAlertEmaTrail: EventStrategy = {
+    name: 'HighOfDayAlertEmaTrail',
+    cwConfigId: '68ab7ca8a42020253d351a52',
+    quantity: 2000,
+    trailMode: 'ema',
+    emaTrailPeriod: 18,
+    emaTrailBufferBps: 16,
+    entryBufferBps: 0,
+    accountId: env.TRADESTATION_ACCOUNT_ID!,
+  };
+
   const strategies = [
     superStrategy,
     macdM1CrossOverStrategy,
     marketStructureStrategy,
   ];
-  const eventStrategies = [highOfDayAlert];
+  const eventStrategies = [highOfDayAlert, highOfDayAlertEmaTrail];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
