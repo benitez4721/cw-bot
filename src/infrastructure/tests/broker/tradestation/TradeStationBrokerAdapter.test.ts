@@ -255,6 +255,65 @@ describe('TradeStationBrokerAdapter.placeBracketOrder', () => {
     expect(result.takeProfitOrderId).toBe('952057087');
     expect(result.error).toBeUndefined();
   });
+
+  it('arma OSO solo con StopMarket cuando se omite takeProfitOffset', async () => {
+    // Bracket stop-only: el OSO de TS lleva un unico leg (StopMarket).
+    // La respuesta del POST trae 2 OrderIDs (entry + stop), no 3.
+    let capturedBody: unknown;
+    const client = {
+      accountId: () => 'SIM12345',
+      apiBase: () => 'https://sim.api.tradestation.com',
+      request: vi.fn(
+        async (req: { method: string; path: string; body?: unknown }) => {
+          if (req.method === 'POST') {
+            capturedBody = req.body;
+            return { Orders: [{ OrderID: 'O-stop' }, { OrderID: 'O-entry' }] };
+          }
+          return {
+            Orders: [
+              {
+                OrderID: 'O-entry',
+                Status: 'ACK',
+                OrderType: 'Limit',
+                LimitPrice: '5.72',
+                Legs: [{ Symbol: 'PAYS', Quantity: '100', BuyOrSell: 'BUY' }],
+              },
+              {
+                OrderID: 'O-stop',
+                Status: 'ACK',
+                OrderType: 'StopMarket',
+                StopPrice: '5.52',
+                Legs: [{ Symbol: 'PAYS', Quantity: '100', BuyOrSell: 'SELL' }],
+              },
+            ],
+          };
+        },
+      ),
+    } as unknown as TradeStationClient;
+
+    const broker = new TradeStationBrokerAdapter({ client });
+    const result = await broker.placeBracketOrder({
+      symbol: 'PAYS',
+      side: 'BUY',
+      quantity: 100,
+      entryLimitPrice: 5.72,
+      stopOffset: 0.2,
+      accountId: 'SIM12345',
+    });
+
+    expect(result.status).not.toBe('rejected');
+    expect(result.entryOrderId).toBe('O-entry');
+    expect(result.stopOrderId).toBe('O-stop');
+    expect(result.takeProfitOrderId).toBeUndefined();
+
+    // El payload del OSO debe traer un solo leg (StopMarket).
+    interface PayloadShape {
+      OSOs: Array<{ Orders: Array<{ OrderType: string }> }>;
+    }
+    const exits = (capturedBody as PayloadShape).OSOs[0].Orders;
+    expect(exits).toHaveLength(1);
+    expect(exits[0].OrderType).toBe('StopMarket');
+  });
 });
 
 describe('TradeStationBrokerAdapter.getOrders', () => {

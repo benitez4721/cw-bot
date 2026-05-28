@@ -1,5 +1,6 @@
 import type {
   ATRInput,
+  EMAInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
@@ -8,6 +9,7 @@ import type {
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
   ATR,
+  EMA,
   MACD,
   MarketStructure,
   VWAP,
@@ -56,6 +58,10 @@ export class TwelveDataIndicatorAdapter implements IndicatorPort {
     throw new Error(
       'TwelveDataIndicatorAdapter: getMarketStructure not supported',
     );
+  }
+
+  async getEMA(_input: EMAInput): Promise<EMA> {
+    throw new Error('TwelveDataIndicatorAdapter: getEMA not implemented');
   }
 
   private async requestMACD(

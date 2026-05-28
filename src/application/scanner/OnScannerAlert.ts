@@ -108,6 +108,11 @@ export class OnScannerAlert {
     entryLimitPrice: number,
     evalStart: string,
   ): Promise<void> {
+    if (this.strategy.trailMode !== 'percent') {
+      throw new Error(
+        `openRth invoked with trailMode=${this.strategy.trailMode}; expected 'percent'`,
+      );
+    }
     const accountId = this.strategy.accountId;
     const result = await this.placeTrailingBracketOrder.execute({
       symbol,
@@ -170,6 +175,11 @@ export class OnScannerAlert {
     entryLimitPrice: number,
     evalStart: string,
   ): Promise<void> {
+    if (this.strategy.trailMode !== 'percent') {
+      throw new Error(
+        `openPre invoked with trailMode=${this.strategy.trailMode}; expected 'percent'`,
+      );
+    }
     const accountId = this.strategy.accountId;
     const result = await this.placeLimitOrder.execute({
       symbol,

@@ -29,6 +29,11 @@ export interface ATR {
   timestamp: string;
 }
 
+export interface EMA {
+  value: number;
+  timestamp: string;
+}
+
 export type SwingLabel = 'HH' | 'HL' | 'LH' | 'LL';
 
 export interface SwingPoint {

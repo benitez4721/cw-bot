@@ -1,5 +1,6 @@
 import type {
   ATR,
+  EMA,
   IndicatorInterval,
   IntradayInterval,
   MACD,
@@ -39,10 +40,18 @@ export interface MarketStructureInput {
   emaPeriod?: number;
 }
 
+export interface EMAInput {
+  symbol: string;
+  interval: IntradayInterval;
+  period: number;
+  seriesType?: SeriesType;
+}
+
 export interface IndicatorPort {
   getMACD(input: MACDInput): Promise<MACD>;
   getMACDSeries(input: MACDSeriesInput): Promise<MACD[]>;
   getVWAP(input: VWAPInput): Promise<VWAP>;
   getATR(input: ATRInput): Promise<ATR>;
   getMarketStructure(input: MarketStructureInput): Promise<MarketStructure>;
+  getEMA(input: EMAInput): Promise<EMA>;
 }

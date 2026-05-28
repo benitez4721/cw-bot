@@ -78,7 +78,9 @@ export interface BracketOrderInput {
   side: OrderSide;
   entryLimitPrice: number;
   stopOffset: number;
-  takeProfitOffset: number;
+  // Opcional: omitirlo arma un OSO con un solo leg StopMarket (sin take-profit).
+  // Lo consumen EventStrategy con trail EMA, donde la salida es solo por stop.
+  takeProfitOffset?: number;
   // Cuenta TradeStation contra la que se envía la orden. Obligatorio.
   accountId: string;
 }

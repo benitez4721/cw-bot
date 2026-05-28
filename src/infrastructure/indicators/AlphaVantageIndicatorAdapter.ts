@@ -1,5 +1,6 @@
 import type {
   ATRInput,
+  EMAInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
@@ -8,6 +9,7 @@ import type {
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
   ATR,
+  EMA,
   MACD,
   MarketStructure,
   VWAP,
@@ -73,6 +75,10 @@ export class AlphaVantageIndicatorAdapter implements IndicatorPort {
     throw new Error(
       'AlphaVantageIndicatorAdapter: getMarketStructure not supported',
     );
+  }
+
+  async getEMA(_input: EMAInput): Promise<EMA> {
+    throw new Error('AlphaVantageIndicatorAdapter: getEMA not implemented');
   }
 
   private async fetchMACDSeries(

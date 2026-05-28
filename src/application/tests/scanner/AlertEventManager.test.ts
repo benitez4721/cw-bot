@@ -10,6 +10,7 @@ const strategy: EventStrategy = {
   name: 'HighOfDayAlert',
   cwConfigId: 'cfg-A',
   quantity: 2000,
+  trailMode: 'percent',
   trailingStopPercent: 8,
   entryBufferBps: 50,
   accountId: 'SIM12345',

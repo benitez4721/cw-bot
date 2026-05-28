@@ -1,5 +1,6 @@
 import type {
   ATRInput,
+  EMAInput,
   IndicatorPort,
   MACDInput,
   MACDSeriesInput,
@@ -8,6 +9,7 @@ import type {
 } from '../../domain/indicators/IndicatorPort.js';
 import type {
   ATR,
+  EMA,
   IndicatorInterval,
   MarketStructure,
   MACD,
@@ -21,6 +23,7 @@ import type {
 } from '../../domain/marketdata/MarketDataTypes.js';
 import {
   calcATR,
+  calcEMA,
   calcMACD,
   calcSessionVWAP,
   classifyMarketStructure,
@@ -109,6 +112,25 @@ export class LocalIndicatorAdapter implements IndicatorPort {
     throw new CacheUnderfilledError(
       `LocalIndicator: no valid ATR value on ${input.symbol}`,
     );
+  }
+
+  async getEMA(input: EMAInput): Promise<EMA> {
+    const period = input.period;
+    if (!Number.isInteger(period) || period <= 0) {
+      throw new Error('EMA: period must be a positive integer');
+    }
+    const interval = mapToBarInterval(input.interval);
+    const seriesType: SeriesType = input.seriesType ?? 'close';
+    const bars = await this.loadBars(input.symbol, interval);
+    if (bars.length < period) {
+      throw new CacheUnderfilledError(
+        `LocalIndicator: insufficient data for EMA(${period}) on ${input.symbol} (have ${bars.length})`,
+      );
+    }
+    const values = bars.map((b) => readSeriesValue(b, seriesType));
+    const series = calcEMA(values, period);
+    const last = series[series.length - 1];
+    return { value: last, timestamp: bars[bars.length - 1].timestamp };
   }
 
   async getMarketStructure(

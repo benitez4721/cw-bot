@@ -124,10 +124,12 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       input.side === 'BUY'
         ? round2(cost - input.stopOffset)
         : round2(cost + input.stopOffset);
-    const takeProfitPrice =
-      input.side === 'BUY'
-        ? round2(cost + input.takeProfitOffset)
-        : round2(cost - input.takeProfitOffset);
+    const hasTakeProfit = input.takeProfitOffset !== undefined;
+    const takeProfitPrice = hasTakeProfit
+      ? input.side === 'BUY'
+        ? round2(cost + input.takeProfitOffset!)
+        : round2(cost - input.takeProfitOffset!)
+      : undefined;
 
     const accountId = input.accountId;
     const exitLeg = {
@@ -138,6 +140,21 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       TimeInForce: { Duration: 'GTC' },
       Route: 'Intelligent',
     };
+
+    const exitOrders: Record<string, unknown>[] = [
+      {
+        ...exitLeg,
+        OrderType: 'StopMarket',
+        StopPrice: String(stopPrice),
+      },
+    ];
+    if (hasTakeProfit) {
+      exitOrders.push({
+        ...exitLeg,
+        OrderType: 'Limit',
+        LimitPrice: String(takeProfitPrice),
+      });
+    }
 
     const payload: Record<string, unknown> = {
       AccountID: accountId,
@@ -151,18 +168,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       OSOs: [
         {
           Type: 'BRK',
-          Orders: [
-            {
-              ...exitLeg,
-              OrderType: 'StopMarket',
-              StopPrice: String(stopPrice),
-            },
-            {
-              ...exitLeg,
-              OrderType: 'Limit',
-              LimitPrice: String(takeProfitPrice),
-            },
-          ],
+          Orders: exitOrders,
         },
       ],
     };
@@ -181,12 +187,19 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       .map((o) => o.OrderID)
       .filter((id): id is string => !!id);
 
-    if (orders.length < 3 || failed || orderIds.length < 3) {
+    const expectedLegs = hasTakeProfit ? 3 : 2;
+    if (
+      orders.length < expectedLegs ||
+      failed ||
+      orderIds.length < expectedLegs
+    ) {
       return {
         status: 'rejected',
         entryOrderId: orders[0]?.OrderID ?? '',
         stopOrderId: orders[1]?.OrderID ?? '',
-        takeProfitOrderId: orders[2]?.OrderID ?? '',
+        takeProfitOrderId: hasTakeProfit
+          ? (orders[2]?.OrderID ?? '')
+          : undefined,
         message: failed?.Message ?? orders[0]?.Message,
         error:
           failed?.Error ??
@@ -205,7 +218,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     // La entry NO la detectamos por precio: cuando llena al instante, TS V3
     // la 404ea en el GET por IDs (sale del set de open orders) aunque los
     // exits OSO/BRK queden vivos referenciandola en AdvancedOptions=OSO=<id>.
-    // La derivamos por exclusion sobre los 3 OrderIDs que devolvio el POST.
+    // La derivamos por exclusion sobre los OrderIDs que devolvio el POST.
     const account = encodeURIComponent(accountId);
     const detail = await this.client.request<{ Orders?: TsOrder[] }>({
       method: 'GET',
@@ -219,13 +232,15 @@ export class TradeStationBrokerAdapter implements BrokerPort {
         o.OrderType === 'StopMarket' &&
         parseNumber(o.StopPrice ?? '') === stopPrice,
     );
-    const takeProfit = detailOrders.find(
-      (o) =>
-        o.OrderType === 'Limit' &&
-        parseNumber(o.LimitPrice ?? '') === takeProfitPrice,
-    );
+    const takeProfit = hasTakeProfit
+      ? detailOrders.find(
+          (o) =>
+            o.OrderType === 'Limit' &&
+            parseNumber(o.LimitPrice ?? '') === takeProfitPrice,
+        )
+      : undefined;
 
-    if (!stop || !takeProfit) {
+    if (!stop || (hasTakeProfit && !takeProfit)) {
       log.warn(
         {
           orderIds,
@@ -238,7 +253,9 @@ export class TradeStationBrokerAdapter implements BrokerPort {
         status: 'rejected',
         entryOrderId: '',
         stopOrderId: stop?.OrderID ?? '',
-        takeProfitOrderId: takeProfit?.OrderID ?? '',
+        takeProfitOrderId: hasTakeProfit
+          ? (takeProfit?.OrderID ?? '')
+          : undefined,
         message:
           'failed to identify bracket exit legs from TradeStation response',
         error: 'leg-detection-failed',
@@ -246,7 +263,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
     }
 
     const entryOrderId = orderIds.find(
-      (id) => id !== stop.OrderID && id !== takeProfit.OrderID,
+      (id) => id !== stop.OrderID && id !== takeProfit?.OrderID,
     );
     if (!entryOrderId) {
       log.warn(
@@ -261,7 +278,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
         status: 'rejected',
         entryOrderId: '',
         stopOrderId: stop.OrderID,
-        takeProfitOrderId: takeProfit.OrderID,
+        takeProfitOrderId: takeProfit?.OrderID,
         message: 'failed to derive entry orderId from POST response',
         error: 'leg-detection-failed',
       };
@@ -275,7 +292,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
           orderIds,
           entryOrderId,
           stopOrderId: stop.OrderID,
-          takeProfitOrderId: takeProfit.OrderID,
+          takeProfitOrderId: takeProfit?.OrderID,
         },
         'bracket entry not present in GET response — defaulting status to open; order stream will reconcile',
       );
@@ -285,7 +302,7 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       status,
       entryOrderId,
       stopOrderId: stop.OrderID,
-      takeProfitOrderId: takeProfit.OrderID,
+      takeProfitOrderId: takeProfit?.OrderID,
     };
   }
 

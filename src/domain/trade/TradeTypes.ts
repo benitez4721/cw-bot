@@ -51,6 +51,13 @@ export interface TradeContext {
   // siguiendo el high-watermark. Si esta ausente, el stopPrice es fijo
   // (DecisionStrategy pre).
   trailingStopPercent?: number;
+  // Trail por EMA (pre + rth): MaybeTrailStopAlongEma calcula
+  // `EMA(period) * (1 - bufferBps/10_000)` cada cierre de barra M1 y
+  // ajusta el stopPrice (long: solo sube). En rth ademas hace replaceStopPrice
+  // contra el stopOrderId del broker; en pre solo persiste el stop sintetico.
+  // Mutuamente exclusivo con trailingStopPercent — la strategy decide cual poblar.
+  emaTrailPeriod?: number;
+  emaTrailBufferBps?: number;
   // Opaque snapshot owned by whichever decision model produced the signal.
   // Persisted as-is for postmortem; not read back by application code.
   indicators: unknown;

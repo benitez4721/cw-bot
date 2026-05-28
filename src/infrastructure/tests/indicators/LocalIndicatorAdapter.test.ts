@@ -155,6 +155,64 @@ describe('LocalIndicatorAdapter', () => {
     });
   });
 
+  describe('getEMA', () => {
+    it('returns the constant on a flat close series (EMA = close)', async () => {
+      repo._set('AAPL', '1min', makeBars(new Array(30).fill(50)));
+      const ema = await adapter.getEMA({
+        symbol: 'AAPL',
+        interval: '1min',
+        period: 18,
+      });
+      expect(ema.value).toBeCloseTo(50, 10);
+      expect(ema.timestamp).toBeDefined();
+    });
+
+    it('matches calcEMA on a non-flat series', async () => {
+      // EMA con period=3 sobre [1..20] — verificamos contra el cálculo manual
+      // para asegurar que el adapter usa el último valor de la serie y no un
+      // promedio simple.
+      const closes = Array.from({ length: 20 }, (_, i) => i + 1);
+      repo._set('AAPL', '1min', makeBars(closes));
+      const ema = await adapter.getEMA({
+        symbol: 'AAPL',
+        interval: '1min',
+        period: 3,
+      });
+      // calcEMA con period=3 sobre [1..20]: seed = SMA(1,2,3)=2, alpha=0.5;
+      // luego cada paso = 0.5 * x + 0.5 * prev. El último valor converge a
+      // ~ N - 1 = 19 para series lineales largas; verificamos > 18.
+      expect(ema.value).toBeGreaterThan(18);
+      expect(ema.value).toBeLessThan(20);
+    });
+
+    it('throws when bars shorter than period', async () => {
+      repo._set('AAPL', '1min', makeBars([1, 2, 3, 4, 5]));
+      await expect(
+        adapter.getEMA({ symbol: 'AAPL', interval: '1min', period: 18 }),
+      ).rejects.toThrow(/insufficient/);
+    });
+
+    it('throws when no bars cached', async () => {
+      await expect(
+        adapter.getEMA({ symbol: 'AAPL', interval: '1min', period: 18 }),
+      ).rejects.toThrow(/no cached bars/);
+    });
+
+    it('rejects non-positive period', async () => {
+      repo._set('AAPL', '1min', makeBars(new Array(30).fill(50)));
+      await expect(
+        adapter.getEMA({ symbol: 'AAPL', interval: '1min', period: 0 }),
+      ).rejects.toThrow(/positive integer/);
+    });
+
+    it('rejects unsupported intervals', async () => {
+      repo._set('AAPL', '1min', makeBars(new Array(30).fill(50)));
+      await expect(
+        adapter.getEMA({ symbol: 'AAPL', interval: '15min', period: 18 }),
+      ).rejects.toThrow(/not supported/);
+    });
+  });
+
   describe('getVWAP', () => {
     it('returns session VWAP for the current ET date', async () => {
       // Two 1m bars in the same ET session as the fixed clock (2026-05-07).

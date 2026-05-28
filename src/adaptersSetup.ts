@@ -163,6 +163,7 @@ export function setupAdapters(): Adapters {
     name: 'HighOfDayAlert',
     cwConfigId: '68ab7ca8a42020253d351a52',
     quantity: 2000,
+    trailMode: 'percent',
     trailingStopPercent: 8,
     entryBufferBps: 0,
     accountId: env.TRADESTATION_ACCOUNT_ID!,
