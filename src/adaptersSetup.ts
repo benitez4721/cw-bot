@@ -53,6 +53,7 @@ export interface Adapters {
   marketFeed: PolygonMarketFeedAdapter;
   historicalBars: TwelveDataHistoricalBarsAdapter;
   scannerFeed: ChartsWatcherScannerFeedAdapter;
+  indicators: LocalIndicatorAdapter;
   strategies: ConfiguredStrategy[];
   eventStrategies: EventStrategy[];
 }
@@ -222,6 +223,7 @@ export function setupAdapters(): Adapters {
     marketFeed,
     historicalBars,
     scannerFeed,
+    indicators,
     strategies,
     eventStrategies,
   };

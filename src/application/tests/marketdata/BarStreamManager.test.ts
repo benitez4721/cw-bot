@@ -29,6 +29,7 @@ import type { PlaceLimitOrder } from '../../broker/PlaceLimitOrder.js';
 import { CloseTrade } from '../../trade/CloseTrade.js';
 import { CheckOpenTrades } from '../../trade/CheckOpenTrades.js';
 import type { CheckSyntheticStops } from '../../trade/CheckSyntheticStops.js';
+import type { MaybeTrailStopAlongEma } from '../../trade/MaybeTrailStopAlongEma.js';
 import type { RecordTradeContext } from '../../trade/RecordTradeContext.js';
 import { BarStreamManager } from '../../marketdata/BarStreamManager.js';
 
@@ -1252,6 +1253,188 @@ describe('BarStreamManager — branch pre', () => {
     expect(s.placeLimit.execute).not.toHaveBeenCalled();
     expect(s.recordContext.execute).toHaveBeenCalledWith(
       expect.objectContaining({ session: 'rth' }),
+    );
+    s.manager.stop();
+  });
+});
+
+describe('BarStreamManager — trail EMA wiring', () => {
+  function emaSetup() {
+    const session = { value: 'rth' as 'pre' | 'transition' | 'rth' | 'closed' };
+    const marketHours: MarketHours = {
+      session: () => session.value,
+      isOpen: () => session.value === 'rth',
+      isConnected: () =>
+        session.value === 'pre' ||
+        session.value === 'transition' ||
+        session.value === 'rth',
+    };
+    const feed = createFakeFeed();
+    const barRepo = createInMemoryBarRepo();
+    const historicalBars: HistoricalBarsPort = {
+      fetchHistoricalBars: vi.fn(async () => [
+        bar('2026-05-18T13:00:00Z', 100),
+        bar('2026-05-18T13:01:00Z', 100.5),
+      ]),
+    };
+    const tradeRepo = createTradeRepo();
+    const placeBracket = {
+      execute: vi.fn(async () => ({
+        status: 'open',
+        entryOrderId: 'E',
+        stopOrderId: 'S',
+        takeProfitOrderId: 'T',
+      })),
+    };
+    const recordContext = { execute: vi.fn(async () => undefined) };
+    const broker: BrokerPort = {
+      getPositions: vi.fn(async () => []),
+      getOrders: vi.fn(async () => []),
+      getQuote: vi.fn(),
+    } as unknown as BrokerPort;
+    const closeTrade = new CloseTrade(tradeRepo);
+    const checkOpenTrades = new CheckOpenTrades({
+      tradeRepo,
+      broker,
+      closeTrade,
+    });
+    // Watchlist vacia a proposito: queremos verificar que el simbolo del
+    // trade activo se suscribe por su mera presencia en listAllActive.
+    const watchlist = createWatchlist([]);
+    const model: MockModel = {
+      name: 'MacdM1CrossOver',
+      buildSnapshot: vi.fn(async () => makeHoldSignal('TSLA').snapshot),
+      evaluate: vi.fn(() => makeHoldSignal('TSLA')),
+    };
+    const strategies: DecisionStrategy[] = [
+      {
+        name: 'MacdM1CrossOver',
+        model,
+        watchlist,
+        accountId: 'SIM12345',
+      },
+    ];
+    const metrics: MetricsPort = {
+      recordDecision: vi.fn(),
+      recordTick: vi.fn(),
+      recordOrderResult: vi.fn(),
+      recordTsRequest: vi.fn(),
+      recordOauthRefresh: vi.fn(),
+      setWatchlistSize: vi.fn(),
+      setScannerConnected: vi.fn(),
+      recordBarReceived: vi.fn(),
+      recordBarDedupSkip: vi.fn(),
+      recordBootstrapFailure: vi.fn(),
+      setMarketFeedConnected: vi.fn(),
+    } as unknown as MetricsPort;
+    const nowMs = { value: Date.UTC(2026, 4, 18, 18, 0, 0) }; // 14:00 ET rth
+    const maybeTrailStopAlongEma = {
+      execute: vi.fn(async () => undefined),
+    };
+
+    const manager = new BarStreamManager({
+      feed,
+      historicalBars,
+      barRepo,
+      strategies,
+      placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
+      recordTradeContext: recordContext as unknown as RecordTradeContext,
+      checkOpenTrades,
+      marketHours,
+      metrics,
+      maybeTrailStopAlongEma:
+        maybeTrailStopAlongEma as unknown as MaybeTrailStopAlongEma,
+      tradeRepo,
+      bootstrapBars: 2,
+      syncIntervalMs: 60_000,
+      now: () => nowMs.value,
+    });
+
+    return {
+      manager,
+      feed,
+      session,
+      tradeRepo,
+      maybeTrailStopAlongEma,
+    };
+  }
+
+  it('unionWatchlist suma simbolos de tradeRepo.listAllActive aunque ninguna watchlist los tenga', async () => {
+    const s = emaSetup();
+    s.tradeRepo._seedActive({
+      model: 'HighOfDayAlertEmaTrail',
+      accountId: 'SIM12345',
+      symbol: 'TSLA',
+      side: 'BUY',
+      entryLimitPrice: 100,
+      evalStart: 't',
+      evalEnd: 't',
+      bracket: { entryOrderId: 'E-ema', stopOrderId: 'S-ema' },
+      indicators: null,
+      checks: [],
+      status: 'active',
+      emaTrailPeriod: 18,
+      emaTrailBufferBps: 16,
+    });
+
+    await s.manager.start();
+
+    expect(s.feed.subscribed.has('TSLA')).toBe(true);
+    s.manager.stop();
+  });
+
+  it('processSymbol invoca maybeTrailStopAlongEma en sesion rth', async () => {
+    const s = emaSetup();
+    s.tradeRepo._seedActive({
+      model: 'HighOfDayAlertEmaTrail',
+      accountId: 'SIM12345',
+      symbol: 'TSLA',
+      side: 'BUY',
+      entryLimitPrice: 100,
+      evalStart: 't',
+      evalEnd: 't',
+      bracket: { entryOrderId: 'E-ema', stopOrderId: 'S-ema' },
+      indicators: null,
+      checks: [],
+      status: 'active',
+      emaTrailPeriod: 18,
+      emaTrailBufferBps: 16,
+    });
+    await s.manager.start();
+    await s.feed.emitBar('TSLA', bar('2026-05-18T18:01:00Z', 101));
+
+    expect(s.maybeTrailStopAlongEma.execute).toHaveBeenCalledWith(
+      'TSLA',
+      expect.objectContaining({ close: 101 }),
+    );
+    s.manager.stop();
+  });
+
+  it('processSymbol invoca maybeTrailStopAlongEma tambien en sesion pre', async () => {
+    const s = emaSetup();
+    s.session.value = 'pre';
+    s.tradeRepo._seedActive({
+      model: 'HighOfDayAlertEmaTrail',
+      accountId: 'SIM12345',
+      symbol: 'TSLA',
+      side: 'BUY',
+      entryLimitPrice: 100,
+      evalStart: 't',
+      evalEnd: 't',
+      bracket: { entryOrderId: 'E-ema' },
+      indicators: null,
+      checks: [],
+      status: 'active',
+      emaTrailPeriod: 18,
+      emaTrailBufferBps: 16,
+      session: 'pre',
+    });
+    await s.manager.start();
+    await s.feed.emitBar('TSLA', bar('2026-05-18T11:01:00Z', 101));
+
+    expect(s.maybeTrailStopAlongEma.execute).toHaveBeenCalledWith(
+      'TSLA',
+      expect.objectContaining({ close: 101 }),
     );
     s.manager.stop();
   });

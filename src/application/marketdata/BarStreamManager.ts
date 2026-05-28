@@ -5,6 +5,7 @@ import type { HistoricalBarsPort } from '../../domain/marketdata/HistoricalBarsP
 import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
+import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculations.js';
 import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 import { logger } from '../../infrastructure/logging/logger.js';
@@ -15,6 +16,7 @@ import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { CheckSyntheticStops } from '../trade/CheckSyntheticStops.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
+import type { MaybeTrailStopAlongEma } from '../trade/MaybeTrailStopAlongEma.js';
 import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
@@ -81,6 +83,15 @@ export interface BarStreamManagerOptions {
   // antes de checkSyntheticStops para que el cross-check use el stop ya
   // actualizado.
   maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
+  // Trail por EMA para ctx con emaTrailPeriod/emaTrailBufferBps (EventStrategy
+  // HighOfDayAlertEmaTrail). Corre en pre + rth, antes de checkSyntheticStops
+  // en pre. En rth ademas mueve el StopMarket del broker via replaceStopPrice.
+  maybeTrailStopAlongEma?: MaybeTrailStopAlongEma;
+  // Trade repo: ademas de las watchlists de las DecisionStrategy, los simbolos
+  // de los trades activos (EventStrategy incluidos) se suman al set suscrito
+  // para que el manager reciba sus barras. Sin esto, los trades de event no
+  // tendrian feed a menos que coincidieran con la watchlist de algun modelo.
+  tradeRepo?: TradeContextRepository;
   // Disparado una sola vez por día NY cuando el tick cae dentro de la
   // ventana 9:29 ET de un día hábil. Bot arranca el día con Redis limpio.
   flushRedis?: () => Promise<void>;
@@ -115,6 +126,8 @@ export class BarStreamManager {
   private readonly placeLimitOrder?: PlaceLimitOrder;
   private readonly checkSyntheticStops?: CheckSyntheticStops;
   private readonly maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
+  private readonly maybeTrailStopAlongEma?: MaybeTrailStopAlongEma;
+  private readonly tradeRepo?: TradeContextRepository;
   private readonly flushRedis?: () => Promise<void>;
   private lastFlushedDay: string | null = null;
   // Sesion vista en el tick anterior. Sirve para detectar boundaries
@@ -154,6 +167,8 @@ export class BarStreamManager {
     this.placeLimitOrder = options.placeLimitOrder;
     this.checkSyntheticStops = options.checkSyntheticStops;
     this.maybeTrailSyntheticStop = options.maybeTrailSyntheticStop;
+    this.maybeTrailStopAlongEma = options.maybeTrailStopAlongEma;
+    this.tradeRepo = options.tradeRepo;
     this.flushRedis = options.flushRedis;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
@@ -367,6 +382,20 @@ export class BarStreamManager {
     for (const list of lists) {
       for (const item of list) wanted.add(item.symbol);
     }
+    // Suma simbolos de trades activos (EventStrategy incluidos). Garantiza que
+    // el manager siga recibiendo barras del simbolo mientras dure el trade,
+    // incluso si ninguna DecisionStrategy lo tiene en su watchlist.
+    if (this.tradeRepo) {
+      try {
+        const active = await this.tradeRepo.listAllActive();
+        for (const ctx of active) wanted.add(ctx.symbol);
+      } catch (err) {
+        log.warn(
+          { err: errMsg(err) },
+          'listAllActive failed in unionWatchlist — using strategy lists only',
+        );
+      }
+    }
     return wanted;
   }
 
@@ -481,6 +510,22 @@ export class BarStreamManager {
     // 'closed' caen acá: bars se siguen acumulando en barRepo pero el
     // manager no corre estrategias ni stops sintéticos.
     if (session !== 'pre' && session !== 'rth') return;
+
+    // Trail por EMA: corre en pre + rth (a diferencia de los otros usecases de
+    // trade que son pre-only). En pre debe ir antes del cross-check sintetico
+    // para que use el stop ya actualizado; en rth no hay cross-check (los stops
+    // son reales en el broker), pero el use case mueve el StopMarket via
+    // replaceStopPrice. Filtra internamente por ctx con emaTrailPeriod.
+    if (this.maybeTrailStopAlongEma) {
+      try {
+        await this.maybeTrailStopAlongEma.execute(symbol, bar);
+      } catch (err) {
+        log.warn(
+          { symbol, err: errMsg(err) },
+          'maybeTrailStopAlongEma threw — continuing',
+        );
+      }
+    }
 
     // En pre corren: (1) trailing sintético, que sube el stopPrice de ctx
     // con trailingStopPercent siguiendo el high-watermark; (2) cross-check de

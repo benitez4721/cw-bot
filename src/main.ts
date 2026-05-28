@@ -9,6 +9,7 @@ import { PlaceLimitOrder } from './application/broker/PlaceLimitOrder.js';
 import { PlaceTrailingBracketOrder } from './application/broker/PlaceTrailingBracketOrder.js';
 import { CheckOpenTrades } from './application/trade/CheckOpenTrades.js';
 import { CheckSyntheticStops } from './application/trade/CheckSyntheticStops.js';
+import { MaybeTrailStopAlongEma } from './application/trade/MaybeTrailStopAlongEma.js';
 import { MaybeTrailSyntheticStop } from './application/trade/MaybeTrailSyntheticStop.js';
 import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
 import { AlertEventManager } from './application/scanner/AlertEventManager.js';
@@ -67,6 +68,7 @@ async function main() {
     marketFeed,
     historicalBars,
     scannerFeed,
+    indicators,
     strategies,
     eventStrategies,
   } = setupAdapters();
@@ -100,6 +102,11 @@ async function main() {
   const maybeMoveStopToBreakEven = new MaybeMoveStopToBreakEven({
     tradeRepo,
     broker,
+  });
+  const maybeTrailStopAlongEma = new MaybeTrailStopAlongEma({
+    tradeRepo,
+    broker,
+    indicators,
   });
   const listWatchlist = new ListWatchlist(
     strategies.map((s) => ({
@@ -180,7 +187,9 @@ async function main() {
     checkOpenTrades,
     checkSyntheticStops,
     maybeTrailSyntheticStop,
+    maybeTrailStopAlongEma,
     maybeMoveStopToBreakEven,
+    tradeRepo,
     marketHours,
     metrics,
     flattenAll,
