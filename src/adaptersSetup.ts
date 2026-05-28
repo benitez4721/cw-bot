@@ -182,7 +182,7 @@ export function setupAdapters(): Adapters {
     emaTrailPeriod: 18,
     emaTrailBufferBps: 16,
     entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID!,
+    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
 
   const strategies = [
