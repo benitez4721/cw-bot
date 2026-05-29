@@ -181,7 +181,7 @@ export function setupAdapters(): Adapters {
     quantity: 2000,
     trailMode: 'ema',
     emaTrailPeriod: 18,
-    emaTrailBufferBps: 32,
+    emaTrailBufferBps: 20,
     entryBufferBps: 0,
     accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
