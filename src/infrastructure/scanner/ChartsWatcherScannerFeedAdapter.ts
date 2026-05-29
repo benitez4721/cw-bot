@@ -240,10 +240,12 @@ export class ChartsWatcherScannerFeedAdapter implements ScannerFeedPort {
         break;
 
       case 'AlertConfirm':
+        log.info({ raw, parsed: msg }, 'AlertConfirm payload');
         this.handleAlertConfirm(msg);
         break;
 
       case 'NewAlert':
+        log.info({ raw, parsed: msg }, 'NewAlert payload');
         this.handleNewAlert(msg);
         break;
 
