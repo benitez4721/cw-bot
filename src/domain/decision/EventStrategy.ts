@@ -1,9 +1,16 @@
+import type { DecisionModel } from './DecisionModel.js';
+
 interface EventStrategyBase {
   readonly name: string;
   readonly cwConfigId: string;
   readonly quantity: number;
   readonly entryBufferBps: number;
   readonly accountId: string;
+  // Gate opcional. Cuando está definido, AlertEventManager invoca
+  // model.buildSnapshot + model.evaluate antes de operar y descarta el
+  // alert si action === 'hold'. Solo `action` se consume del signal —
+  // entryLimitPrice/quantity/stopOffset siguen viniendo de esta config.
+  readonly model?: DecisionModel;
 }
 
 interface PercentTrail {

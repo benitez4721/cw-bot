@@ -31,6 +31,7 @@ export type AlertOutcome =
   | 'opened'
   | 'skipped_busy'
   | 'skipped_closed'
+  | 'skipped_model_hold'
   | 'rejected';
 
 export interface MetricsPort {

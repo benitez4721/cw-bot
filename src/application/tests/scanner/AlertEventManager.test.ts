@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DecisionModel } from '../../../domain/decision/DecisionModel.js';
 import type { EventStrategy } from '../../../domain/decision/EventStrategy.js';
 import type { MetricsPort } from '../../../domain/metrics/MetricsPort.js';
 import type { ScannerFeedPort } from '../../../domain/scanner/ScannerFeedPort.js';
-import type { ScannerRow } from '../../../domain/scanner/ScannerTypes.js';
+import type {
+  ScannerColumn,
+  ScannerRow,
+} from '../../../domain/scanner/ScannerTypes.js';
 import { AlertEventManager } from '../../scanner/AlertEventManager.js';
 import type { OnScannerAlert } from '../../scanner/OnScannerAlert.js';
 
@@ -35,8 +39,8 @@ class FakeFeed implements ScannerFeedPort {
   }
   onConnectionChange(_cb: (connected: boolean) => void): void {}
 
-  emit(configId: string, symbol: string): void {
-    this.alertCb?.(configId, { symbol, columns: [] });
+  emit(configId: string, symbol: string, columns: ScannerColumn[] = []): void {
+    this.alertCb?.(configId, { symbol, columns });
   }
 }
 
@@ -154,5 +158,188 @@ describe('AlertEventManager', () => {
       'HighOfDayAlert',
       'received',
     );
+  });
+});
+
+describe('AlertEventManager — model gate', () => {
+  function makeGateModel(decision: 'buy' | 'hold'): DecisionModel {
+    type Snap = { decision: 'buy' | 'hold' };
+    const model: DecisionModel<Snap> = {
+      name: 'GateMock',
+      async buildSnapshot() {
+        return { decision };
+      },
+      evaluate(snapshot) {
+        const checks = [{ name: 'gate', passed: decision === 'buy' }];
+        if (snapshot.decision === 'hold') {
+          return { action: 'hold', checks, snapshot };
+        }
+        return {
+          action: 'buy',
+          symbol: '',
+          side: 'BUY',
+          entryLimitPrice: 0,
+          quantity: 0,
+          stopOffset: 0,
+          takeProfitOffset: 0,
+          checks,
+          snapshot,
+        };
+      },
+    };
+    return model as DecisionModel;
+  }
+
+  it('sin model declarado, pasa la alerta al handle (back-compat)', async () => {
+    const feed = new FakeFeed();
+    const handle = vi.fn(async () => undefined);
+    const onAlert = { handle } as unknown as OnScannerAlert;
+    const mgr = new AlertEventManager({
+      feed,
+      strategy,
+      onAlert,
+      metrics: makeMetrics(),
+    });
+    await mgr.start();
+    feed.emit('cfg-A', 'AAPL', [
+      { key: 'AlertNameColumn', value: 'lo que sea' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(handle).toHaveBeenCalledWith('AAPL');
+  });
+
+  it('con model que retorna buy, invoca handle y NO registra skipped_model_hold', async () => {
+    const feed = new FakeFeed();
+    const handle = vi.fn(async () => undefined);
+    const onAlert = { handle } as unknown as OnScannerAlert;
+    const metrics = makeMetrics();
+    const strategyWithModel: EventStrategy = {
+      ...strategy,
+      model: makeGateModel('buy'),
+    };
+    const mgr = new AlertEventManager({
+      feed,
+      strategy: strategyWithModel,
+      onAlert,
+      metrics,
+    });
+    await mgr.start();
+    feed.emit('cfg-A', 'AAPL', [
+      { key: 'AlertNameColumn', value: 'High of the day' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(handle).toHaveBeenCalledWith('AAPL');
+    expect(metrics.recordAlertOutcome).not.toHaveBeenCalledWith(
+      'HighOfDayAlert',
+      'skipped_model_hold',
+    );
+  });
+
+  it('con model que retorna hold, NO invoca handle y registra skipped_model_hold', async () => {
+    const feed = new FakeFeed();
+    const handle = vi.fn(async () => undefined);
+    const onAlert = { handle } as unknown as OnScannerAlert;
+    const metrics = makeMetrics();
+    const strategyWithModel: EventStrategy = {
+      ...strategy,
+      model: makeGateModel('hold'),
+    };
+    const mgr = new AlertEventManager({
+      feed,
+      strategy: strategyWithModel,
+      onAlert,
+      metrics,
+    });
+    await mgr.start();
+    feed.emit('cfg-A', 'AAPL', [
+      { key: 'AlertNameColumn', value: 'Low of the day' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(handle).not.toHaveBeenCalled();
+    expect(metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlert',
+      'skipped_model_hold',
+    );
+  });
+
+  it('el gate async tambien respeta la serializacion de la queue', async () => {
+    const feed = new FakeFeed();
+    const order: string[] = [];
+    let releaseFirstGate: () => void = () => {};
+    const firstGateHold: Promise<void> = new Promise((r) => {
+      releaseFirstGate = r;
+    });
+    let firstSnapshotStarted: () => void = () => {};
+    const firstSnapshotPromise: Promise<void> = new Promise((r) => {
+      firstSnapshotStarted = r;
+    });
+
+    let snapshotCalls = 0;
+    type Snap = { decision: 'buy' };
+    const slowModel: DecisionModel<Snap> = {
+      name: 'SlowGate',
+      async buildSnapshot() {
+        snapshotCalls += 1;
+        const localCall = snapshotCalls;
+        order.push(`buildSnapshot:${localCall}`);
+        if (localCall === 1) {
+          firstSnapshotStarted();
+          await firstGateHold;
+        }
+        order.push(`buildSnapshotEnd:${localCall}`);
+        return { decision: 'buy' };
+      },
+      evaluate(snapshot) {
+        return {
+          action: 'buy',
+          symbol: '',
+          side: 'BUY',
+          entryLimitPrice: 0,
+          quantity: 0,
+          stopOffset: 0,
+          takeProfitOffset: 0,
+          checks: [{ name: 'gate', passed: true }],
+          snapshot,
+        };
+      },
+    };
+
+    const handle = vi.fn(async (symbol: string) => {
+      order.push(`handle:${symbol}`);
+    });
+    const onAlert = { handle } as unknown as OnScannerAlert;
+    const strategyWithModel: EventStrategy = {
+      ...strategy,
+      model: slowModel as DecisionModel,
+    };
+    const mgr = new AlertEventManager({
+      feed,
+      strategy: strategyWithModel,
+      onAlert,
+      metrics: makeMetrics(),
+    });
+    await mgr.start();
+
+    feed.emit('cfg-A', 'AAPL');
+    feed.emit('cfg-A', 'MSFT');
+
+    await firstSnapshotPromise;
+    expect(order).toEqual(['buildSnapshot:1']);
+    releaseFirstGate();
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual([
+      'buildSnapshot:1',
+      'buildSnapshotEnd:1',
+      'handle:AAPL',
+      'buildSnapshot:2',
+      'buildSnapshotEnd:2',
+      'handle:MSFT',
+    ]);
   });
 });

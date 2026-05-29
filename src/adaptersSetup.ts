@@ -6,15 +6,16 @@ import { TradeStationClient } from './infrastructure/broker/tradestation/TradeSt
 import { TradeStationOrderStreamAdapter } from './infrastructure/broker/tradestation/TradeStationOrderStreamAdapter.js';
 import { TradeStationPositionStreamAdapter } from './infrastructure/broker/tradestation/TradeStationPositionStreamAdapter.js';
 import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
-import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
+// import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
 import { RedisBarRepository } from './infrastructure/marketdata/RedisBarRepository.js';
 import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/TwelveDataHistoricalBarsAdapter.js';
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
-import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
-import { MarketStructureDecisionModel } from './domain/decision/models/MarketStructureDecisionModel.js';
-import { SuperDecisionModel } from './domain/decision/models/SuperDecisionModel.js';
+import { HighOfTheDayDecisionModel } from './domain/decision/models/HighOfTheDayDecisionModel.js';
+// import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
+// import { MarketStructureDecisionModel } from './domain/decision/models/MarketStructureDecisionModel.js';
+// import { SuperDecisionModel } from './domain/decision/models/SuperDecisionModel.js';
 import { PolygonMarketFeedAdapter } from './infrastructure/marketdata/PolygonMarketFeedAdapter.js';
 import { UsMarketHoursAdapter } from './infrastructure/market/UsMarketHoursAdapter.js';
 import { PrometheusMetricsAdapter } from './infrastructure/metrics/PrometheusMetricsAdapter.js';
@@ -111,57 +112,57 @@ export function setupAdapters(): Adapters {
   // infra wiring (opaque pointer to ChartsWatcher); the upstream RVOL
   // filter that CW applies is part of each strategy spec, but the ID
   // itself lives here, hardcoded — invariant across deploys.
-  const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
-  const macdM1CrossOverModel = new MacdM1CrossOverDecisionModel({
-    broker,
-    indicators,
-  });
-  const macdM1CrossOverStrategy: ConfiguredStrategy = {
-    name: 'MacdM1CrossOver',
-    model: macdM1CrossOverModel,
-    watchlist: macdM1CrossOverWatchlist,
-    trailToBreakEvenAtProfit: 0.01,
-    cwConfigId: '69b85e8d373a8a104a52803b',
-    accountId: env.TRADESTATION_ACCOUNT_ID_2!,
-  };
+  // const macdM1CrossOverWatchlist = new RedisWatchlistRepository(redis);
+  // const macdM1CrossOverModel = new MacdM1CrossOverDecisionModel({
+  //   broker,
+  //   indicators,
+  // });
+  // const macdM1CrossOverStrategy: ConfiguredStrategy = {
+  //   name: 'MacdM1CrossOver',
+  //   model: macdM1CrossOverModel,
+  //   watchlist: macdM1CrossOverWatchlist,
+  //   trailToBreakEvenAtProfit: 0.01,
+  //   cwConfigId: '69b85e8d373a8a104a52803b',
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_2!,
+  // };
 
-  const superWatchlist = new RedisWatchlistRepository(redis, {
-    keyPrefix: 'cw:wl:super',
-  });
-  const superModel = new SuperDecisionModel({ broker, indicators });
+  // const superWatchlist = new RedisWatchlistRepository(redis, {
+  //   keyPrefix: 'cw:wl:super',
+  // });
+  // const superModel = new SuperDecisionModel({ broker, indicators });
   // Cada estrategia declara explícitamente contra qué cuenta opera. El env
   // `TRADESTATION_ACCOUNT_ID` se usa acá como bootstrap por convención;
   // cambialo por una cuenta distinta si querés rutear los trades a otra.
-  const superStrategy: ConfiguredStrategy = {
-    name: 'Super',
-    model: superModel,
-    watchlist: superWatchlist,
-    trailToBreakEvenAtProfit: 0.01,
-    cwConfigId: '69f6bec1f52a7e93e345cd0c',
-    accountId: env.TRADESTATION_ACCOUNT_ID!,
-  };
+  // const superStrategy: ConfiguredStrategy = {
+  //   name: 'Super',
+  //   model: superModel,
+  //   watchlist: superWatchlist,
+  //   trailToBreakEvenAtProfit: 0.01,
+  //   cwConfigId: '69f6bec1f52a7e93e345cd0c',
+  //   accountId: env.TRADESTATION_ACCOUNT_ID!,
+  // };
 
-  const marketStructureWatchlist = new RedisWatchlistRepository(redis, {
-    keyPrefix: 'cw:wl:mktstr',
-  });
-  const marketStructureModel = new MarketStructureDecisionModel({
-    broker,
-    indicators,
-  });
-  const marketStructureStrategy: ConfiguredStrategy = {
-    name: 'MarketStructure',
-    model: marketStructureModel,
-    watchlist: marketStructureWatchlist,
-    trailToBreakEvenAtProfit: 0.01,
-    cwConfigId: '69f6bec1f52a7e93e345cd0c',
-    accountId: env.TRADESTATION_ACCOUNT_ID_2!,
-  };
+  // const marketStructureWatchlist = new RedisWatchlistRepository(redis, {
+  //   keyPrefix: 'cw:wl:mktstr',
+  // });
+  // const marketStructureModel = new MarketStructureDecisionModel({
+  //   broker,
+  //   indicators,
+  // });
+  // const marketStructureStrategy: ConfiguredStrategy = {
+  //   name: 'MarketStructure',
+  //   model: marketStructureModel,
+  //   watchlist: marketStructureWatchlist,
+  //   trailToBreakEvenAtProfit: 0.01,
+  //   cwConfigId: '69f6bec1f52a7e93e345cd0c',
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_2!,
+  // };
 
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
   // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
   // recibir cada NewAlert. Convive en paralelo con los DecisionStrategy.
-  const highOfDayAlert: EventStrategy = {
-    name: 'HighOfDayAlert',
+  const allAlerts: EventStrategy = {
+    name: 'AllAlerts',
     cwConfigId: '68ab7ca8a42020253d351a52',
     quantity: 2000,
     trailMode: 'percent',
@@ -171,26 +172,37 @@ export function setupAdapters(): Adapters {
   };
 
   // Variante paralela del mismo alert (mismo cwConfigId, misma cuenta) con
-  // trail por EMA 18 en lugar de % fijo. Convive con highOfDayAlert: cada
+  // trail por EMA 18 en lugar de % fijo. Convive con allAlerts: cada
   // alert dispara DOS trades (uno por strategy); CheckOpenTrades filtra por
   // model.name asi que no se bloquean entre si.
-  const highOfDayAlertEmaTrail: EventStrategy = {
-    name: 'HighOfDayAlertEmaTrail',
+  const allAlertsEmaTrail: EventStrategy = {
+    name: 'AllAlertsEmaTrail',
     cwConfigId: '68ab7ca8a42020253d351a52',
     quantity: 2000,
     trailMode: 'ema',
     emaTrailPeriod: 18,
-    emaTrailBufferBps: 16,
+    emaTrailBufferBps: 32,
     entryBufferBps: 0,
     accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
 
-  const strategies = [
-    superStrategy,
-    macdM1CrossOverStrategy,
-    marketStructureStrategy,
-  ];
-  const eventStrategies = [highOfDayAlert, highOfDayAlertEmaTrail];
+  // Tercera variante del mismo cwConfigId: usa el DecisionModel para filtrar
+  // solo alerts cuya AlertNameColumn sea "High of the day". Los otros dos
+  // EventStrategy (sin model) siguen disparando para cualquier nombre.
+  const highOfTheDayModel = new HighOfTheDayDecisionModel();
+  const highOfTheDayAlert: EventStrategy = {
+    name: 'HighOfTheDayAlert',
+    cwConfigId: '68ab7ca8a42020253d351a52',
+    quantity: 2000,
+    trailMode: 'percent',
+    trailingStopPercent: 8,
+    entryBufferBps: 0,
+    accountId: env.TRADESTATION_ACCOUNT_ID_2!,
+    model: highOfTheDayModel,
+  };
+
+  const strategies = [] as ConfiguredStrategy[];
+  const eventStrategies = [allAlerts, allAlertsEmaTrail, highOfTheDayAlert];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
