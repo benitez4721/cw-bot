@@ -174,6 +174,10 @@ export class OrderStreamManager {
     // Persistir el fill (entry/stop/tp/forced) en el TradeContext para que
     // el PnL real quede reconstruible sin consultar al broker. Idempotente:
     // RecordOrderFill skipea writes si los valores ya coinciden.
+    // Race conocida WS-vs-Redis: el fill puede llegar antes del put(ctx).
+    // Cuando no hay context, no hacemos nada — ReconcileEntryFill corre en
+    // OnScannerAlert/BarStreamManager justo despues del put y recupera el
+    // fill via getOrders + recordOrderFill (idempotente).
     if (context) {
       try {
         await this.recordOrderFill.execute({
@@ -186,25 +190,6 @@ export class OrderStreamManager {
           'recordOrderFill failed',
         );
       }
-    } else if (event.order.filledPrice != null) {
-      // Race conocida: el stream WS de TS puede entregar el fill event antes
-      // de que OnScannerAlert termine el `tradeRepo.put(ctx)` (POST de la
-      // orden + GET de reconcile + escritura de Redis). Si el ctx no existe
-      // todavia, descartamos el fill sin reintento — la `evidencia operativa`
-      // es este warning. Si aparece frecuente, agregar un retry o una cola
-      // de fills pendientes.
-      log.warn(
-        {
-          orderId: event.order.id,
-          symbol: event.order.symbol,
-          status: event.order.status,
-          filledPrice: event.order.filledPrice,
-          filledQuantity: event.order.filledQuantity,
-          accountId: event.accountId,
-          origin: event.origin,
-        },
-        'fill event received but no trade context found — discarding',
-      );
     }
     // Reconciliación: priorState reemplaza, liveUpdate también reemplaza.
     // No hay estado terminal que borre — el dashboard quiere ver historia.

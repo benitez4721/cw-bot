@@ -12,6 +12,7 @@ import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { PlaceTrailingBracketOrder } from '../broker/PlaceTrailingBracketOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
+import type { ReconcileEntryFill } from '../trade/ReconcileEntryFill.js';
 
 const log = logger.child({ component: 'OnScannerAlert' });
 
@@ -35,6 +36,7 @@ export interface OnScannerAlertDeps {
   placeLimitOrder: PlaceLimitOrder;
   tradeRepo: TradeContextRepository;
   checkOpenTrades: CheckOpenTrades;
+  reconcileEntryFill: ReconcileEntryFill;
   marketHours: MarketHours;
   metrics: MetricsPort;
   // Deps opcionales para la rama 'ema'. Las strategies 'percent' no las
@@ -53,6 +55,7 @@ export class OnScannerAlert {
   private readonly placeLimitOrder: PlaceLimitOrder;
   private readonly tradeRepo: TradeContextRepository;
   private readonly checkOpenTrades: CheckOpenTrades;
+  private readonly reconcileEntryFill: ReconcileEntryFill;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly indicators?: IndicatorPort;
@@ -68,6 +71,7 @@ export class OnScannerAlert {
     this.placeLimitOrder = deps.placeLimitOrder;
     this.tradeRepo = deps.tradeRepo;
     this.checkOpenTrades = deps.checkOpenTrades;
+    this.reconcileEntryFill = deps.reconcileEntryFill;
     this.marketHours = deps.marketHours;
     this.metrics = deps.metrics;
     this.indicators = deps.indicators;
@@ -202,6 +206,7 @@ export class OnScannerAlert {
       },
       'trade opened from scanner alert (rth, percent trail)',
     );
+    await this.reconcileEntryFill.execute({ ctx });
   }
 
   private async openPrePercent(
@@ -284,6 +289,7 @@ export class OnScannerAlert {
       },
       'trade opened from scanner alert (pre, percent trail)',
     );
+    await this.reconcileEntryFill.execute({ ctx });
   }
 
   private async openRthEma(
@@ -376,6 +382,7 @@ export class OnScannerAlert {
       },
       'trade opened from scanner alert (rth, ema trail)',
     );
+    await this.reconcileEntryFill.execute({ ctx });
   }
 
   private async openPreEma(
@@ -456,6 +463,7 @@ export class OnScannerAlert {
       },
       'trade opened from scanner alert (pre, ema trail)',
     );
+    await this.reconcileEntryFill.execute({ ctx });
   }
 
   // Calcula `EMA(period) * (1 ± bufferBps/10_000)` para el stop inicial.

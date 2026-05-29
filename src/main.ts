@@ -15,6 +15,7 @@ import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
 import { AlertEventManager } from './application/scanner/AlertEventManager.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
 import { MaybeMoveStopToBreakEven } from './application/trade/MaybeMoveStopToBreakEven.js';
+import { ReconcileEntryFill } from './application/trade/ReconcileEntryFill.js';
 import { RecordOrderFill } from './application/trade/RecordOrderFill.js';
 import { RecordTradeContext } from './application/trade/RecordTradeContext.js';
 import { ScannerMonitor } from './application/watchlist/ScannerMonitor.js';
@@ -93,6 +94,10 @@ async function main() {
   const placeLimitOrder = new PlaceLimitOrder(broker, metrics);
   const recordTradeContext = new RecordTradeContext(tradeRepo);
   const recordOrderFill = new RecordOrderFill(tradeRepo);
+  const reconcileEntryFill = new ReconcileEntryFill({
+    broker,
+    recordOrderFill,
+  });
   const closeTrade = new CloseTrade(tradeRepo);
   const checkOpenTrades = new CheckOpenTrades({
     tradeRepo,
@@ -146,6 +151,7 @@ async function main() {
       placeLimitOrder,
       tradeRepo,
       checkOpenTrades,
+      reconcileEntryFill,
       marketHours,
       metrics,
       indicators,
@@ -188,6 +194,7 @@ async function main() {
     placeBracketOrder,
     placeLimitOrder,
     recordTradeContext,
+    reconcileEntryFill,
     checkOpenTrades,
     checkSyntheticStops,
     maybeTrailSyntheticStop,

@@ -39,11 +39,12 @@ export type RecordTradeContextInput =
 export class RecordTradeContext {
   constructor(private readonly repository: TradeContextRepository) {}
 
-  async execute(input: RecordTradeContextInput): Promise<void> {
+  async execute(input: RecordTradeContextInput): Promise<TradeContext> {
     if (!input.model) throw new Error('model is required');
 
     const ctx = input.session === 'rth' ? buildRth(input) : buildPre(input);
     await this.repository.put(ctx);
+    return ctx;
   }
 }
 

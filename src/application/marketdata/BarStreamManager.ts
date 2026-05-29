@@ -18,6 +18,7 @@ import type { CheckSyntheticStops } from '../trade/CheckSyntheticStops.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
 import type { MaybeTrailStopAlongEma } from '../trade/MaybeTrailStopAlongEma.js';
 import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.js';
+import type { ReconcileEntryFill } from '../trade/ReconcileEntryFill.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
@@ -64,6 +65,7 @@ export interface BarStreamManagerOptions {
   strategies: DecisionStrategy[];
   placeBracketOrder: PlaceBracketOrder;
   recordTradeContext: RecordTradeContext;
+  reconcileEntryFill: ReconcileEntryFill;
   checkOpenTrades: CheckOpenTrades;
   maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   marketHours: MarketHours;
@@ -115,6 +117,7 @@ export class BarStreamManager {
   private readonly strategies: DecisionStrategy[];
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
+  private readonly reconcileEntryFill: ReconcileEntryFill;
   private readonly checkOpenTrades: CheckOpenTrades;
   private readonly maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   private readonly marketHours: MarketHours;
@@ -158,6 +161,7 @@ export class BarStreamManager {
     this.strategies = options.strategies;
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
+    this.reconcileEntryFill = options.reconcileEntryFill;
     this.checkOpenTrades = options.checkOpenTrades;
     this.maybeMoveStopToBreakEven = options.maybeMoveStopToBreakEven;
     this.marketHours = options.marketHours;
@@ -676,8 +680,9 @@ export class BarStreamManager {
     ) {
       return;
     }
+    let ctx;
     try {
-      await this.recordTradeContext.execute({
+      ctx = await this.recordTradeContext.execute({
         session: 'rth',
         model: strategy.name,
         accountId,
@@ -700,7 +705,9 @@ export class BarStreamManager {
         },
         'failed to persist trade context',
       );
+      return;
     }
+    await this.reconcileEntryFill.execute({ ctx });
   }
 
   private async placePreLimit(
@@ -747,8 +754,9 @@ export class BarStreamManager {
     ) {
       return;
     }
+    let ctx;
     try {
-      await this.recordTradeContext.execute({
+      ctx = await this.recordTradeContext.execute({
         session: 'pre',
         model: strategy.name,
         accountId,
@@ -767,7 +775,9 @@ export class BarStreamManager {
         },
         'failed to persist pre trade context',
       );
+      return;
     }
+    await this.reconcileEntryFill.execute({ ctx });
   }
 }
 

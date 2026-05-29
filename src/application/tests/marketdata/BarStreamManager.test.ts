@@ -393,6 +393,7 @@ function setup(
     strategies,
     placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
     recordTradeContext: recordContext as unknown as RecordTradeContext,
+    reconcileEntryFill: { execute: vi.fn(async () => {}) } as never,
     checkOpenTrades,
     marketHours,
     metrics,
@@ -687,6 +688,7 @@ describe('BarStreamManager', () => {
       ],
       placeBracketOrder: s.placeBracket as unknown as PlaceBracketOrder,
       recordTradeContext: s.recordContext as unknown as RecordTradeContext,
+      reconcileEntryFill: { execute: vi.fn(async () => {}) } as never,
       checkOpenTrades: new CheckOpenTrades({
         tradeRepo: s.tradeRepo,
         broker: s.broker,
@@ -1142,6 +1144,7 @@ describe('BarStreamManager — branch pre', () => {
       checkSyntheticStops:
         checkSyntheticStops as unknown as CheckSyntheticStops,
       recordTradeContext: recordContext as unknown as RecordTradeContext,
+      reconcileEntryFill: { execute: vi.fn(async () => {}) } as never,
       checkOpenTrades,
       marketHours,
       metrics,
@@ -1339,6 +1342,7 @@ describe('BarStreamManager — trail EMA wiring', () => {
       strategies,
       placeBracketOrder: placeBracket as unknown as PlaceBracketOrder,
       recordTradeContext: recordContext as unknown as RecordTradeContext,
+      reconcileEntryFill: { execute: vi.fn(async () => {}) } as never,
       checkOpenTrades,
       marketHours,
       metrics,
