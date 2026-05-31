@@ -206,6 +206,11 @@ Optional toggles worth knowing:
 - `GRAFANA_CLOUD_PROM_URL` / `GRAFANA_CLOUD_PROM_USERNAME` /
   `GRAFANA_CLOUD_PROM_API_KEY` — when all three are set, the Prometheus
   registry is remote-written to Grafana Cloud.
+- `POSTGRES_URL` — when set, enables capture of raw ChartsWatcher alerts to
+  Postgres via `ScannerAlertRecorder` (append-only log for backtesting
+  EventStrategies). Fire-and-forget: the bot starts fine without it
+  (`alertCapture: disabled`) and a capture failure never affects trading.
+  Schema is created out-of-band by `pnpm db:init-scanner-alerts`.
 
 ## Scripts
 

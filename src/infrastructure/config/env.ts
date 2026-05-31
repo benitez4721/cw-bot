@@ -37,6 +37,7 @@ export const env = {
   DECISION_ENABLED:
     (process.env.DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
   REDIS_URL: process.env.REDIS_URL,
+  POSTGRES_URL: process.env.POSTGRES_URL,
   API_TOKEN: process.env.API_TOKEN,
   LOGTAIL_SOURCE_TOKEN: process.env.LOGTAIL_SOURCE_TOKEN,
   BETTERSTACK_HEARTBEAT_URL: process.env.BETTERSTACK_HEARTBEAT_URL,
