@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { Pool } from 'pg';
 import { env } from './infrastructure/config/env.js';
 import { logger } from './infrastructure/logging/logger.js';
 import { TradeStationBrokerAdapter } from './infrastructure/broker/tradestation/TradeStationBrokerAdapter.js';
@@ -6,6 +7,7 @@ import { TradeStationClient } from './infrastructure/broker/tradestation/TradeSt
 import { TradeStationOrderStreamAdapter } from './infrastructure/broker/tradestation/TradeStationOrderStreamAdapter.js';
 import { TradeStationPositionStreamAdapter } from './infrastructure/broker/tradestation/TradeStationPositionStreamAdapter.js';
 import { ChartsWatcherScannerFeedAdapter } from './infrastructure/scanner/ChartsWatcherScannerFeedAdapter.js';
+import { PostgresScannerAlertRepository } from './infrastructure/scanner/PostgresScannerAlertRepository.js';
 // import { RedisWatchlistRepository } from './infrastructure/watchlist/RedisWatchlistRepository.js';
 import { RedisTradeContextRepository } from './infrastructure/trade/RedisTradeContextRepository.js';
 import { RedisBarRepository } from './infrastructure/marketdata/RedisBarRepository.js';
@@ -55,6 +57,10 @@ export interface Adapters {
   historicalBars: TwelveDataHistoricalBarsAdapter;
   scannerFeed: ChartsWatcherScannerFeedAdapter;
   indicators: LocalIndicatorAdapter;
+  // Captura opcional de alerts CW a Postgres. undefined cuando POSTGRES_URL no
+  // está seteada — el bot arranca igual sin grabar.
+  pgPool?: Pool;
+  scannerAlertLogRepo?: PostgresScannerAlertRepository;
   strategies: ConfiguredStrategy[];
   eventStrategies: EventStrategy[];
 }
@@ -84,6 +90,26 @@ export function setupAdapters(): Adapters {
 
   const tradeRepo = new RedisTradeContextRepository(redis);
   const barRepo = new RedisBarRepository(redis);
+
+  // Captura opcional de alerts CW. El Pool es lazy (no conecta hasta el primer
+  // query), así un Postgres caído no rompe el arranque. El handler 'error' es
+  // imprescindible: sin él, un cliente idle que se cae tumba el proceso.
+  let pgPool: Pool | undefined;
+  let scannerAlertLogRepo: PostgresScannerAlertRepository | undefined;
+  if (env.POSTGRES_URL) {
+    pgPool = new Pool({
+      connectionString: env.POSTGRES_URL,
+      max: 4,
+      connectionTimeoutMillis: 5000,
+      ssl: /sslmode=require/.test(env.POSTGRES_URL)
+        ? { rejectUnauthorized: false }
+        : undefined,
+    });
+    pgPool.on('error', (err) => {
+      log.warn({ err: err.message }, 'postgres pool error');
+    });
+    scannerAlertLogRepo = new PostgresScannerAlertRepository(pgPool);
+  }
 
   // Single TwelveDataClient instance — its rate limiter must be unique to stay
   // under the 8 req/min free-tier cap.
@@ -251,6 +277,8 @@ export function setupAdapters(): Adapters {
     historicalBars,
     scannerFeed,
     indicators,
+    pgPool,
+    scannerAlertLogRepo,
     strategies,
     eventStrategies,
   };

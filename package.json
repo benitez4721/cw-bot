@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "oauth:refresh-token": "tsx --env-file=.env scripts/get-refresh-token.ts",
     "redis:flush": "tsx --env-file=.env scripts/flush-redis.ts",
+    "db:init-scanner-alerts": "tsx --env-file=.env scripts/init-scanner-alerts.ts",
     "prepare": "husky || true"
   },
   "dependencies": {

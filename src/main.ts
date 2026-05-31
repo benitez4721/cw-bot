@@ -13,6 +13,7 @@ import { MaybeTrailStopAlongEma } from './application/trade/MaybeTrailStopAlongE
 import { MaybeTrailSyntheticStop } from './application/trade/MaybeTrailSyntheticStop.js';
 import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
 import { AlertEventManager } from './application/scanner/AlertEventManager.js';
+import { ScannerAlertRecorder } from './application/scanner/ScannerAlertRecorder.js';
 import { CloseTrade } from './application/trade/CloseTrade.js';
 import { MaybeMoveStopToBreakEven } from './application/trade/MaybeMoveStopToBreakEven.js';
 import { ReconcileEntryFill } from './application/trade/ReconcileEntryFill.js';
@@ -70,6 +71,8 @@ async function main() {
     historicalBars,
     scannerFeed,
     indicators,
+    pgPool,
+    scannerAlertLogRepo,
     strategies,
     eventStrategies,
   } = setupAdapters();
@@ -166,6 +169,18 @@ async function main() {
     });
   });
 
+  // Tap opcional: graba el feed crudo de alerts a Postgres en paralelo a los
+  // AlertEventManager. null si POSTGRES_URL no está seteada.
+  const alertRecorder = scannerAlertLogRepo
+    ? new ScannerAlertRecorder({
+        feed: scannerFeed,
+        repository: scannerAlertLogRepo,
+        configIds: Array.from(
+          new Set(eventStrategies.map((s) => s.cwConfigId)),
+        ),
+      })
+    : null;
+
   const flattenAll = new FlattenAllPositions({
     broker,
     accountIds,
@@ -251,6 +266,16 @@ async function main() {
       );
     }
   }
+  if (alertRecorder) {
+    try {
+      await alertRecorder.start();
+    } catch (err) {
+      log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'scanner alert recorder start failed (capture degraded this run)',
+      );
+    }
+  }
   if (env.DECISION_ENABLED) {
     try {
       await barStream.start();
@@ -316,6 +341,7 @@ async function main() {
       eventStrategies: eventStrategies.map((s) => s.name),
       grafana: grafana ? 'enabled' : 'disabled',
       heartbeat: heartbeat ? 'enabled' : 'disabled',
+      alertCapture: scannerAlertLogRepo ? 'enabled' : 'disabled',
     },
     'listening',
   );
@@ -331,6 +357,7 @@ async function main() {
       for (const scanner of scanners) scanner.stop();
       await server.close();
       await redis.quit();
+      await pgPool?.end();
     } catch (err) {
       log.error(
         { err: err instanceof Error ? err.message : String(err) },
