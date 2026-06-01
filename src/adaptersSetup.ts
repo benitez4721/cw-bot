@@ -201,16 +201,17 @@ export function setupAdapters(): Adapters {
   // trail por EMA 18 en lugar de % fijo. Convive con allAlerts: cada
   // alert dispara DOS trades (uno por strategy); CheckOpenTrades filtra por
   // model.name asi que no se bloquean entre si.
-  const allAlertsEmaTrail: EventStrategy = {
-    name: 'AllAlertsEmaTrail',
-    cwConfigId: '68ab7ca8a42020253d351a52',
-    quantity: 2000,
-    trailMode: 'ema',
-    emaTrailPeriod: 18,
-    emaTrailBufferBps: 20,
-    entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
-  };
+
+  // const allAlertsEmaTrail: EventStrategy = {
+  //   name: 'AllAlertsEmaTrail',
+  //   cwConfigId: '68ab7ca8a42020253d351a52',
+  //   quantity: 2000,
+  //   trailMode: 'ema',
+  //   emaTrailPeriod: 18,
+  //   emaTrailBufferBps: 20,
+  //   entryBufferBps: 0,
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  // };
 
   // Tercera variante del mismo cwConfigId: usa el DecisionModel para filtrar
   // solo alerts cuya AlertNameColumn sea "High of the day". Los otros dos
@@ -227,8 +228,20 @@ export function setupAdapters(): Adapters {
     model: highOfTheDayModel,
   };
 
+  // VWAP crossover: el config CW 6a1c6da4a3dbacf5c2d97a0c ya detecta el cruce de
+  // VWAP upstream; esta strategy opera cada NewAlert con trail % fijo.
+  const crossOverVwap: EventStrategy = {
+    name: 'CrossOverVwap',
+    cwConfigId: '6a1c6da4a3dbacf5c2d97a0c',
+    quantity: 2000,
+    trailMode: 'percent',
+    trailingStopPercent: 8,
+    entryBufferBps: 0,
+    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  };
+
   const strategies = [] as ConfiguredStrategy[];
-  const eventStrategies = [allAlerts, allAlertsEmaTrail, highOfTheDayAlert];
+  const eventStrategies = [allAlerts, highOfTheDayAlert, crossOverVwap];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
