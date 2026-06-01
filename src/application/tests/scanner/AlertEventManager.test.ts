@@ -13,7 +13,7 @@ import type { OnScannerAlert } from '../../scanner/OnScannerAlert.js';
 const strategy: EventStrategy = {
   name: 'HighOfDayAlert',
   cwConfigId: 'cfg-A',
-  quantity: 2000,
+  riskUsd: 2000,
   trailMode: 'percent',
   trailingStopPercent: 8,
   entryBufferBps: 50,

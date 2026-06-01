@@ -3,13 +3,17 @@ import type { DecisionModel } from './DecisionModel.js';
 interface EventStrategyBase {
   readonly name: string;
   readonly cwConfigId: string;
-  readonly quantity: number;
+  // Riesgo en USD por trade. La cantidad de contratos se calcula como
+  // floor(riskUsd / stopOffset) en OnScannerAlert, dejando el riesgo en $
+  // constante e independiente del precio del subyacente.
+  readonly riskUsd: number;
   readonly entryBufferBps: number;
   readonly accountId: string;
   // Gate opcional. Cuando está definido, AlertEventManager invoca
   // model.buildSnapshot + model.evaluate antes de operar y descarta el
   // alert si action === 'hold'. Solo `action` se consume del signal —
-  // entryLimitPrice/quantity/stopOffset siguen viniendo de esta config.
+  // entryLimitPrice/stopOffset siguen viniendo de esta config y la quantity
+  // se calcula a partir de riskUsd.
   readonly model?: DecisionModel;
 }
 

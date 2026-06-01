@@ -152,10 +152,28 @@ export class OnScannerAlert {
       );
     }
     const accountId = this.strategy.accountId;
+    const stopOffset = round2(
+      entryLimitPrice * (this.strategy.trailingStopPercent / 100),
+    );
+    const quantity = computeQuantity(this.strategy.riskUsd, stopOffset);
+    if (quantity <= 0) {
+      this.metrics.recordAlertOutcome(this.strategy.name, 'rejected');
+      log.warn(
+        {
+          model: this.strategy.name,
+          symbol,
+          entryLimitPrice,
+          stopOffset,
+          riskUsd: this.strategy.riskUsd,
+        },
+        'alert dropped — risk-based size rounds to 0',
+      );
+      return;
+    }
     const result = await this.placeTrailingBracketOrder.execute({
       symbol,
       side: 'BUY',
-      quantity: this.strategy.quantity,
+      quantity,
       entryLimitPrice,
       trailingStopPercent: this.strategy.trailingStopPercent,
       accountId,
@@ -201,6 +219,7 @@ export class OnScannerAlert {
         model: this.strategy.name,
         symbol,
         entryLimitPrice,
+        quantity,
         entryOrderId: result.entryOrderId,
         stopOrderId: result.stopOrderId,
       },
@@ -220,10 +239,28 @@ export class OnScannerAlert {
       );
     }
     const accountId = this.strategy.accountId;
+    const stopOffset = round2(
+      entryLimitPrice * (this.strategy.trailingStopPercent / 100),
+    );
+    const quantity = computeQuantity(this.strategy.riskUsd, stopOffset);
+    if (quantity <= 0) {
+      this.metrics.recordAlertOutcome(this.strategy.name, 'rejected');
+      log.warn(
+        {
+          model: this.strategy.name,
+          symbol,
+          entryLimitPrice,
+          stopOffset,
+          riskUsd: this.strategy.riskUsd,
+        },
+        'alert dropped — risk-based size rounds to 0',
+      );
+      return;
+    }
     const result = await this.placeLimitOrder.execute({
       symbol,
       side: 'BUY',
-      quantity: this.strategy.quantity,
+      quantity,
       limitPrice: entryLimitPrice,
       accountId,
       duration: 'DYP',
@@ -284,6 +321,7 @@ export class OnScannerAlert {
         symbol,
         entryLimitPrice,
         stopPrice,
+        quantity,
         trailingStopPercent: this.strategy.trailingStopPercent,
         entryOrderId: result.orderId,
       },
@@ -321,10 +359,25 @@ export class OnScannerAlert {
       );
       return;
     }
+    const quantity = computeQuantity(this.strategy.riskUsd, stopOffset);
+    if (quantity <= 0) {
+      this.metrics.recordAlertOutcome(this.strategy.name, 'rejected');
+      log.warn(
+        {
+          model: this.strategy.name,
+          symbol,
+          entryLimitPrice,
+          stopOffset,
+          riskUsd: this.strategy.riskUsd,
+        },
+        'alert dropped — risk-based size rounds to 0',
+      );
+      return;
+    }
     const result = await this.placeBracketOrder.execute({
       symbol,
       side: 'BUY',
-      quantity: this.strategy.quantity,
+      quantity,
       entryLimitPrice,
       stopOffset,
       accountId,
@@ -375,6 +428,7 @@ export class OnScannerAlert {
         symbol,
         entryLimitPrice,
         stopPrice,
+        quantity,
         emaTrailPeriod: this.strategy.emaTrailPeriod,
         emaTrailBufferBps: this.strategy.emaTrailBufferBps,
         entryOrderId: result.entryOrderId,
@@ -399,10 +453,27 @@ export class OnScannerAlert {
     if (stopPrice === undefined) return;
 
     const accountId = this.strategy.accountId;
+    // computeEmaStop ya garantiza stop < entryLimitPrice, asi que stopOffset > 0.
+    const stopOffset = round2(entryLimitPrice - stopPrice);
+    const quantity = computeQuantity(this.strategy.riskUsd, stopOffset);
+    if (quantity <= 0) {
+      this.metrics.recordAlertOutcome(this.strategy.name, 'rejected');
+      log.warn(
+        {
+          model: this.strategy.name,
+          symbol,
+          entryLimitPrice,
+          stopOffset,
+          riskUsd: this.strategy.riskUsd,
+        },
+        'alert dropped — risk-based size rounds to 0',
+      );
+      return;
+    }
     const result = await this.placeLimitOrder.execute({
       symbol,
       side: 'BUY',
-      quantity: this.strategy.quantity,
+      quantity,
       limitPrice: entryLimitPrice,
       accountId,
       duration: 'DYP',
@@ -457,6 +528,7 @@ export class OnScannerAlert {
         symbol,
         entryLimitPrice,
         stopPrice,
+        quantity,
         emaTrailPeriod: this.strategy.emaTrailPeriod,
         emaTrailBufferBps: this.strategy.emaTrailBufferBps,
         entryOrderId: result.orderId,
@@ -551,4 +623,13 @@ export class OnScannerAlert {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// quantity = floor(riskUsd / stopOffset). Mantiene el riesgo en $ constante e
+// independiente del precio. floor para no exceder el riesgo configurado. Devuelve 0
+// (el caller rechaza el alert) si la accion es tan cara / el stop tan ancho que ni 1
+// contrato cabe en el presupuesto de riesgo.
+function computeQuantity(riskUsd: number, stopOffset: number): number {
+  if (riskUsd <= 0 || stopOffset <= 0) return 0;
+  return Math.floor(riskUsd / stopOffset);
 }

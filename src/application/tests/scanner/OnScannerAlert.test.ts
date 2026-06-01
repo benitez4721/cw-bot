@@ -26,7 +26,7 @@ import type { CheckOpenTrades } from '../../trade/CheckOpenTrades.js';
 const strategy: EventStrategy = {
   name: 'HighOfDayAlert',
   cwConfigId: 'cfg',
-  quantity: 2000,
+  riskUsd: 2000,
   trailMode: 'percent',
   trailingStopPercent: 8,
   entryBufferBps: 0,
@@ -183,10 +183,12 @@ describe('OnScannerAlert.handle — RTH', () => {
     expect(f.placeTrailingSpy).toHaveBeenCalledOnce();
     expect(f.placeLimitSpy).not.toHaveBeenCalled();
     const call = f.placeTrailingSpy.mock.calls[0][0];
+    // riskUsd=2000, entry=1.7, trail 8% → stopOffset=round2(0.136)=0.14;
+    // quantity = floor(2000 / 0.14) = 14285.
     expect(call).toMatchObject({
       symbol: 'ORGN',
       side: 'BUY',
-      quantity: 2000,
+      quantity: 14285,
       trailingStopPercent: 8,
     });
     expect(call.entryLimitPrice).toBeCloseTo(1.7, 6);
@@ -293,6 +295,42 @@ describe('OnScannerAlert.handle — RTH', () => {
       'rejected',
     );
   });
+
+  it('riesgo en $ constante a distintos precios: quantity se ajusta para que quantity*stopOffset ≈ riskUsd', async () => {
+    // riskUsd=2000, trail 8%. A precio bajo y alto el riesgo en $ debe ser el
+    // mismo (≈ 2000), aunque la quantity sea muy distinta.
+    const cheap = setup({ quote: { ask: 10, last: 10 } });
+    await build(cheap, () => 't0').handle('ORGN');
+    const qCheap = cheap.placeTrailingSpy.mock.calls[0][0].quantity;
+
+    const pricey = setup({ quote: { ask: 50, last: 50 } });
+    await build(pricey, () => 't0').handle('ORGN');
+    const qPricey = pricey.placeTrailingSpy.mock.calls[0][0].quantity;
+
+    // entry=10 → stopOffset=0.8 → floor(2000/0.8)=2500
+    expect(qCheap).toBe(2500);
+    // entry=50 → stopOffset=4 → floor(2000/4)=500
+    expect(qPricey).toBe(500);
+    expect(qCheap).not.toBe(qPricey);
+    // Riesgo en $ = quantity * stopOffset, constante (≤ riskUsd por el floor).
+    expect(qCheap * 0.8).toBeCloseTo(2000, 6);
+    expect(qPricey * 4).toBeCloseTo(2000, 6);
+  });
+
+  it('accion tan cara que la quantity por riesgo redondea a 0 → rejected, sin tocar broker ni repo', async () => {
+    // ask=30000, trail 8% → stopOffset=2400 → floor(2000/2400)=0.
+    const f = setup({ quote: { ask: 30000, last: 30000 } });
+    const useCase = build(f);
+
+    await useCase.handle('ORGN');
+
+    expect(f.placeTrailingSpy).not.toHaveBeenCalled();
+    expect(f.tradeRepo.put).not.toHaveBeenCalled();
+    expect(f.metrics.recordAlertOutcome).toHaveBeenCalledWith(
+      'HighOfDayAlert',
+      'rejected',
+    );
+  });
 });
 
 describe('OnScannerAlert.handle — sesion no tradeable', () => {
@@ -339,10 +377,12 @@ describe('OnScannerAlert.handle — PRE', () => {
     expect(f.placeTrailingSpy).not.toHaveBeenCalled();
     expect(f.placeLimitSpy).toHaveBeenCalledOnce();
     const limitCall = f.placeLimitSpy.mock.calls[0][0];
+    // riskUsd=2000, entry=2, trail 8% → stopOffset=round2(0.16)=0.16;
+    // quantity = floor(2000 / 0.16) = 12500.
     expect(limitCall).toMatchObject({
       symbol: 'ORGN',
       side: 'BUY',
-      quantity: 2000,
+      quantity: 12500,
       limitPrice: 2,
       accountId: 'SIM12345',
       duration: 'DYP',
@@ -418,7 +458,7 @@ describe('OnScannerAlert.handle — PRE', () => {
 const emaStrategy: EventStrategy = {
   name: 'HighOfDayAlertEmaTrail',
   cwConfigId: 'cfg',
-  quantity: 2000,
+  riskUsd: 2000,
   trailMode: 'ema',
   emaTrailPeriod: 18,
   emaTrailBufferBps: 16,
@@ -577,10 +617,11 @@ describe('OnScannerAlert.handle — trail EMA (rth)', () => {
 
     expect(f.placeBracketSpy).toHaveBeenCalledOnce();
     const call = f.placeBracketSpy.mock.calls[0][0];
+    // riskUsd=2000, stopOffset=0.16 → quantity = floor(2000 / 0.16) = 12500.
     expect(call).toMatchObject({
       symbol: 'ORGN',
       side: 'BUY',
-      quantity: 2000,
+      quantity: 12500,
       accountId: 'SIM12345',
     });
     expect(call.entryLimitPrice).toBeCloseTo(100, 6);

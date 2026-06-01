@@ -184,13 +184,20 @@ export function setupAdapters(): Adapters {
   //   accountId: env.TRADESTATION_ACCOUNT_ID_2!,
   // };
 
+  // Riesgo por trade para las EventStrategy: porcentaje fijo del capital. La cantidad
+  // de contratos se deriva en OnScannerAlert como floor(RISK_USD / stopOffset), dejando
+  // el riesgo en $ constante e independiente del precio del subyacente.
+  const TRADE_BUDGET_USD = 25_000;
+  const MAX_RISK_PERCENT = 0.08;
+  const RISK_USD = TRADE_BUDGET_USD * MAX_RISK_PERCENT; // 2_000
+
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
   // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
   // recibir cada NewAlert. Convive en paralelo con los DecisionStrategy.
   const allAlerts: EventStrategy = {
     name: 'AllAlerts',
     cwConfigId: '68ab7ca8a42020253d351a52',
-    quantity: 2000,
+    riskUsd: RISK_USD,
     trailMode: 'percent',
     trailingStopPercent: 8,
     entryBufferBps: 0,
@@ -205,7 +212,7 @@ export function setupAdapters(): Adapters {
   // const allAlertsEmaTrail: EventStrategy = {
   //   name: 'AllAlertsEmaTrail',
   //   cwConfigId: '68ab7ca8a42020253d351a52',
-  //   quantity: 2000,
+  //   riskUsd: RISK_USD,
   //   trailMode: 'ema',
   //   emaTrailPeriod: 18,
   //   emaTrailBufferBps: 20,
@@ -220,7 +227,7 @@ export function setupAdapters(): Adapters {
   const highOfTheDayAlert: EventStrategy = {
     name: 'HighOfTheDayAlert',
     cwConfigId: '68ab7ca8a42020253d351a52',
-    quantity: 2000,
+    riskUsd: RISK_USD,
     trailMode: 'percent',
     trailingStopPercent: 8,
     entryBufferBps: 0,
@@ -233,7 +240,7 @@ export function setupAdapters(): Adapters {
   const crossOverVwap: EventStrategy = {
     name: 'CrossOverVwap',
     cwConfigId: '6a1c6da4a3dbacf5c2d97a0c',
-    quantity: 2000,
+    riskUsd: RISK_USD,
     trailMode: 'percent',
     trailingStopPercent: 8,
     entryBufferBps: 0,
@@ -245,7 +252,7 @@ export function setupAdapters(): Adapters {
   const supportVwap: EventStrategy = {
     name: 'SupportVwap',
     cwConfigId: '6a1d5ed7a3dbacf5c21a1290',
-    quantity: 2000,
+    riskUsd: RISK_USD,
     trailMode: 'percent',
     trailingStopPercent: 8,
     entryBufferBps: 0,
