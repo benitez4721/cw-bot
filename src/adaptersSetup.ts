@@ -187,9 +187,9 @@ export function setupAdapters(): Adapters {
   // Riesgo por trade para las EventStrategy: porcentaje fijo del capital. La cantidad
   // de contratos se deriva en OnScannerAlert como floor(RISK_USD / stopOffset), dejando
   // el riesgo en $ constante e independiente del precio del subyacente.
-  const TRADE_BUDGET_USD = 25_000;
+  const TRADE_BUDGET_USD = 500;
   const MAX_RISK_PERCENT = 0.08;
-  const RISK_USD = TRADE_BUDGET_USD * MAX_RISK_PERCENT; // 2_000
+  const RISK_USD = TRADE_BUDGET_USD * MAX_RISK_PERCENT;
 
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
   // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
