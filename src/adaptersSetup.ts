@@ -187,7 +187,7 @@ export function setupAdapters(): Adapters {
   // Riesgo por trade para las EventStrategy: porcentaje fijo del capital. La cantidad
   // de contratos se deriva en OnScannerAlert como floor(RISK_USD / stopOffset), dejando
   // el riesgo en $ constante e independiente del precio del subyacente.
-  const TRADE_BUDGET_USD = 500;
+  const TRADE_BUDGET_USD = 1000;
   const MAX_RISK_PERCENT = 0.08;
   const RISK_USD = TRADE_BUDGET_USD * MAX_RISK_PERCENT;
 
@@ -249,23 +249,18 @@ export function setupAdapters(): Adapters {
 
   // VWAP support: el config CW 6a1d5ed7a3dbacf5c21a1290 detecta el soporte en
   // VWAP upstream; esta strategy opera cada NewAlert con trail % fijo.
-  const supportVwap: EventStrategy = {
-    name: 'SupportVwap',
-    cwConfigId: '6a1d5ed7a3dbacf5c21a1290',
-    riskUsd: RISK_USD,
-    trailMode: 'percent',
-    trailingStopPercent: 8,
-    entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
-  };
+  // const supportVwap: EventStrategy = {
+  //   name: 'SupportVwap',
+  //   cwConfigId: '6a1d5ed7a3dbacf5c21a1290',
+  //   riskUsd: RISK_USD,
+  //   trailMode: 'percent',
+  //   trailingStopPercent: 8,
+  //   entryBufferBps: 0,
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  // };
 
   const strategies = [] as ConfiguredStrategy[];
-  const eventStrategies = [
-    allAlerts,
-    highOfTheDayAlert,
-    crossOverVwap,
-    supportVwap,
-  ];
+  const eventStrategies = [allAlerts, highOfTheDayAlert, crossOverVwap];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
