@@ -247,6 +247,16 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
 
+  const runningUpHighVol: EventStrategy = {
+    name: 'RunningUpHighVol',
+    cwConfigId: '6a22f096088ad369a3e15a55',
+    riskUsd: RISK_USD,
+    trailMode: 'percent',
+    trailingStopPercent: 4,
+    entryBufferBps: 0,
+    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  };
+
   // VWAP support: el config CW 6a1d5ed7a3dbacf5c21a1290 detecta el soporte en
   // VWAP upstream; esta strategy opera cada NewAlert con trail % fijo.
   // const supportVwap: EventStrategy = {
@@ -260,7 +270,12 @@ export function setupAdapters(): Adapters {
   // };
 
   const strategies = [] as ConfiguredStrategy[];
-  const eventStrategies = [allAlerts, highOfTheDayAlert, crossOverVwap];
+  const eventStrategies = [
+    allAlerts,
+    highOfTheDayAlert,
+    crossOverVwap,
+    runningUpHighVol,
+  ];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
