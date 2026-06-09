@@ -14,7 +14,6 @@ import { RedisBarRepository } from './infrastructure/marketdata/RedisBarReposito
 import { TwelveDataHistoricalBarsAdapter } from './infrastructure/marketdata/TwelveDataHistoricalBarsAdapter.js';
 import { TwelveDataClient } from './infrastructure/twelvedata/TwelveDataClient.js';
 import { LocalIndicatorAdapter } from './infrastructure/indicators/LocalIndicatorAdapter.js';
-import { HighOfTheDayDecisionModel } from './domain/decision/models/HighOfTheDayDecisionModel.js';
 // import { MacdM1CrossOverDecisionModel } from './domain/decision/models/MacdM1CrossOverDecisionModel.js';
 // import { MarketStructureDecisionModel } from './domain/decision/models/MarketStructureDecisionModel.js';
 // import { SuperDecisionModel } from './domain/decision/models/SuperDecisionModel.js';
@@ -194,9 +193,9 @@ export function setupAdapters(): Adapters {
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
   // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
   // recibir cada NewAlert. Convive en paralelo con los DecisionStrategy.
-  const allAlerts: EventStrategy = {
-    name: 'AllAlerts',
-    cwConfigId: '68ab7ca8a42020253d351a52',
+  const runningUp: EventStrategy = {
+    name: 'RunningUp0.5',
+    cwConfigId: '6a278bbe025065672d6359fd',
     riskUsd: RISK_USD,
     trailMode: 'percent',
     trailingStopPercent: 8,
@@ -223,7 +222,6 @@ export function setupAdapters(): Adapters {
   // Tercera variante del mismo cwConfigId: usa el DecisionModel para filtrar
   // solo alerts cuya AlertNameColumn sea "High of the day". Los otros dos
   // EventStrategy (sin model) siguen disparando para cualquier nombre.
-  const highOfTheDayModel = new HighOfTheDayDecisionModel();
   const highOfTheDayAlert: EventStrategy = {
     name: 'HighOfTheDayAlert',
     cwConfigId: '68ab7ca8a42020253d351a52',
@@ -232,7 +230,6 @@ export function setupAdapters(): Adapters {
     trailingStopPercent: 8,
     entryBufferBps: 0,
     accountId: env.TRADESTATION_ACCOUNT_ID_2!,
-    model: highOfTheDayModel,
   };
 
   // VWAP crossover: el config CW 6a1c6da4a3dbacf5c2d97a0c ya detecta el cruce de
@@ -247,15 +244,15 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
 
-  const runningUpHighVol: EventStrategy = {
-    name: 'RunningUpHighVol',
-    cwConfigId: '6a22f096088ad369a3e15a55',
-    riskUsd: RISK_USD,
-    trailMode: 'percent',
-    trailingStopPercent: 4,
-    entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
-  };
+  // const runningUpHighVol: EventStrategy = {
+  //   name: 'RunningUpHighVol',
+  //   cwConfigId: '6a22f096088ad369a3e15a55',
+  //   riskUsd: RISK_USD,
+  //   trailMode: 'percent',
+  //   trailingStopPercent: 4,
+  //   entryBufferBps: 0,
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  // };
 
   // VWAP support: el config CW 6a1d5ed7a3dbacf5c21a1290 detecta el soporte en
   // VWAP upstream; esta strategy opera cada NewAlert con trail % fijo.
@@ -270,12 +267,7 @@ export function setupAdapters(): Adapters {
   // };
 
   const strategies = [] as ConfiguredStrategy[];
-  const eventStrategies = [
-    allAlerts,
-    highOfTheDayAlert,
-    crossOverVwap,
-    runningUpHighVol,
-  ];
+  const eventStrategies = [runningUp, highOfTheDayAlert, crossOverVwap];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
