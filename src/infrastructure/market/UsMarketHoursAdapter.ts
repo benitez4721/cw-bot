@@ -2,7 +2,7 @@ import type { MarketHours, Session } from '../../domain/market/MarketHours.js';
 
 const TIME_ZONE = 'America/New_York';
 // 4:00 ET — pre-market abre.
-const PRE_OPEN_MINUTES = 4 * 60;
+const PRE_OPEN_MINUTES = 6 * 60;
 // 9:20 ET — fin de pre-market tradeable. El manager flatea posiciones pre
 // antes de cruzar a transition.
 const PRE_CLOSE_MINUTES = 9 * 60 + 20;
