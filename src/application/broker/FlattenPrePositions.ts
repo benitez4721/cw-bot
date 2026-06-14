@@ -2,14 +2,16 @@ import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type {
   Order,
   OrderSide,
-  OrderStatus,
   Position,
   Quote,
 } from '../../domain/broker/BrokerTypes.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
+import { bpsToFraction, round2 } from '../../domain/shared/math.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { errMsg } from '../../shared/errors.js';
+import { groupByAccountAndSymbol, isOrderActive } from './flattenHelpers.js';
 import type { PlaceLimitOrder } from './PlaceLimitOrder.js';
 
 const log = logger.child({ component: 'FlattenPrePositions' });
@@ -251,34 +253,11 @@ export class FlattenPrePositions {
   }
 }
 
-function isOrderActive(status: OrderStatus): boolean {
-  return (
-    status === 'pending' || status === 'open' || status === 'partiallyFilled'
-  );
-}
-
-function groupByAccountAndSymbol(
-  contexts: TradeContext[],
-): Map<string, TradeContext[]> {
-  const out = new Map<string, TradeContext[]>();
-  for (const ctx of contexts) {
-    const key = `${ctx.accountId}:${ctx.symbol}`;
-    const bucket = out.get(key) ?? [];
-    bucket.push(ctx);
-    out.set(key, bucket);
-  }
-  return out;
-}
-
 function crossTheSpread(quote: Quote, side: OrderSide): number | undefined {
-  const offset = DEFAULT_PARAMS.crossOffsetBps / 10_000;
+  const offset = bpsToFraction(DEFAULT_PARAMS.crossOffsetBps);
   const base =
     side === 'SELL' ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last);
   if (!Number.isFinite(base) || base <= 0) return undefined;
   const raw = side === 'SELL' ? base * (1 - offset) : base * (1 + offset);
-  return Math.round(raw * 100) / 100;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return round2(raw);
 }

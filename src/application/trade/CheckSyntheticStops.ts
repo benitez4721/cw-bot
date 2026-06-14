@@ -4,6 +4,8 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { bpsToFraction, round2 } from '../../domain/shared/math.js';
+import { errMsg } from '../../shared/errors.js';
 import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 
 const log = logger.child({ component: 'CheckSyntheticStops' });
@@ -194,15 +196,11 @@ export class CheckSyntheticStops {
   }
 
   private crossTheSpread(quote: Quote, side: OrderSide): number | undefined {
-    const offset = DEFAULT_PARAMS.crossOffsetBps / 10_000;
+    const offset = bpsToFraction(DEFAULT_PARAMS.crossOffsetBps);
     const base =
       side === 'SELL' ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last);
     if (!Number.isFinite(base) || base <= 0) return undefined;
     const raw = side === 'SELL' ? base * (1 - offset) : base * (1 + offset);
-    return Math.round(raw * 100) / 100;
+    return round2(raw);
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

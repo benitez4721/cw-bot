@@ -9,6 +9,7 @@ import type { TradeContextRepository } from '../../domain/trade/TradeContextRepo
 import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculations.js';
 import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { errMsg } from '../../shared/errors.js';
 import type { FlattenAllPositions } from '../broker/FlattenAllPositions.js';
 import type { FlattenPrePositions } from '../broker/FlattenPrePositions.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
@@ -779,10 +780,6 @@ export class BarStreamManager {
     }
     await this.reconcileEntryFill.execute({ ctx });
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function dropOpenBucket(bars: Bar[], bucketMs: number, nowMs: number): Bar[] {

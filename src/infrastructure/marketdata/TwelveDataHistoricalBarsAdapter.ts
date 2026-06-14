@@ -7,6 +7,7 @@ import type {
   TwelveDataClient,
   TwelveDataValue,
 } from '../twelvedata/TwelveDataClient.js';
+import { parseNumber } from '../shared/parsing.js';
 
 export class TwelveDataHistoricalBarsAdapter implements HistoricalBarsPort {
   constructor(private readonly client: TwelveDataClient) {}
@@ -52,10 +53,4 @@ function toBar(v: TwelveDataValue): Bar {
 // Treat as UTC explicitly so downstream comparisons are unambiguous.
 function parseUtcDatetime(s: string): string {
   return new Date(`${s.replace(' ', 'T')}Z`).toISOString();
-}
-
-function parseNumber(value: string | undefined): number {
-  if (value === undefined || value === '') return 0;
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : 0;
 }

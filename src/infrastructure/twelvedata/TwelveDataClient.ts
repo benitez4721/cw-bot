@@ -1,4 +1,5 @@
 import { logger } from '../logging/logger.js';
+import { sleep } from '../../shared/async.js';
 
 const log = logger.child({ component: 'TwelveDataClient' });
 
@@ -91,8 +92,4 @@ export class TwelveDataClient {
     }
     return parsed;
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

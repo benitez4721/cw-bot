@@ -6,6 +6,7 @@ import type {
 } from '../../domain/broker/BrokerStreamTypes.js';
 import type { PositionStreamPort } from '../../domain/broker/PositionStreamPort.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { errMsg } from '../../shared/errors.js';
 
 const log = logger.child({ component: 'PositionStreamManager' });
 
@@ -91,8 +92,4 @@ export class PositionStreamManager {
     }
     this.emitter.emit('position', event);
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

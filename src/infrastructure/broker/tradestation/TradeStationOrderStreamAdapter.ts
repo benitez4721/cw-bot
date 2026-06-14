@@ -6,13 +6,14 @@ import type {
 } from '../../../domain/broker/BrokerStreamTypes.js';
 import type { OrderStreamPort } from '../../../domain/broker/OrderStreamPort.js';
 import { logger } from '../../logging/logger.js';
+import { errMsg } from '../../../shared/errors.js';
+import { parseNumber } from '../../shared/parsing.js';
 import type { TradeStationClient } from './TradeStationClient.js';
 import { TradeStationStreamConnection } from './TradeStationStreamConnection.js';
 import {
   mapOrderType,
   mapSide,
   mapStatus,
-  parseNumber,
   pickFilledPrice,
 } from './tradeStationMapping.js';
 
@@ -160,8 +161,4 @@ function pickFilledQuantity(
 ): number | undefined {
   if (leg?.ExecQuantity == null) return undefined;
   return parseNumber(leg.ExecQuantity);
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

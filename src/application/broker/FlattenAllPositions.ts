@@ -2,13 +2,15 @@ import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
 import type {
   Order,
   OrderSide,
-  OrderStatus,
   Position,
 } from '../../domain/broker/BrokerTypes.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { errMsg } from '../../shared/errors.js';
+import { sleep } from '../../shared/async.js';
+import { groupByAccountAndSymbol, isOrderActive } from './flattenHelpers.js';
 
 const log = logger.child({ component: 'FlattenAllPositions' });
 
@@ -286,32 +288,4 @@ export class FlattenAllPositions {
       await sleep(Math.min(DEFAULT_PARAMS.cancelPollIntervalMs, remaining));
     }
   }
-}
-
-function isOrderActive(status: OrderStatus): boolean {
-  return (
-    status === 'pending' || status === 'open' || status === 'partiallyFilled'
-  );
-}
-
-// Asume que cada ctx tiene `accountId` seteado (el caller filtra legacy).
-function groupByAccountAndSymbol(
-  contexts: TradeContext[],
-): Map<string, TradeContext[]> {
-  const out = new Map<string, TradeContext[]>();
-  for (const ctx of contexts) {
-    const key = `${ctx.accountId}:${ctx.symbol}`;
-    const bucket = out.get(key) ?? [];
-    bucket.push(ctx);
-    out.set(key, bucket);
-  }
-  return out;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

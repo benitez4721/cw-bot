@@ -1,5 +1,6 @@
 import type { TradeStationClient } from './TradeStationClient.js';
 import { logger } from '../../logging/logger.js';
+import { errMsg } from '../../../shared/errors.js';
 
 const STALL_MS = 35_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -230,8 +231,4 @@ export class TradeStationStreamConnection {
       this.log.warn({ err: errMsg(err) }, 'onConnectionChange handler threw');
     }
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

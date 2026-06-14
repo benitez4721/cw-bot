@@ -15,6 +15,8 @@ import type {
   VWAP,
 } from '../../domain/indicators/IndicatorTypes.js';
 import { logger } from '../logging/logger.js';
+import { sleep } from '../../shared/async.js';
+import { parseNumber } from '../shared/parsing.js';
 
 const log = logger.child({ component: 'AlphaVantageIndicatorAdapter' });
 
@@ -199,14 +201,4 @@ function toMACD(timestamp: string, row: Record<string, string>): MACD {
     histogram: parseNumber(row['MACD_Hist']),
     timestamp,
   };
-}
-
-function parseNumber(value: string | undefined): number {
-  if (value === undefined || value === '') return 0;
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

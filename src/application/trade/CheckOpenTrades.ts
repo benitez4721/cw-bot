@@ -3,6 +3,7 @@ import type { Order, Position } from '../../domain/broker/BrokerTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { errMsg } from '../../shared/errors.js';
 import type { CloseTrade } from './CloseTrade.js';
 
 const log = logger.child({ component: 'CheckOpenTrades' });
@@ -161,8 +162,4 @@ function isOrderActive(o: Order): boolean {
     o.status === 'pending' ||
     o.status === 'partiallyFilled'
   );
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

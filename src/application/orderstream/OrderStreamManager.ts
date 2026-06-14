@@ -8,6 +8,7 @@ import type { OrderStreamPort } from '../../domain/broker/OrderStreamPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { errMsg } from '../../shared/errors.js';
 import type { RecordOrderFill } from '../trade/RecordOrderFill.js';
 
 const log = logger.child({ component: 'OrderStreamManager' });
@@ -196,8 +197,4 @@ export class OrderStreamManager {
     this.orders.set(event.order.id, enrichedOrder);
     this.emitter.emit('order', { ...event, order: enrichedOrder });
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

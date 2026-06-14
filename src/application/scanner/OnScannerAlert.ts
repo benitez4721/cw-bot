@@ -8,6 +8,7 @@ import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { bpsToFraction, round2 } from '../../domain/shared/math.js';
 import type { PlaceBracketOrder } from '../broker/PlaceBracketOrder.js';
 import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { PlaceTrailingBracketOrder } from '../broker/PlaceTrailingBracketOrder.js';
@@ -123,7 +124,7 @@ export class OnScannerAlert {
       return;
     }
     const entryLimitPrice =
-      reference * (1 + this.strategy.entryBufferBps / 10_000);
+      reference * (1 + bpsToFraction(this.strategy.entryBufferBps));
 
     const evalStart = this.now();
     if (this.strategy.trailMode === 'percent') {
@@ -567,7 +568,7 @@ export class OnScannerAlert {
         interval: '1min',
         period,
       });
-      const stop = round2(ema.value * (1 - bufferBps / 10_000));
+      const stop = round2(ema.value * (1 - bpsToFraction(bufferBps)));
       if (!Number.isFinite(stop) || stop <= 0 || stop >= entryLimitPrice) {
         this.metrics.recordAlertOutcome(this.strategy.name, 'rejected');
         log.warn(
@@ -619,10 +620,6 @@ export class OnScannerAlert {
     });
     await this.barRepo.set(symbol, '1min', bars);
   }
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 // quantity = floor(riskUsd / stopOffset). Mantiene el riesgo en $ constante e

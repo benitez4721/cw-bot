@@ -4,6 +4,7 @@ import type {
   TradeContext,
   TradeContextBracket,
 } from '../../domain/trade/TradeTypes.js';
+import { round2 } from '../../domain/shared/math.js';
 
 type BuySignal = Extract<DecisionSignal<unknown>, { action: 'buy' }>;
 
@@ -102,8 +103,4 @@ function buildPre(input: RecordPreTradeContextInput): TradeContext {
     session: 'pre',
     syntheticExitFired: false,
   };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

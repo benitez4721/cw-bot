@@ -22,11 +22,12 @@ import type { OrderStatus } from '../../../domain/broker/BrokerTypes.js';
 import type { TokenStatus } from './TradeStationClient.js';
 import type { TradeStationClient } from './TradeStationClient.js';
 import { logger } from '../../logging/logger.js';
+import { round2 } from '../../../domain/shared/math.js';
+import { parseNumber } from '../../shared/parsing.js';
 import {
   mapOrderType,
   mapSide,
   mapStatus,
-  parseNumber,
   pickFilledPrice,
 } from './tradeStationMapping.js';
 
@@ -635,10 +636,6 @@ export class TradeStationBrokerAdapter implements BrokerPort {
       timestamp: first.TradeTime ?? new Date().toISOString(),
     };
   }
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 function toOrder(o: TsOrder): Order {

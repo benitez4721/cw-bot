@@ -4,6 +4,7 @@ import type { BuildSnapshotInput, DecisionModel } from '../DecisionModel.js';
 import type { DecisionSignal, RuleCheck } from '../DecisionTypes.js';
 import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
 import type { MACD, VWAP } from '../../indicators/IndicatorTypes.js';
+import { bpsToFraction, round2 } from '../../shared/math.js';
 
 export interface SuperSnapshot {
   symbol: string;
@@ -72,7 +73,7 @@ export class SuperDecisionModel implements DecisionModel<SuperSnapshot> {
     const { quote } = snapshot;
     const last = quote.last;
     const base = quote.ask ?? last;
-    const cushion = base * (PARAMS.entryOffsetBps / 10_000);
+    const cushion = base * bpsToFraction(PARAMS.entryOffsetBps);
     return {
       action: 'buy',
       symbol: snapshot.symbol,
@@ -129,8 +130,4 @@ function isFiveMinClose(timestamp: string | undefined): boolean {
   if (!timestamp) return false;
   const minute = new Date(timestamp).getUTCMinutes();
   return Number.isFinite(minute) && minute % 5 === 4;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

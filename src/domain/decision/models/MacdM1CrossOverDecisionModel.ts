@@ -5,6 +5,7 @@ import type { DecisionSignal, RuleCheck } from '../DecisionTypes.js';
 import { CacheUnderfilledError } from '../../indicators/IndicatorErrors.js';
 import type { IndicatorPort } from '../../indicators/IndicatorPort.js';
 import type { ATR, MACD, VWAP } from '../../indicators/IndicatorTypes.js';
+import { bpsToFraction, round2 } from '../../shared/math.js';
 
 export interface MacdM1CrossOverSnapshot {
   symbol: string;
@@ -69,7 +70,7 @@ export class MacdM1CrossOverDecisionModel implements DecisionModel<MacdM1CrossOv
     }
     const last = snapshot.quote.last;
     const base = snapshot.quote.ask ?? last;
-    const cushion = base * (PARAMS.entryOffsetBps / 10_000);
+    const cushion = base * bpsToFraction(PARAMS.entryOffsetBps);
     // Non-null gracias al check 'ATR available' validado arriba.
     const stopOffset = round2(PARAMS.kStop * snapshot.atr5min!.value);
     const takeProfitOffset = round2(PARAMS.rTakeProfit * stopOffset);
@@ -131,8 +132,4 @@ function computeQuantity(base: number, atr: ATR | null): number {
   const qByRisk = Math.floor(maxRiskUsd / stopOffset);
   const qByBudget = Math.floor(PARAMS.tradeBudgetUsd / base);
   return Math.min(qByRisk, qByBudget);
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

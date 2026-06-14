@@ -9,6 +9,7 @@ import type {
   MarketStructure,
   SwingPoint,
 } from '../../indicators/IndicatorTypes.js';
+import { bpsToFraction, round2 } from '../../shared/math.js';
 
 export interface MarketStructureSnapshot {
   symbol: string;
@@ -70,7 +71,7 @@ export class MarketStructureDecisionModel implements DecisionModel<MarketStructu
 
     const hl = findLatestHL(snapshot.structure.swings)!;
     const base = snapshot.quote.ask ?? snapshot.quote.last;
-    const cushion = base * (PARAMS.entryOffsetBps / 10_000);
+    const cushion = base * bpsToFraction(PARAMS.entryOffsetBps);
     const entry = round2(base + cushion);
     const atrValue = snapshot.atr!.value;
     const stopOffset = round2(
@@ -142,8 +143,4 @@ function computeQuantity(base: number, stopOffset: number): number {
   const qByRisk = Math.floor(maxRiskUsd / stopOffset);
   const qByBudget = Math.floor(PARAMS.tradeBudgetUsd / base);
   return Math.min(qByRisk, qByBudget);
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

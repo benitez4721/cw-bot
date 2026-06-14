@@ -6,9 +6,10 @@ import type {
 } from '../../../domain/broker/BrokerStreamTypes.js';
 import type { PositionStreamPort } from '../../../domain/broker/PositionStreamPort.js';
 import { logger } from '../../logging/logger.js';
+import { errMsg } from '../../../shared/errors.js';
+import { parseNumber } from '../../shared/parsing.js';
 import type { TradeStationClient } from './TradeStationClient.js';
 import { TradeStationStreamConnection } from './TradeStationStreamConnection.js';
-import { parseNumber } from './tradeStationMapping.js';
 
 const log = logger.child({ component: 'TradeStationPositionStreamAdapter' });
 
@@ -126,8 +127,4 @@ function mapStreamPosition(p: TsStreamPosition, accountId: string): Position {
     marketValue: parseNumber(p.MarketValue),
     unrealizedPnL: parseNumber(p.UnrealizedProfitLoss),
   };
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

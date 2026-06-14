@@ -19,6 +19,7 @@ import type {
   TwelveDataResponse,
   TwelveDataValue,
 } from '../twelvedata/TwelveDataClient.js';
+import { parseNumber } from '../shared/parsing.js';
 
 export class TwelveDataIndicatorAdapter implements IndicatorPort {
   constructor(private readonly client: TwelveDataClient) {}
@@ -97,10 +98,4 @@ function toMACD(v: TwelveDataValue): MACD {
     histogram: parseNumber(v['macd_hist']),
     timestamp: v.datetime,
   };
-}
-
-function parseNumber(value: string | undefined): number {
-  if (value === undefined || value === '') return 0;
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : 0;
 }

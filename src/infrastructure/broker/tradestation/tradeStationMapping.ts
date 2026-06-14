@@ -3,12 +3,7 @@ import type {
   OrderStatus,
   OrderType,
 } from '../../../domain/broker/BrokerTypes.js';
-
-export function parseNumber(value: string | number | undefined | null): number {
-  if (value === undefined || value === null || value === '') return 0;
-  const n = typeof value === 'number' ? value : parseFloat(value);
-  return Number.isFinite(n) ? n : 0;
-}
+import { parseNumber } from '../../shared/parsing.js';
 
 export function mapStatus(code: string | undefined): OrderStatus {
   switch (code) {

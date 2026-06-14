@@ -2,6 +2,8 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { round2 } from '../../domain/shared/math.js';
+import { errMsg } from '../../shared/errors.js';
 
 const log = logger.child({ component: 'MaybeTrailSyntheticStop' });
 
@@ -87,12 +89,4 @@ export class MaybeTrailSyntheticStop {
     const candidate = round2(bar.low * (1 + offset));
     return candidate < ctx.stopPrice ? candidate : undefined;
   }
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

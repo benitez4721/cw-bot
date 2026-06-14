@@ -4,6 +4,8 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
+import { bpsToFraction, round2 } from '../../domain/shared/math.js';
+import { errMsg } from '../../shared/errors.js';
 
 const log = logger.child({ component: 'MaybeTrailStopAlongEma' });
 
@@ -104,7 +106,7 @@ function computeStop(
   emaValue: number,
   bufferBps: number,
 ): number {
-  const factor = bufferBps / 10_000;
+  const factor = bpsToFraction(bufferBps);
   const raw =
     side === 'BUY' ? emaValue * (1 - factor) : emaValue * (1 + factor);
   return round2(raw);
@@ -115,12 +117,4 @@ function improvesStop(ctx: TradeContext, candidate: number): boolean {
   return ctx.side === 'BUY'
     ? candidate > ctx.stopPrice
     : candidate < ctx.stopPrice;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
