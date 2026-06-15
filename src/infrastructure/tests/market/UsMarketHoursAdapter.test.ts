@@ -4,9 +4,9 @@ import { UsMarketHoursAdapter } from '../../market/UsMarketHoursAdapter.js';
 describe('UsMarketHoursAdapter.session', () => {
   const market = new UsMarketHoursAdapter();
 
-  it('returns "pre" between 4:00 and 9:20 ET in EST winter', () => {
-    // 2026-01-15 (Thursday) 09:00 UTC = 04:00 EST → pre open boundary
-    expect(market.session(new Date('2026-01-15T09:00:00Z'))).toBe('pre');
+  it('returns "pre" between 6:00 and 9:20 ET in EST winter', () => {
+    // 2026-01-15 (Thursday) 11:00 UTC = 06:00 EST → pre open boundary
+    expect(market.session(new Date('2026-01-15T11:00:00Z'))).toBe('pre');
     // 2026-01-15 14:19 UTC = 09:19 EST → last minute of pre
     expect(market.session(new Date('2026-01-15T14:19:00Z'))).toBe('pre');
   });
@@ -26,8 +26,8 @@ describe('UsMarketHoursAdapter.session', () => {
   });
 
   it('returns "closed" outside the tradeable window in EST winter', () => {
-    // 2026-01-15 08:59 UTC = 03:59 EST → too early
-    expect(market.session(new Date('2026-01-15T08:59:00Z'))).toBe('closed');
+    // 2026-01-15 10:59 UTC = 05:59 EST → too early (un minuto antes de pre-open)
+    expect(market.session(new Date('2026-01-15T10:59:00Z'))).toBe('closed');
     // 2026-01-15 20:50 UTC = 15:50 EST → bot-stop boundary
     expect(market.session(new Date('2026-01-15T20:50:00Z'))).toBe('closed');
     // 2026-01-15 21:00 UTC = 16:00 EST → past RTH close
@@ -35,8 +35,8 @@ describe('UsMarketHoursAdapter.session', () => {
   });
 
   it('handles DST transition (EDT summer) correctly', () => {
-    // 2026-07-15 (Wednesday) 08:00 UTC = 04:00 EDT → pre open
-    expect(market.session(new Date('2026-07-15T08:00:00Z'))).toBe('pre');
+    // 2026-07-15 (Wednesday) 10:00 UTC = 06:00 EDT → pre open
+    expect(market.session(new Date('2026-07-15T10:00:00Z'))).toBe('pre');
     // 2026-07-15 13:20 UTC = 09:20 EDT → transition
     expect(market.session(new Date('2026-07-15T13:20:00Z'))).toBe('transition');
     // 2026-07-15 13:30 UTC = 09:30 EDT → RTH
@@ -79,8 +79,8 @@ describe('UsMarketHoursAdapter.isConnected', () => {
   const market = new UsMarketHoursAdapter();
 
   it('is true throughout pre + transition + rth', () => {
-    // 04:00 EST → pre open
-    expect(market.isConnected(new Date('2026-01-15T09:00:00Z'))).toBe(true);
+    // 06:00 EST → pre open
+    expect(market.isConnected(new Date('2026-01-15T11:00:00Z'))).toBe(true);
     // 09:25 EST → transition
     expect(market.isConnected(new Date('2026-01-15T14:25:00Z'))).toBe(true);
     // 12:00 EST → RTH
@@ -90,8 +90,8 @@ describe('UsMarketHoursAdapter.isConnected', () => {
   });
 
   it('is false before pre-open, after bot-stop, and on weekends', () => {
-    // 03:59 EST → too early
-    expect(market.isConnected(new Date('2026-01-15T08:59:00Z'))).toBe(false);
+    // 05:59 EST → too early (un minuto antes de pre-open)
+    expect(market.isConnected(new Date('2026-01-15T10:59:00Z'))).toBe(false);
     // 15:50 EST → bot-stop
     expect(market.isConnected(new Date('2026-01-15T20:50:00Z'))).toBe(false);
     // Saturday
