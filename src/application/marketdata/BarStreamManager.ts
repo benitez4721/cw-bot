@@ -6,7 +6,6 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { MarketFeedPort } from '../../domain/marketdata/MarketFeedPort.js';
 import type { MetricsPort } from '../../domain/metrics/MetricsPort.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
-import { aggregateOneFiveMinuteBucket } from '../../domain/indicators/calculations.js';
 import { CacheUnderfilledError } from '../../domain/indicators/IndicatorErrors.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import { errMsg } from '../../shared/errors.js';
@@ -22,10 +21,10 @@ import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.j
 import type { ReconcileEntryFill } from '../trade/ReconcileEntryFill.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
 import { SessionBoundaryRunner } from './SessionBoundaryRunner.js';
+import { SymbolSubscriptionService } from './SymbolSubscriptionService.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
 
-const DEFAULT_BOOTSTRAP_BARS = 200;
 const DEFAULT_SYNC_INTERVAL_MS = 10_000;
 
 export type BarStreamManagerStatus = 'idle' | 'running';
@@ -84,8 +83,6 @@ export interface BarStreamManagerOptions {
 // exposure is tracked per (model, symbol) via the trade context repo.
 export class BarStreamManager {
   private readonly feed: MarketFeedPort;
-  private readonly historicalBars: HistoricalBarsPort;
-  private readonly barRepo: BarRepository;
   private readonly strategies: DecisionStrategy[];
   private readonly placeBracketOrder: PlaceBracketOrder;
   private readonly recordTradeContext: RecordTradeContext;
@@ -95,26 +92,22 @@ export class BarStreamManager {
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
   private readonly sessionBoundaries: SessionBoundaryRunner;
+  private readonly subscriptions: SymbolSubscriptionService;
   private readonly placeLimitOrder?: PlaceLimitOrder;
   private readonly checkSyntheticStops?: CheckSyntheticStops;
   private readonly maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
   private readonly maybeTrailStopAlongEma?: MaybeTrailStopAlongEma;
-  private readonly tradeRepo?: TradeContextRepository;
   // Sesion vista en el tick anterior. Sirve para detectar boundaries
   // (pre→transition, rth→closed) sin depender del estado del feed.
   private lastSession: Session | null = null;
-  private readonly bootstrapBars: number;
   private readonly syncIntervalMs: number;
   private readonly now: () => number;
   private readonly schedule: (cb: () => void, ms: number) => NodeJS.Timeout;
   private readonly cancel: (handle: NodeJS.Timeout) => void;
 
-  private readonly subscribed = new Set<string>();
   // Keyed by `${model}:${symbol}` so two strategies can evaluate the same
   // symbol concurrently without blocking each other.
   private readonly inFlight = new Set<string>();
-  // Dedup: ensure at most one in-flight cache recovery per symbol.
-  private readonly recoveryInFlight = new Set<string>();
   private tickTimer: NodeJS.Timeout | null = null;
   private status: BarStreamManagerStatus = 'idle';
   private handlersRegistered = false;
@@ -123,8 +116,6 @@ export class BarStreamManager {
 
   constructor(options: BarStreamManagerOptions) {
     this.feed = options.feed;
-    this.historicalBars = options.historicalBars;
-    this.barRepo = options.barRepo;
     this.strategies = options.strategies;
     this.placeBracketOrder = options.placeBracketOrder;
     this.recordTradeContext = options.recordTradeContext;
@@ -133,21 +124,29 @@ export class BarStreamManager {
     this.maybeMoveStopToBreakEven = options.maybeMoveStopToBreakEven;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
+    this.placeLimitOrder = options.placeLimitOrder;
+    this.checkSyntheticStops = options.checkSyntheticStops;
+    this.maybeTrailSyntheticStop = options.maybeTrailSyntheticStop;
+    this.maybeTrailStopAlongEma = options.maybeTrailStopAlongEma;
+    this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
+    this.now = options.now ?? (() => Date.now());
+    this.schedule = options.schedule ?? ((cb, ms) => setTimeout(cb, ms));
+    this.cancel = options.cancel ?? ((h) => clearTimeout(h));
     this.sessionBoundaries = new SessionBoundaryRunner({
       flattenAll: options.flattenAll,
       flattenPrePositions: options.flattenPrePositions,
       flushRedis: options.flushRedis,
     });
-    this.placeLimitOrder = options.placeLimitOrder;
-    this.checkSyntheticStops = options.checkSyntheticStops;
-    this.maybeTrailSyntheticStop = options.maybeTrailSyntheticStop;
-    this.maybeTrailStopAlongEma = options.maybeTrailStopAlongEma;
-    this.tradeRepo = options.tradeRepo;
-    this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
-    this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
-    this.now = options.now ?? (() => Date.now());
-    this.schedule = options.schedule ?? ((cb, ms) => setTimeout(cb, ms));
-    this.cancel = options.cancel ?? ((h) => clearTimeout(h));
+    this.subscriptions = new SymbolSubscriptionService({
+      feed: options.feed,
+      historicalBars: options.historicalBars,
+      barRepo: options.barRepo,
+      strategies: options.strategies,
+      metrics: options.metrics,
+      tradeRepo: options.tradeRepo,
+      bootstrapBars: options.bootstrapBars,
+      now: this.now,
+    });
   }
 
   getStatus(): BarStreamManagerStatus {
@@ -159,7 +158,7 @@ export class BarStreamManager {
   }
 
   subscribedCount(): number {
-    return this.subscribed.size;
+    return this.subscriptions.subscribedCount();
   }
 
   async forceSync(): Promise<void> {
@@ -190,7 +189,7 @@ export class BarStreamManager {
     this.scheduleNextTick();
     log.info(
       {
-        subscribed: this.subscribed.size,
+        subscribed: this.subscriptions.subscribedCount(),
         marketOpen: this.feedConnected,
         strategies: this.strategies.map((s) => s.name),
       },
@@ -209,7 +208,7 @@ export class BarStreamManager {
       this.feed.disconnect();
       this.feedConnected = false;
     }
-    this.subscribed.clear();
+    this.subscriptions.clear();
     this.inFlight.clear();
   }
 
@@ -252,7 +251,7 @@ export class BarStreamManager {
         );
         return;
       }
-      await this.syncWatchlist();
+      await this.subscriptions.syncWatchlist();
       return;
     }
 
@@ -260,168 +259,22 @@ export class BarStreamManager {
       log.info('market closed — disconnecting feed');
       this.feed.disconnect();
       this.feedConnected = false;
-      this.subscribed.clear();
+      this.subscriptions.clear();
       this.inFlight.clear();
       this.sessionBoundaries.triggerRthFlatten(nowDate);
       return;
     }
 
     if (connected && this.feedConnected) {
-      await this.syncWatchlist();
-    }
-  }
-
-  private async syncWatchlist(): Promise<void> {
-    const wanted = await this.unionWatchlist();
-
-    for (const symbol of wanted) {
-      if (this.subscribed.has(symbol)) continue;
-      try {
-        await this.bootstrapAndSubscribe(symbol);
-      } catch (err) {
-        this.metrics.recordBootstrapFailure();
-        log.error(
-          { symbol, err: errMsg(err) },
-          'bootstrap failed — will retry on next sync',
-        );
-      }
-    }
-
-    for (const symbol of [...this.subscribed]) {
-      if (wanted.has(symbol)) continue;
-      this.feed.unsubscribe(symbol);
-      this.subscribed.delete(symbol);
-      try {
-        await this.barRepo.delete(symbol);
-      } catch (err) {
-        log.warn({ symbol, err: errMsg(err) }, 'cache delete failed');
-      }
-    }
-  }
-
-  private async unionWatchlist(): Promise<Set<string>> {
-    const lists = await Promise.all(
-      this.strategies.map((s) => s.watchlist.list()),
-    );
-    const wanted = new Set<string>();
-    for (const list of lists) {
-      for (const item of list) wanted.add(item.symbol);
-    }
-    // Suma simbolos de trades activos (EventStrategy incluidos). Garantiza que
-    // el manager siga recibiendo barras del simbolo mientras dure el trade,
-    // incluso si ninguna DecisionStrategy lo tiene en su watchlist.
-    if (this.tradeRepo) {
-      try {
-        const active = await this.tradeRepo.listAllActive();
-        for (const ctx of active) wanted.add(ctx.symbol);
-      } catch (err) {
-        log.warn(
-          { err: errMsg(err) },
-          'listAllActive failed in unionWatchlist — using strategy lists only',
-        );
-      }
-    }
-    return wanted;
-  }
-
-  private async bootstrapAndSubscribe(symbol: string): Promise<void> {
-    await this.refreshHistoricalCache(symbol);
-    this.feed.subscribe(symbol);
-    this.subscribed.add(symbol);
-  }
-
-  // Repopulates the 1m/5m cache for a symbol from the historical-bars port.
-  // Idempotent: callers (initial bootstrap + cache recovery) share this path.
-  private async refreshHistoricalCache(symbol: string): Promise<void> {
-    log.info({ symbol, bars: this.bootstrapBars }, 'bootstrapping');
-    const [bars1m, bars5m] = await Promise.all([
-      this.historicalBars.fetchHistoricalBars({
-        symbol,
-        interval: '1min',
-        limit: this.bootstrapBars,
-      }),
-      this.historicalBars.fetchHistoricalBars({
-        symbol,
-        interval: '5min',
-        limit: this.bootstrapBars,
-      }),
-    ]);
-    const now = this.now();
-    const closed1m = dropOpenBucket(bars1m, 60_000, now);
-    const closed5m = dropOpenBucket(bars5m, 5 * 60_000, now);
-    await Promise.all([
-      this.barRepo.set(symbol, '1min', closed1m),
-      this.barRepo.set(symbol, '5min', closed5m),
-    ]);
-    log.info(
-      {
-        symbol,
-        bars1m: closed1m.length,
-        bars5m: closed5m.length,
-        dropped1m: bars1m.length - closed1m.length,
-        dropped5m: bars5m.length - closed5m.length,
-      },
-      'historical cache refreshed',
-    );
-  }
-
-  // Triggered when the indicator port reports the cache is missing/short.
-  // Skips the WS subscribe step if the symbol is already subscribed.
-  private async recoverCache(symbol: string): Promise<void> {
-    if (this.recoveryInFlight.has(symbol)) return;
-    this.recoveryInFlight.add(symbol);
-    try {
-      log.warn({ symbol }, 'cache underfilled — re-bootstrapping');
-      if (this.subscribed.has(symbol)) {
-        await this.refreshHistoricalCache(symbol);
-      } else {
-        await this.bootstrapAndSubscribe(symbol);
-      }
-    } catch (err) {
-      log.error({ symbol, err: errMsg(err) }, 'cache recovery failed');
-    } finally {
-      this.recoveryInFlight.delete(symbol);
+      await this.subscriptions.syncWatchlist();
     }
   }
 
   private async handleBar(symbol: string, bar: Bar): Promise<void> {
-    const cached1m = await this.barRepo.get(symbol, '1min');
-    const lastTs = cached1m[cached1m.length - 1]?.timestamp;
-    if (lastTs === bar.timestamp) {
-      this.metrics.recordBarDedupSkip();
-      log.debug({ symbol, ts: bar.timestamp }, 'dedupe skip');
-      return;
-    }
-
-    this.metrics.recordBarReceived();
-    await this.barRepo.append(symbol, '1min', bar);
-
-    const minute = new Date(bar.timestamp).getUTCMinutes();
-    if (minute % 5 === 4) {
-      await this.maybeAppendFiveMinute(symbol);
-    }
-
-    if (!this.subscribed.has(symbol)) return;
+    const shouldEvaluate = await this.subscriptions.ingestBar(symbol, bar);
+    if (!shouldEvaluate) return;
     await this.processSymbol(symbol, bar);
     this.lastSuccessfulTick = this.now();
-  }
-
-  private async maybeAppendFiveMinute(symbol: string): Promise<void> {
-    const last5 = await this.barRepo.get(symbol, '1min', 5);
-    if (last5.length !== 5) {
-      log.warn(
-        { symbol, count: last5.length },
-        'bucket close but <5 1m bars cached, skipping 5m append',
-      );
-      return;
-    }
-    try {
-      const bar5m = aggregateOneFiveMinuteBucket(last5);
-      await this.barRepo.append(symbol, '5min', bar5m);
-      log.debug({ symbol, ts: bar5m.timestamp }, '5m bucket closed');
-    } catch (err) {
-      log.warn({ symbol, err: errMsg(err) }, '5m aggregation failed');
-    }
   }
 
   // Runs strategies in parallel: each one independently checks its own
@@ -554,7 +407,7 @@ export class BarStreamManager {
         'process failed',
       );
       if (err instanceof CacheUnderfilledError) {
-        void this.recoverCache(symbol);
+        void this.subscriptions.recoverCache(symbol);
       }
     } finally {
       this.inFlight.delete(inFlightKey);
@@ -700,11 +553,4 @@ export class BarStreamManager {
     }
     await this.reconcileEntryFill.execute({ ctx });
   }
-}
-
-function dropOpenBucket(bars: Bar[], bucketMs: number, nowMs: number): Bar[] {
-  return bars.filter((b) => {
-    const closeMs = new Date(b.timestamp).getTime() + bucketMs;
-    return closeMs <= nowMs;
-  });
 }
