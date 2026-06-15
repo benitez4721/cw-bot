@@ -21,41 +21,12 @@ import type { MaybeTrailStopAlongEma } from '../trade/MaybeTrailStopAlongEma.js'
 import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.js';
 import type { ReconcileEntryFill } from '../trade/ReconcileEntryFill.js';
 import type { RecordTradeContext } from '../trade/RecordTradeContext.js';
+import { SessionBoundaryRunner } from './SessionBoundaryRunner.js';
 
 const log = logger.child({ component: 'BarStreamManager' });
 
 const DEFAULT_BOOTSTRAP_BARS = 200;
 const DEFAULT_SYNC_INTERVAL_MS = 10_000;
-
-const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/New_York',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-// Flush corre 1 min antes del pre-market open (3:59 ET) de cada día hábil
-// para que el bot arranque el día con Redis limpio.
-const FLUSH_HOUR_NY = 3;
-const FLUSH_MINUTE_NY = 59;
-
-const wallNyFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
-  hour12: false,
-  weekday: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-});
-
-function isPreMarketFlushWindow(now: Date): boolean {
-  const parts = wallNyFormatter.formatToParts(now);
-  const weekday = parts.find((p) => p.type === 'weekday')?.value;
-  const hour = parts.find((p) => p.type === 'hour')?.value;
-  const minute = parts.find((p) => p.type === 'minute')?.value;
-  if (!weekday || !hour || !minute) return false;
-  if (weekday === 'Sat' || weekday === 'Sun') return false;
-  return Number(hour) === FLUSH_HOUR_NY && Number(minute) === FLUSH_MINUTE_NY;
-}
 
 export type BarStreamManagerStatus = 'idle' | 'running';
 
@@ -123,17 +94,12 @@ export class BarStreamManager {
   private readonly maybeMoveStopToBreakEven?: MaybeMoveStopToBreakEven;
   private readonly marketHours: MarketHours;
   private readonly metrics: MetricsPort;
-  private readonly flattenAll?: FlattenAllPositions;
-  private lastFlattenedDay: string | null = null;
-  private readonly flattenPrePositions?: FlattenPrePositions;
-  private lastPreFlattenedDay: string | null = null;
+  private readonly sessionBoundaries: SessionBoundaryRunner;
   private readonly placeLimitOrder?: PlaceLimitOrder;
   private readonly checkSyntheticStops?: CheckSyntheticStops;
   private readonly maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
   private readonly maybeTrailStopAlongEma?: MaybeTrailStopAlongEma;
   private readonly tradeRepo?: TradeContextRepository;
-  private readonly flushRedis?: () => Promise<void>;
-  private lastFlushedDay: string | null = null;
   // Sesion vista en el tick anterior. Sirve para detectar boundaries
   // (pre→transition, rth→closed) sin depender del estado del feed.
   private lastSession: Session | null = null;
@@ -167,14 +133,16 @@ export class BarStreamManager {
     this.maybeMoveStopToBreakEven = options.maybeMoveStopToBreakEven;
     this.marketHours = options.marketHours;
     this.metrics = options.metrics;
-    this.flattenAll = options.flattenAll;
-    this.flattenPrePositions = options.flattenPrePositions;
+    this.sessionBoundaries = new SessionBoundaryRunner({
+      flattenAll: options.flattenAll,
+      flattenPrePositions: options.flattenPrePositions,
+      flushRedis: options.flushRedis,
+    });
     this.placeLimitOrder = options.placeLimitOrder;
     this.checkSyntheticStops = options.checkSyntheticStops;
     this.maybeTrailSyntheticStop = options.maybeTrailSyntheticStop;
     this.maybeTrailStopAlongEma = options.maybeTrailStopAlongEma;
     this.tradeRepo = options.tradeRepo;
-    this.flushRedis = options.flushRedis;
     this.bootstrapBars = options.bootstrapBars ?? DEFAULT_BOOTSTRAP_BARS;
     this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
     this.now = options.now ?? (() => Date.now());
@@ -259,7 +227,7 @@ export class BarStreamManager {
 
   private async tick(): Promise<void> {
     const nowDate = new Date(this.now());
-    await this.triggerPreMarketFlush(nowDate);
+    await this.sessionBoundaries.triggerPreMarketFlush(nowDate);
     const session = this.marketHours.session(nowDate);
     const connected = this.marketHours.isConnected(nowDate);
 
@@ -267,7 +235,7 @@ export class BarStreamManager {
     // RTH. Lo evaluamos antes de tocar feed/sync para que el flatten arranque
     // aunque haya un connect fail en este mismo tick.
     if (this.lastSession === 'pre' && session === 'transition') {
-      this.triggerPreFlatten(nowDate);
+      this.sessionBoundaries.triggerPreFlatten(nowDate);
     }
 
     this.lastSession = session;
@@ -294,60 +262,12 @@ export class BarStreamManager {
       this.feedConnected = false;
       this.subscribed.clear();
       this.inFlight.clear();
-      this.triggerRthFlatten(nowDate);
+      this.sessionBoundaries.triggerRthFlatten(nowDate);
       return;
     }
 
     if (connected && this.feedConnected) {
       await this.syncWatchlist();
-    }
-  }
-
-  // Fire-and-forget: el tick sigue su curso aunque el flatten tarde varios
-  // segundos. Idempotencia diaria via `lastFlattenedDay` en TZ NY — sólo
-  // un disparo por día calendario (sirve para evitar redisparos si el feed
-  // re-conecta brevemente y vuelve a desconectarse).
-  private triggerRthFlatten(now: Date): void {
-    if (!this.flattenAll) return;
-    const day = dayKeyFormatter.format(now);
-    if (this.lastFlattenedDay === day) return;
-    this.lastFlattenedDay = day;
-    log.info({ day }, 'market closed — running flatten');
-    void this.flattenAll.execute().catch((err) => {
-      log.error({ err: errMsg(err) }, 'flatten execution failed');
-    });
-  }
-
-  // Idempotente por día NY: marcamos lastPreFlattenedDay aunque el flatten
-  // falle, para evitar bucles en la ventana de 1 min entre pre y transition.
-  // Fire-and-forget para no bloquear el tick.
-  private triggerPreFlatten(now: Date): void {
-    if (!this.flattenPrePositions) return;
-    const day = dayKeyFormatter.format(now);
-    if (this.lastPreFlattenedDay === day) return;
-    this.lastPreFlattenedDay = day;
-    log.info({ day }, 'pre → transition — running pre flatten');
-    void this.flattenPrePositions.execute().catch((err) => {
-      log.error({ err: errMsg(err) }, 'pre flatten execution failed');
-    });
-  }
-
-  // Awaited: queremos que el flush termine antes de que el tick avance a
-  // sus ramas de feed/sync. En la práctica corre a 3:59 ET cuando feed está
-  // desconectado, así que no compite con el bootstrap (que ocurre a 4:00).
-  // Idempotente por día NY: marcamos el día como flusheado-intentado aunque
-  // el flush falle, para evitar bucles de reintento dentro de la ventana.
-  private async triggerPreMarketFlush(now: Date): Promise<void> {
-    if (!this.flushRedis) return;
-    if (!isPreMarketFlushWindow(now)) return;
-    const day = dayKeyFormatter.format(now);
-    if (this.lastFlushedDay === day) return;
-    this.lastFlushedDay = day;
-    log.info({ day }, 'pre-market window — flushing redis');
-    try {
-      await this.flushRedis();
-    } catch (err) {
-      log.error({ err: errMsg(err) }, 'redis flush failed');
     }
   }
 
