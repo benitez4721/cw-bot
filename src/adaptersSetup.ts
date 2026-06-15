@@ -244,6 +244,16 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
 
+  const runningUpLowVolume: EventStrategy = {
+    name: 'RunningUp0.5LowVolume',
+    cwConfigId: '6a3035beb7983c861b346525',
+    riskUsd: RISK_USD,
+    trailMode: 'percent',
+    trailingStopPercent: 8,
+    entryBufferBps: 0,
+    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  };
+
   // const runningUpHighVol: EventStrategy = {
   //   name: 'RunningUpHighVol',
   //   cwConfigId: '6a22f096088ad369a3e15a55',
@@ -267,7 +277,12 @@ export function setupAdapters(): Adapters {
   // };
 
   const strategies = [] as ConfiguredStrategy[];
-  const eventStrategies = [runningUp, highOfTheDayAlert, crossOverVwap];
+  const eventStrategies = [
+    runningUp,
+    highOfTheDayAlert,
+    crossOverVwap,
+    runningUpLowVolume,
+  ];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
