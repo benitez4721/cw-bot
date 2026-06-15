@@ -180,10 +180,34 @@ describe('CheckOpenTrades — sesion pre', () => {
     expect(closeTrade.execute).toHaveBeenCalledWith('E1');
   });
 
-  it('ctx pre con syntheticExitFired=true no consulta positions (depende de la orden de exit)', async () => {
-    // Una vez disparado el exit sintetico, el residuo broker-side existe
-    // (forcedExitOrderId). Si esa orden ya no esta active, el trade esta
-    // cerrado — no necesitamos getPositions.
+  it('ctx pre con syntheticExitFired=true pero posicion abierta: stillExposed=true (no cierra)', async () => {
+    // Regresion del bug de duplicados: el exit sintetico es un Limit que pudo
+    // NO llenar (mercado fino). syntheticExitFired=true + forced ya inactivo
+    // NO implica cierre: si el broker reporta posicion abierta, el trade sigue
+    // vivo y no debe tacharse — cerrarlo dejaria una posicion huerfana que
+    // habilita un duplicado en la proxima alerta.
+    const ctx = makeContext({
+      session: 'pre',
+      syntheticExitFired: true,
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
+    });
+    const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
+      contexts: [ctx],
+      orders: [], // el Limit de exit X1 expiro sin llenar; ya no esta activo
+      positions: [makePosition({ quantity: 170 })],
+    });
+    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
+
+    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
+
+    expect(getPositions).toHaveBeenCalledWith({ accountId: 'SIM12345' });
+    expect(result.stillExposed).toBe(true);
+    expect(closeTrade.execute).not.toHaveBeenCalled();
+  });
+
+  it('ctx pre con syntheticExitFired=true y sin posicion: cierra el ctx', async () => {
+    // El exit sintetico llego y dejo flat la posicion: ni orden activa ni
+    // posicion en el broker → el trade realmente cerro y se tacha.
     const ctx = makeContext({
       session: 'pre',
       syntheticExitFired: true,
@@ -192,31 +216,35 @@ describe('CheckOpenTrades — sesion pre', () => {
     const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
       contexts: [ctx],
       orders: [],
+      positions: [],
     });
     const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
 
-    expect(getPositions).not.toHaveBeenCalled();
+    expect(getPositions).toHaveBeenCalledWith({ accountId: 'SIM12345' });
     expect(result.stillExposed).toBe(false);
     expect(closeTrade.execute).toHaveBeenCalledWith('E1');
   });
 
-  it('ctx pre con forcedExit todavia open: stillExposed=true por la orden, sin tocar positions', async () => {
+  it('ctx pre con forcedExit todavia open: stillExposed=true por la orden activa', async () => {
+    // Con el forced Limit aun open, hasActive corta antes del fallback de
+    // positions: el trade sigue expuesto por la orden viva, sin importar lo
+    // que reporte getPositions.
     const ctx = makeContext({
       session: 'pre',
       syntheticExitFired: true,
       bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
     });
-    const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
+    const { broker, tradeRepo, closeTrade } = buildDeps({
       contexts: [ctx],
       orders: [makeOrder('X1', 'open')],
+      positions: [],
     });
     const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
 
-    expect(getPositions).not.toHaveBeenCalled();
     expect(result.stillExposed).toBe(true);
     expect(closeTrade.execute).not.toHaveBeenCalled();
   });
