@@ -34,7 +34,6 @@ function preCtx(overrides: Partial<TradeContext> = {}): TradeContext {
     checks: [],
     status: 'active',
     session: 'pre',
-    syntheticExitFired: false,
     ...overrides,
   };
 }
@@ -121,8 +120,10 @@ describe('MaybeTrailSyntheticStop', () => {
     expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 
-  it('NO patchea ctx con syntheticExitFired (idempotencia)', async () => {
-    const ctx = preCtx({ syntheticExitFired: true });
+  it('NO patchea ctx con exit ya disparado (forcedExitOrderId presente)', async () => {
+    const ctx = preCtx({
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
+    });
     const { tradeRepo } = fakes([ctx]);
     const useCase = new MaybeTrailSyntheticStop({ tradeRepo });
 

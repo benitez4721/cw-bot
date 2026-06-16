@@ -9,6 +9,7 @@ import { PlaceLimitOrder } from './application/broker/PlaceLimitOrder.js';
 import { PlaceTrailingBracketOrder } from './application/broker/PlaceTrailingBracketOrder.js';
 import { CheckOpenTrades } from './application/trade/CheckOpenTrades.js';
 import { CheckSyntheticStops } from './application/trade/CheckSyntheticStops.js';
+import { MaybeRepegSyntheticExit } from './application/trade/MaybeRepegSyntheticExit.js';
 import { MaybeTrailStopAlongEma } from './application/trade/MaybeTrailStopAlongEma.js';
 import { MaybeTrailSyntheticStop } from './application/trade/MaybeTrailSyntheticStop.js';
 import { OnScannerAlert } from './application/scanner/OnScannerAlert.js';
@@ -200,6 +201,11 @@ async function main() {
     placeLimitOrder,
   });
   const maybeTrailSyntheticStop = new MaybeTrailSyntheticStop({ tradeRepo });
+  const maybeRepegSyntheticExit = new MaybeRepegSyntheticExit({
+    broker,
+    tradeRepo,
+    placeLimitOrder,
+  });
 
   const barStream = new BarStreamManager({
     feed: marketFeed,
@@ -213,6 +219,7 @@ async function main() {
     checkOpenTrades,
     checkSyntheticStops,
     maybeTrailSyntheticStop,
+    maybeRepegSyntheticExit,
     maybeTrailStopAlongEma,
     maybeMoveStopToBreakEven,
     tradeRepo,

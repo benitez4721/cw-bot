@@ -15,6 +15,7 @@ import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { CheckSyntheticStops } from '../trade/CheckSyntheticStops.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
+import type { MaybeRepegSyntheticExit } from '../trade/MaybeRepegSyntheticExit.js';
 import type { MaybeTrailStopAlongEma } from '../trade/MaybeTrailStopAlongEma.js';
 import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.js';
 import type { ReconcileEntryFill } from '../trade/ReconcileEntryFill.js';
@@ -56,6 +57,10 @@ export interface BarStreamManagerOptions {
   // antes de checkSyntheticStops para que el cross-check use el stop ya
   // actualizado.
   maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
+  // Persecucion del Limit de salida sintetico (ctx pre con trailingStopPercent ya
+  // disparados). Invocado despues de checkSyntheticStops; re-pega el Limit al
+  // precio actual cada barra hasta que llene.
+  maybeRepegSyntheticExit?: MaybeRepegSyntheticExit;
   // Trail por EMA para ctx con emaTrailPeriod/emaTrailBufferBps (EventStrategy
   // HighOfDayAlertEmaTrail). Corre en pre + rth, antes de checkSyntheticStops
   // en pre. En rth ademas mueve el StopMarket del broker via replaceStopPrice.
@@ -144,6 +149,7 @@ export class BarStreamManager {
       placeLimitOrder: options.placeLimitOrder,
       checkSyntheticStops: options.checkSyntheticStops,
       maybeTrailSyntheticStop: options.maybeTrailSyntheticStop,
+      maybeRepegSyntheticExit: options.maybeRepegSyntheticExit,
       maybeTrailStopAlongEma: options.maybeTrailStopAlongEma,
       now: this.now,
       recoverCache: (symbol) => void this.subscriptions.recoverCache(symbol),

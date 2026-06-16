@@ -4,8 +4,8 @@ import type { Bar } from '../../domain/marketdata/MarketDataTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
-import { bpsToFraction, round2 } from '../../domain/shared/math.js';
 import { errMsg } from '../../shared/errors.js';
+import { crossTheSpread } from '../broker/flattenHelpers.js';
 import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 
 const log = logger.child({ component: 'CheckSyntheticStops' });
@@ -30,16 +30,18 @@ export interface CheckSyntheticStopsDeps {
 //   - Si bar.close cruza stopPrice (long: <=, short: >=) o takeProfitPrice
 //     (long: >=, short: <=), manda un Limit cross-the-spread con
 //     duration: 'DYP', lado opuesto y cantidad de la entry.
-//   - Marca syntheticExitFired = true para no re-disparar en el bar siguiente.
+//   - Persiste forcedExitOrderId + forcedExitLimitPrice; eso marca el ctx como
+//     "exit disparado" para no re-disparar (el filtro de arriba pide
+//     forcedExitOrderId === undefined).
 //
-// Idempotencia: el patch a syntheticExitFired es atomico via WATCH/MULTI del
-// repo. La query upstream filtra los ctx ya disparados, asi que si el repo
-// confirma el patch, el bar siguiente no los ve.
+// Idempotencia: el patch es atomico via WATCH/MULTI del repo. La query upstream
+// filtra los ctx que ya tienen forcedExitOrderId, asi que si el repo confirma
+// el patch, el bar siguiente no los ve aca — pasan a manos de
+// MaybeRepegSyntheticExit, que persigue el Limit hasta que llene.
 //
 // Riesgo conocido (fill parcial en pre con liquidez fina): si la Limit solo
-// llena parcialmente, queda saldo expuesto. La idempotencia simple actual
-// asume fill total — Fase 6 / hardening puede mejorar esto chequeando la
-// posicion en lugar de marcar al enviar.
+// llena parcialmente, queda saldo expuesto. Asumimos fill total; el residuo lo
+// barre el flatten 9:20.
 export class CheckSyntheticStops {
   private readonly broker: BrokerPort;
   private readonly tradeRepo: TradeContextRepository;
@@ -57,7 +59,7 @@ export class CheckSyntheticStops {
       (ctx) =>
         ctx.symbol === symbol &&
         ctx.session === 'pre' &&
-        !ctx.syntheticExitFired &&
+        ctx.bracket.forcedExitOrderId === undefined &&
         !!ctx.accountId &&
         ctx.stopPrice !== undefined,
     );
@@ -104,7 +106,11 @@ export class CheckSyntheticStops {
       return;
     }
 
-    const limitPrice = this.crossTheSpread(quote, exitSide);
+    const limitPrice = crossTheSpread(
+      quote,
+      exitSide,
+      DEFAULT_PARAMS.crossOffsetBps,
+    );
     if (limitPrice === undefined) {
       log.warn(
         { symbol: ctx.symbol, quote },
@@ -167,8 +173,10 @@ export class CheckSyntheticStops {
 
     try {
       await this.tradeRepo.patch(ctx.bracket.entryOrderId, {
-        syntheticExitFired: true,
-        bracket: { forcedExitOrderId: orderId },
+        bracket: {
+          forcedExitOrderId: orderId,
+          forcedExitLimitPrice: limitPrice,
+        },
       });
     } catch (err) {
       log.warn(
@@ -178,7 +186,7 @@ export class CheckSyntheticStops {
           forcedExitOrderId: orderId,
           err: errMsg(err),
         },
-        'failed to persist syntheticExitFired; exit already sent',
+        'failed to persist forcedExitOrderId; exit already sent',
       );
       return;
     }
@@ -193,14 +201,5 @@ export class CheckSyntheticStops {
       },
       'synthetic exit fired in pre',
     );
-  }
-
-  private crossTheSpread(quote: Quote, side: OrderSide): number | undefined {
-    const offset = bpsToFraction(DEFAULT_PARAMS.crossOffsetBps);
-    const base =
-      side === 'SELL' ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last);
-    if (!Number.isFinite(base) || base <= 0) return undefined;
-    const raw = side === 'SELL' ? base * (1 - offset) : base * (1 + offset);
-    return round2(raw);
   }
 }

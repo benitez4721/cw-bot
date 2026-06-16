@@ -116,8 +116,8 @@ export class CheckOpenTrades {
       // Fallback pre: si no hay orden activa pero el ctx es pre con la
       // posicion todavia abierta en el broker, el trade sigue vivo. Aplica
       // tambien tras disparar el exit sintetico: ese exit es un Limit que
-      // puede no haber llenado, asi que syntheticExitFired=true NO garantiza
-      // cierre. No cerrar el ctx ni habilitar entries duplicados.
+      // puede no haber llenado, asi que un forcedExitOrderId presente NO
+      // garantiza cierre. No cerrar el ctx ni habilitar entries duplicados.
       if (ctx.session === 'pre' && ctx.accountId) {
         const hasPosition = positions.some(
           (p) =>

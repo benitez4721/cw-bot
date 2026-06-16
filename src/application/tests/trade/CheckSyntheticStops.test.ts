@@ -34,7 +34,6 @@ function preContext(overrides: Partial<TradeContext> = {}): TradeContext {
     checks: [],
     status: 'active',
     session: 'pre',
-    syntheticExitFired: false,
     entryFillQuantity: 100,
     ...overrides,
   };
@@ -95,8 +94,7 @@ describe('CheckSyntheticStops', () => {
     expect(call.limitPrice).toBeCloseTo(178.81, 2);
 
     expect(tradeRepo.patch).toHaveBeenCalledWith('E1', {
-      syntheticExitFired: true,
-      bracket: { forcedExitOrderId: 'X-1' },
+      bracket: { forcedExitOrderId: 'X-1', forcedExitLimitPrice: 178.81 },
     });
   });
 
@@ -151,8 +149,10 @@ describe('CheckSyntheticStops', () => {
     expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 
-  it('skipea ctx con syntheticExitFired ya marcado (idempotencia)', async () => {
-    const ctx = preContext({ syntheticExitFired: true });
+  it('skipea ctx con exit ya disparado (forcedExitOrderId) — idempotencia', async () => {
+    const ctx = preContext({
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X-1' },
+    });
     const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
     const useCase = new CheckSyntheticStops({
       broker,
@@ -180,7 +180,7 @@ describe('CheckSyntheticStops', () => {
     expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 
-  it('no marca syntheticExitFired si la orden viene rejected — reintenta proximo bar', async () => {
+  it('no persiste forcedExitOrderId si la orden viene rejected — reintenta proximo bar', async () => {
     const ctx = preContext();
     const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
     placeLimitOrder.execute = vi.fn(async () => ({
@@ -216,8 +216,7 @@ describe('CheckSyntheticStops', () => {
 
     expect(placeLimitOrder.execute).toHaveBeenCalledTimes(1);
     expect(tradeRepo.patch).toHaveBeenCalledWith('E1', {
-      syntheticExitFired: true,
-      bracket: { forcedExitOrderId: 'X-1' },
+      bracket: { forcedExitOrderId: 'X-1', forcedExitLimitPrice: 178.81 },
     });
   });
 

@@ -101,6 +101,5 @@ function buildPre(input: RecordPreTradeContextInput): TradeContext {
     checks: signal.checks,
     status: 'active',
     session: 'pre',
-    syntheticExitFired: false,
   };
 }

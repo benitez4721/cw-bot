@@ -179,8 +179,11 @@ describe('MaybeTrailStopAlongEma', () => {
     expect(broker.replaceStopPrice).not.toHaveBeenCalled();
   });
 
-  it('ignora ctx con syntheticExitFired (idempotencia)', async () => {
-    const ctx = ctxEma({ session: 'pre', syntheticExitFired: true });
+  it('ignora ctx con exit ya disparado (forcedExitOrderId) (idempotencia)', async () => {
+    const ctx = ctxEma({
+      session: 'pre',
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'FX1' },
+    });
     const { tradeRepo, broker, indicators } = fakes([ctx], 110);
     const useCase = new MaybeTrailStopAlongEma({
       tradeRepo,

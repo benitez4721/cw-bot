@@ -9,8 +9,11 @@ import type { TradeContextRepository } from '../../domain/trade/TradeContextRepo
 import type { TradeContext } from '../../domain/trade/TradeTypes.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import { errMsg } from '../../shared/errors.js';
-import { sleep } from '../../shared/async.js';
-import { groupByAccountAndSymbol, isOrderActive } from './flattenHelpers.js';
+import {
+  groupByAccountAndSymbol,
+  isOrderActive,
+  waitOrdersTerminal,
+} from './flattenHelpers.js';
 
 const log = logger.child({ component: 'FlattenAllPositions' });
 
@@ -171,9 +174,14 @@ export class FlattenAllPositions {
       ),
     );
 
-    const cancelConfirmed = await this.waitOrdersTerminal(
+    const cancelConfirmed = await waitOrdersTerminal(
+      this.broker,
       allExitIds,
       accountId,
+      {
+        timeoutMs: DEFAULT_PARAMS.cancelConfirmTimeoutMs,
+        pollMs: DEFAULT_PARAMS.cancelPollIntervalMs,
+      },
     );
     if (!cancelConfirmed) {
       this.metrics.recordFlattenFailure('cancelTimeout');
@@ -267,25 +275,6 @@ export class FlattenAllPositions {
         { symbol: ctx.symbol, err: errMsg(err) },
         'failed to cancel entry',
       );
-    }
-  }
-
-  private async waitOrdersTerminal(
-    orderIds: readonly string[],
-    accountId: string,
-  ): Promise<boolean> {
-    if (orderIds.length === 0) return true;
-    const idSet = new Set(orderIds);
-    const deadline = Date.now() + DEFAULT_PARAMS.cancelConfirmTimeoutMs;
-    while (true) {
-      const currentOrders = await this.broker.getOrders({ accountId });
-      const stillActive = currentOrders.some(
-        (o) => idSet.has(o.id) && isOrderActive(o.status),
-      );
-      if (!stillActive) return true;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) return false;
-      await sleep(Math.min(DEFAULT_PARAMS.cancelPollIntervalMs, remaining));
     }
   }
 }

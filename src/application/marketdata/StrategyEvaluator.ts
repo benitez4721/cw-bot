@@ -10,6 +10,7 @@ import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
 import type { CheckOpenTrades } from '../trade/CheckOpenTrades.js';
 import type { CheckSyntheticStops } from '../trade/CheckSyntheticStops.js';
 import type { MaybeMoveStopToBreakEven } from '../trade/MaybeMoveStopToBreakEven.js';
+import type { MaybeRepegSyntheticExit } from '../trade/MaybeRepegSyntheticExit.js';
 import type { MaybeTrailStopAlongEma } from '../trade/MaybeTrailStopAlongEma.js';
 import type { MaybeTrailSyntheticStop } from '../trade/MaybeTrailSyntheticStop.js';
 import type { ReconcileEntryFill } from '../trade/ReconcileEntryFill.js';
@@ -34,6 +35,7 @@ export interface StrategyEvaluatorOptions {
   placeLimitOrder?: PlaceLimitOrder;
   checkSyntheticStops?: CheckSyntheticStops;
   maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
+  maybeRepegSyntheticExit?: MaybeRepegSyntheticExit;
   maybeTrailStopAlongEma?: MaybeTrailStopAlongEma;
   now?: () => number;
   // Invocado cuando una evaluación falla con CacheUnderfilledError, para que
@@ -56,6 +58,7 @@ export class StrategyEvaluator {
   private readonly placeLimitOrder?: PlaceLimitOrder;
   private readonly checkSyntheticStops?: CheckSyntheticStops;
   private readonly maybeTrailSyntheticStop?: MaybeTrailSyntheticStop;
+  private readonly maybeRepegSyntheticExit?: MaybeRepegSyntheticExit;
   private readonly maybeTrailStopAlongEma?: MaybeTrailStopAlongEma;
   private readonly now: () => number;
   private readonly recoverCache: (symbol: string) => void;
@@ -76,6 +79,7 @@ export class StrategyEvaluator {
     this.placeLimitOrder = options.placeLimitOrder;
     this.checkSyntheticStops = options.checkSyntheticStops;
     this.maybeTrailSyntheticStop = options.maybeTrailSyntheticStop;
+    this.maybeRepegSyntheticExit = options.maybeRepegSyntheticExit;
     this.maybeTrailStopAlongEma = options.maybeTrailStopAlongEma;
     this.now = options.now ?? (() => Date.now());
     this.recoverCache = options.recoverCache;
@@ -137,6 +141,19 @@ export class StrategyEvaluator {
           log.warn(
             { symbol, err: errMsg(err) },
             'checkSyntheticStops threw — continuing with strategies',
+          );
+        }
+      }
+      // Persigue el Limit de los exits ya disparados (forcedExitOrderId), re-pegando
+      // al precio actual. Va despues de checkSyntheticStops: un exit recien armado
+      // en este bar ya tiene su Limit fresco y no necesita repeg hasta el siguiente.
+      if (this.maybeRepegSyntheticExit) {
+        try {
+          await this.maybeRepegSyntheticExit.execute(symbol, bar);
+        } catch (err) {
+          log.warn(
+            { symbol, err: errMsg(err) },
+            'maybeRepegSyntheticExit threw — continuing',
           );
         }
       }

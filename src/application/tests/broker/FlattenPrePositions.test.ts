@@ -23,7 +23,6 @@ function preContext(overrides: Partial<TradeContext> = {}): TradeContext {
     checks: [],
     status: 'active',
     session: 'pre',
-    syntheticExitFired: false,
     entryFillQuantity: 100,
     ...overrides,
   };
@@ -121,7 +120,6 @@ describe('FlattenPrePositions', () => {
     expect(call.limitPrice).toBeCloseTo(179.81, 2);
 
     expect(tradeRepo.patch).toHaveBeenCalledWith('E1', {
-      syntheticExitFired: true,
       bracket: { forcedExitOrderId: 'X-1' },
     });
     expect(metrics.recordFlattenOutcome).toHaveBeenCalledWith('marketSent');
@@ -201,8 +199,10 @@ describe('FlattenPrePositions', () => {
     expect(calls).toContain('E2');
   });
 
-  it('skipea ctxs ya marcados syntheticExitFired', async () => {
-    const ctx = preContext({ syntheticExitFired: true });
+  it('ctx con exit ya disparado (forcedExitOrderId) y posicion abierta: cancela el Limit del re-peg y re-flatea', async () => {
+    const ctx = preContext({
+      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X-old' },
+    });
     const { placeLimitOrder, broker, tradeRepo, metrics } = fakes({
       contexts: [ctx],
       positions: [
@@ -226,8 +226,16 @@ describe('FlattenPrePositions', () => {
 
     await useCase.execute();
 
-    expect(placeLimitOrder.execute).not.toHaveBeenCalled();
-    expect(tradeRepo.patch).not.toHaveBeenCalled();
+    // Cancela el Limit del re-peg antes de mandar el flatten (getOrders fake
+    // devuelve [] → waitOrdersTerminal confirma terminal de inmediato).
+    expect(broker.cancelOrder).toHaveBeenCalledWith({
+      orderId: 'X-old',
+      accountId: 'SIM1',
+    });
+    expect(placeLimitOrder.execute).toHaveBeenCalledTimes(1);
+    expect(tradeRepo.patch).toHaveBeenCalledWith('E1', {
+      bracket: { forcedExitOrderId: 'X-1' },
+    });
   });
 
   it('ignora ctxs RTH aunque tengan posicion abierta', async () => {
@@ -267,7 +275,7 @@ describe('FlattenPrePositions', () => {
     expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 
-  it('si placeLimitOrder rechaza, no marca syntheticExitFired', async () => {
+  it('si placeLimitOrder rechaza, no persiste forcedExitOrderId', async () => {
     const ctx = preContext();
     const { placeLimitOrder, broker, tradeRepo, metrics } = fakes({
       contexts: [ctx],

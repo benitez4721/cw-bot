@@ -65,7 +65,7 @@ describe('RecordTradeContext — sesion rth', () => {
     });
     expect(ctx.stopPrice).toBeUndefined();
     expect(ctx.takeProfitPrice).toBeUndefined();
-    expect(ctx.syntheticExitFired).toBeUndefined();
+    expect(ctx.bracket.forcedExitOrderId).toBeUndefined();
   });
 
   it('exige bracket.entryOrderId', async () => {
@@ -112,7 +112,7 @@ describe('RecordTradeContext — sesion pre', () => {
     expect(ctx.bracket.stopOrderId).toBeUndefined();
     expect(ctx.stopPrice).toBe(179);
     expect(ctx.takeProfitPrice).toBe(182);
-    expect(ctx.syntheticExitFired).toBe(false);
+    expect(ctx.bracket.forcedExitOrderId).toBeUndefined();
   });
 
   it('invierte los precios para sesion pre con lado SELL (short)', async () => {

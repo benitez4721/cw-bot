@@ -360,7 +360,6 @@ export class OpenEventTrade {
             emaTrailBufferBps: this.strategy.emaTrailBufferBps,
           }
         : {}),
-      ...(session === 'pre' ? { syntheticExitFired: false } : {}),
     };
   }
 

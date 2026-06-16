@@ -69,7 +69,6 @@ function preContext(overrides: Partial<TradeContext> = {}): TradeContext {
     checks: [],
     status: 'active',
     session: 'pre',
-    syntheticExitFired: false,
     ...overrides,
   };
 }

@@ -39,7 +39,7 @@ export class MaybeTrailSyntheticStop {
       (ctx) =>
         ctx.symbol === symbol &&
         ctx.session === 'pre' &&
-        !ctx.syntheticExitFired &&
+        ctx.bracket.forcedExitOrderId === undefined &&
         ctx.trailingStopPercent !== undefined &&
         ctx.stopPrice !== undefined &&
         ctx.entryFillPrice !== undefined,

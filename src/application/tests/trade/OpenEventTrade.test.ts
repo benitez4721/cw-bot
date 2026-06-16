@@ -195,7 +195,7 @@ describe('OpenEventTrade — percent', () => {
     expect(f.reconcileSpy).toHaveBeenCalledOnce();
   });
 
-  it('pre: abre Limit DYP+ARCA y persiste ctx con stopPrice + trailingStopPercent + syntheticExitFired', async () => {
+  it('pre: abre Limit DYP+ARCA y persiste ctx con stopPrice + trailingStopPercent (sin forcedExitOrderId)', async () => {
     const f = setup({ strategy: percentStrategy });
 
     await f.useCase.execute({
@@ -213,12 +213,12 @@ describe('OpenEventTrade — percent', () => {
     const ctx = f.tradeRepo.put.mock.calls[0][0] as TradeContext;
     expect(ctx).toMatchObject({
       session: 'pre',
-      syntheticExitFired: false,
       trailingStopPercent: 8,
       stopPrice: 1.84,
       bracket: { entryOrderId: 'PRE1' },
     });
     expect(ctx.bracket.stopOrderId).toBeUndefined();
+    expect(ctx.bracket.forcedExitOrderId).toBeUndefined();
   });
 
   it('quantity redondea a 0 → rejected, sin tocar broker ni repo', async () => {

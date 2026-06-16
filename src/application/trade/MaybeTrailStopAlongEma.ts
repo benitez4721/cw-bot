@@ -47,7 +47,7 @@ export class MaybeTrailStopAlongEma {
         ctx.emaTrailPeriod !== undefined &&
         ctx.emaTrailBufferBps !== undefined &&
         ctx.entryFillPrice !== undefined &&
-        !ctx.syntheticExitFired,
+        ctx.bracket.forcedExitOrderId === undefined,
     );
     if (candidates.length === 0) return;
 

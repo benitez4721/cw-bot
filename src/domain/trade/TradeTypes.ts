@@ -20,6 +20,11 @@ export interface TradeContextBracket {
   // Indexed in the trade repo alongside entryOrderId so the order stream
   // can enrich the Market event with this context, keeping the trade grouped.
   forcedExitOrderId?: string;
+  // Precio del Limit de salida sintetico vigente (sesion pre). MaybeRepegSyntheticExit
+  // lo compara contra el cross-the-spread de cada barra para decidir si recolocar
+  // (precio se movio) o no (sin cambio). Lo escriben CheckSyntheticStops al disparar
+  // y el re-peg al recolocar.
+  forcedExitLimitPrice?: number;
 }
 
 export interface TradeContext {
@@ -42,10 +47,6 @@ export interface TradeContext {
   evalEnd: string;
   bracket: TradeContextBracket;
   session?: TradeContextSession;
-  // True una vez que el bot mando un exit sintetico (trigger de stop/TP o
-  // flatten 9:20). Idempotencia entre bars de pre + entre CheckSyntheticStops
-  // y FlattenPrePositions. Solo se setea en sesion pre.
-  syntheticExitFired?: boolean;
   // Solo se setea en sesion pre cuando el trade nacio con trailing
   // (EventStrategy). MaybeTrailSyntheticStop sube el stopPrice bar-a-bar
   // siguiendo el high-watermark. Si esta ausente, el stopPrice es fijo

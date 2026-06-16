@@ -142,7 +142,6 @@ describe('CheckOpenTrades — sesion pre', () => {
     // posicion siga abierta — habilitando duplicados al llegar otra alerta.
     const ctx = makeContext({
       session: 'pre',
-      syntheticExitFired: false,
       bracket: { entryOrderId: 'E1' },
     });
     const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
@@ -164,7 +163,6 @@ describe('CheckOpenTrades — sesion pre', () => {
     // tracking sintetico (ej. cierre manual desde otro lado).
     const ctx = makeContext({
       session: 'pre',
-      syntheticExitFired: false,
       bracket: { entryOrderId: 'E1' },
     });
     const { broker, tradeRepo, closeTrade } = buildDeps({
@@ -180,15 +178,14 @@ describe('CheckOpenTrades — sesion pre', () => {
     expect(closeTrade.execute).toHaveBeenCalledWith('E1');
   });
 
-  it('ctx pre con syntheticExitFired=true pero posicion abierta: stillExposed=true (no cierra)', async () => {
+  it('ctx pre con exit ya disparado (forcedExitOrderId) pero posicion abierta: stillExposed=true (no cierra)', async () => {
     // Regresion del bug de duplicados: el exit sintetico es un Limit que pudo
-    // NO llenar (mercado fino). syntheticExitFired=true + forced ya inactivo
+    // NO llenar (mercado fino). exit ya disparado + forced ya inactivo
     // NO implica cierre: si el broker reporta posicion abierta, el trade sigue
     // vivo y no debe tacharse — cerrarlo dejaria una posicion huerfana que
     // habilita un duplicado en la proxima alerta.
     const ctx = makeContext({
       session: 'pre',
-      syntheticExitFired: true,
       bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
     });
     const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
@@ -205,12 +202,11 @@ describe('CheckOpenTrades — sesion pre', () => {
     expect(closeTrade.execute).not.toHaveBeenCalled();
   });
 
-  it('ctx pre con syntheticExitFired=true y sin posicion: cierra el ctx', async () => {
+  it('ctx pre con exit ya disparado (forcedExitOrderId) y sin posicion: cierra el ctx', async () => {
     // El exit sintetico llego y dejo flat la posicion: ni orden activa ni
     // posicion en el broker → el trade realmente cerro y se tacha.
     const ctx = makeContext({
       session: 'pre',
-      syntheticExitFired: true,
       bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
     });
     const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
@@ -233,7 +229,6 @@ describe('CheckOpenTrades — sesion pre', () => {
     // que reporte getPositions.
     const ctx = makeContext({
       session: 'pre',
-      syntheticExitFired: true,
       bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
     });
     const { broker, tradeRepo, closeTrade } = buildDeps({
@@ -255,7 +250,6 @@ describe('CheckOpenTrades — sesion pre', () => {
     const ctx = makeContext({
       accountId: 'SIM-A',
       session: 'pre',
-      syntheticExitFired: false,
       bracket: { entryOrderId: 'E1' },
     });
     const { broker, tradeRepo, closeTrade } = buildDeps({
