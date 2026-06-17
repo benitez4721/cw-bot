@@ -719,13 +719,16 @@ describe('BarStreamManager', () => {
     manager.stop();
   });
 
-  it('continues subscribing the next sync if bootstrap fails', async () => {
+  it('subscribes even if the historical bootstrap fails (best-effort)', async () => {
+    // Desacople: el bootstrap historico es best-effort. Aunque falle, el simbolo
+    // se suscribe al feed para que los stops sinteticos (que usan barras live +
+    // ctx, no el cache) puedan proteger una posicion abierta.
     const s = setup({
       initial: [{ symbol: 'BAD', status: 'active', createdAt: 1 }],
     });
     s.fetchHistorical.mockRejectedValueOnce(new Error('twelve data 429'));
     await s.manager.start();
-    expect(s.feed.subscribed.has('BAD')).toBe(false);
+    expect(s.feed.subscribed.has('BAD')).toBe(true);
     s.manager.stop();
   });
 

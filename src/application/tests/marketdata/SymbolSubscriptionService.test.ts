@@ -144,7 +144,10 @@ describe('SymbolSubscriptionService — syncWatchlist', () => {
     expect(f.service.subscribedCount()).toBe(1);
   });
 
-  it('si el bootstrap falla, registra la falla y no marca suscrito', async () => {
+  it('si el bootstrap falla, igual suscribe (best-effort) y registra la falla', async () => {
+    // Desacople: los stops sinteticos no dependen del cache historico, asi que
+    // suscribimos al feed aunque el bootstrap falle — la posicion queda
+    // protegida con barras live + ctx.
     const f = setup({
       watchlist: vi.fn(async () => [{ symbol: 'AAA' }]),
       fetchThrows: true,
@@ -153,8 +156,8 @@ describe('SymbolSubscriptionService — syncWatchlist', () => {
     await f.service.syncWatchlist();
 
     expect(f.metrics.recordBootstrapFailure).toHaveBeenCalledOnce();
-    expect(f.feed.subscribe).not.toHaveBeenCalled();
-    expect(f.service.subscribedCount()).toBe(0);
+    expect(f.feed.subscribe).toHaveBeenCalledWith('AAA');
+    expect(f.service.subscribedCount()).toBe(1);
   });
 });
 

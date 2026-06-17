@@ -161,7 +161,23 @@ export class SymbolSubscriptionService {
   }
 
   private async bootstrapAndSubscribe(symbol: string): Promise<void> {
-    await this.refreshHistoricalCache(symbol);
+    // El bootstrap historico es best-effort: si falla (p.ej. TwelveData no sirve
+    // 5min en pre — "Pre/post data is available only for 1min interval"), igual
+    // suscribimos al feed. Los stops sinteticos (CheckSyntheticStops /
+    // MaybeRepegSyntheticExit / MaybeTrailSyntheticStop) operan sobre el
+    // TradeContext + las barras live + el quote, NO sobre el cache, asi que una
+    // posicion abierta queda protegida aunque no haya historico. Las
+    // DecisionStrategy si necesitan el cache: disparan CacheUnderfilledError y
+    // reintentan el bootstrap via recoverCache.
+    try {
+      await this.refreshHistoricalCache(symbol);
+    } catch (err) {
+      this.metrics.recordBootstrapFailure();
+      log.warn(
+        { symbol, err: errMsg(err) },
+        'historical bootstrap failed — subscribing anyway (stops use live bars + ctx)',
+      );
+    }
     this.feed.subscribe(symbol);
     this.subscribed.add(symbol);
   }
