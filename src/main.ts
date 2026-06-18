@@ -199,6 +199,7 @@ async function main() {
     broker,
     tradeRepo,
     placeLimitOrder,
+    reconcileEntryFill,
   });
   const maybeTrailSyntheticStop = new MaybeTrailSyntheticStop({ tradeRepo });
   const maybeRepegSyntheticExit = new MaybeRepegSyntheticExit({

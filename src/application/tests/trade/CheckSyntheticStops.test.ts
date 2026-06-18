@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CheckSyntheticStops } from '../../../application/trade/CheckSyntheticStops.js';
+import type { ReconcileEntryFill } from '../../../application/trade/ReconcileEntryFill.js';
 import type { PlaceLimitOrder } from '../../../application/broker/PlaceLimitOrder.js';
 import type { BrokerPort } from '../../../domain/broker/BrokerPort.js';
 import type { Bar } from '../../../domain/marketdata/MarketDataTypes.js';
@@ -67,18 +68,29 @@ function fakes(contexts: TradeContext[]) {
   } as unknown as TradeContextRepository & {
     patch: ReturnType<typeof vi.fn>;
     listAllActive: ReturnType<typeof vi.fn>;
+    getByOrderId: ReturnType<typeof vi.fn>;
   };
-  return { placeLimitOrder, broker, tradeRepo };
+  // Por defecto no-op: el ctx ya trae entryFillQuantity, así que ensureEntryFill
+  // ni lo invoca. Los tests del self-heal lo overridean.
+  const reconcileEntryFill = {
+    execute: vi.fn(async () => undefined),
+  } as unknown as ReconcileEntryFill & {
+    execute: ReturnType<typeof vi.fn>;
+  };
+  return { placeLimitOrder, broker, tradeRepo, reconcileEntryFill };
 }
 
 describe('CheckSyntheticStops', () => {
   it('dispara exit Limit cross-the-spread cuando bar.close toca el stop (long)', async () => {
     const ctx = preContext();
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(178.5));
@@ -100,11 +112,14 @@ describe('CheckSyntheticStops', () => {
 
   it('dispara exit cuando bar.close toca el takeProfit (long)', async () => {
     const ctx = preContext();
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(182.5));
@@ -120,11 +135,14 @@ describe('CheckSyntheticStops', () => {
       stopPrice: 101,
       takeProfitPrice: 97,
     });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(101.5));
@@ -136,11 +154,14 @@ describe('CheckSyntheticStops', () => {
 
   it('no dispara cuando bar.close esta entre stop y TP', async () => {
     const ctx = preContext();
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(180.5));
@@ -153,11 +174,14 @@ describe('CheckSyntheticStops', () => {
     const ctx = preContext({
       bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X-1' },
     });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(178.5));
@@ -165,24 +189,57 @@ describe('CheckSyntheticStops', () => {
     expect(placeLimitOrder.execute).not.toHaveBeenCalled();
   });
 
-  it('skipea ctx sin entryFillQuantity — entry todavia no fillada', async () => {
+  it('sin entryFillQuantity: reconcilia y, si el broker tampoco tiene fill, skipea', async () => {
     const ctx = preContext({ entryFillQuantity: undefined });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
+    // reconcile no encuentra fill: el re-read devuelve el ctx sin fill.
+    tradeRepo.getByOrderId = vi.fn(async () => ctx);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(178.5));
 
+    expect(reconcileEntryFill.execute).toHaveBeenCalledWith({ ctx });
     expect(placeLimitOrder.execute).not.toHaveBeenCalled();
     expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 
+  it('self-heal: sin entryFillQuantity pero el broker ya tiene el fill — reconcilia, re-lee y dispara', async () => {
+    const ctx = preContext({ entryFillQuantity: undefined });
+    const healed = preContext({ entryFillQuantity: 100 });
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
+    // Simula que reconcileEntryFill persistió el fill: el re-read ya lo trae.
+    tradeRepo.getByOrderId = vi.fn(async () => healed);
+    const useCase = new CheckSyntheticStops({
+      broker,
+      tradeRepo,
+      placeLimitOrder,
+      reconcileEntryFill,
+    });
+
+    await useCase.execute('AAPL', bar(178.5));
+
+    expect(reconcileEntryFill.execute).toHaveBeenCalledWith({ ctx });
+    expect(placeLimitOrder.execute).toHaveBeenCalledTimes(1);
+    expect(placeLimitOrder.execute.mock.calls[0][0].quantity).toBe(100);
+    expect(tradeRepo.patch).toHaveBeenCalledWith('E1', {
+      bracket: { forcedExitOrderId: 'X-1', forcedExitLimitPrice: 178.81 },
+    });
+  });
+
   it('no persiste forcedExitOrderId si la orden viene rejected — reintenta proximo bar', async () => {
     const ctx = preContext();
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     placeLimitOrder.execute = vi.fn(async () => ({
       orderId: '',
       status: 'rejected' as const,
@@ -192,6 +249,7 @@ describe('CheckSyntheticStops', () => {
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(178.5));
@@ -205,11 +263,14 @@ describe('CheckSyntheticStops', () => {
       takeProfitPrice: undefined,
       trailingStopPercent: 8,
     });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(178.5));
@@ -225,11 +286,14 @@ describe('CheckSyntheticStops', () => {
       takeProfitPrice: undefined,
       trailingStopPercent: 8,
     });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctx,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     // 500 lejos por arriba del stop 179: en el ctx clasico habria sido TP,
@@ -252,11 +316,14 @@ describe('CheckSyntheticStops', () => {
         takeProfitOrderId: 'T1',
       },
     };
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctxRth]);
+    const { placeLimitOrder, broker, tradeRepo, reconcileEntryFill } = fakes([
+      ctxRth,
+    ]);
     const useCase = new CheckSyntheticStops({
       broker,
       tradeRepo,
       placeLimitOrder,
+      reconcileEntryFill,
     });
 
     await useCase.execute('AAPL', bar(178.5));

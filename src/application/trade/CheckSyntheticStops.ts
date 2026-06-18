@@ -7,6 +7,7 @@ import { logger } from '../../infrastructure/logging/logger.js';
 import { errMsg } from '../../shared/errors.js';
 import { crossTheSpread } from '../broker/flattenHelpers.js';
 import type { PlaceLimitOrder } from '../broker/PlaceLimitOrder.js';
+import type { ReconcileEntryFill } from './ReconcileEntryFill.js';
 
 const log = logger.child({ component: 'CheckSyntheticStops' });
 
@@ -21,6 +22,7 @@ export interface CheckSyntheticStopsDeps {
   broker: BrokerPort;
   tradeRepo: TradeContextRepository;
   placeLimitOrder: PlaceLimitOrder;
+  reconcileEntryFill: ReconcileEntryFill;
 }
 
 // Monitor de stop/TP sinteticos para posiciones abiertas en sesion pre.
@@ -46,11 +48,13 @@ export class CheckSyntheticStops {
   private readonly broker: BrokerPort;
   private readonly tradeRepo: TradeContextRepository;
   private readonly placeLimitOrder: PlaceLimitOrder;
+  private readonly reconcileEntryFill: ReconcileEntryFill;
 
   constructor(deps: CheckSyntheticStopsDeps) {
     this.broker = deps.broker;
     this.tradeRepo = deps.tradeRepo;
     this.placeLimitOrder = deps.placeLimitOrder;
+    this.reconcileEntryFill = deps.reconcileEntryFill;
   }
 
   async execute(symbol: string, bar: Bar): Promise<void> {
@@ -67,8 +71,34 @@ export class CheckSyntheticStops {
 
     for (const ctx of candidates) {
       if (!this.shouldTrigger(ctx, bar)) continue;
-      await this.fireExit(ctx);
+      const ready = await this.ensureEntryFill(ctx);
+      if (!ready) continue;
+      await this.fireExit(ready);
     }
+  }
+
+  // Self-heal del fill perdido: si el ctx va a salir pero no tiene
+  // entryFillQuantity, el evento de fill del OrderStream se perdió (frecuente en
+  // cuentas SIM). Reconcilia contra el broker y re-lee el ctx. Sin esto el exit
+  // se saltea indefinidamente aunque la posición exista en el broker, dejando la
+  // posición sin gestión hasta el flatten 9:20. Solo se invoca cuando el bar ya
+  // cruzó el stop/TP, así que el getOrders extra es raro (no por-bar).
+  private async ensureEntryFill(
+    ctx: TradeContext,
+  ): Promise<TradeContext | undefined> {
+    if (ctx.entryFillQuantity !== undefined && ctx.entryFillQuantity > 0) {
+      return ctx;
+    }
+    await this.reconcileEntryFill.execute({ ctx });
+    const fresh = await this.tradeRepo.getByOrderId(ctx.bracket.entryOrderId);
+    if (fresh?.entryFillQuantity !== undefined && fresh.entryFillQuantity > 0) {
+      return fresh;
+    }
+    log.info(
+      { symbol: ctx.symbol, entryOrderId: ctx.bracket.entryOrderId },
+      'no entry fill yet — skipping synthetic exit',
+    );
+    return undefined;
   }
 
   private shouldTrigger(ctx: TradeContext, bar: Bar): boolean {
@@ -119,16 +149,9 @@ export class CheckSyntheticStops {
       return;
     }
 
-    // Cantidad: solo gestionamos exits sobre fills confirmados por el
-    // OrderStreamPort. Si el entry todavia no llena, no hay posicion que cerrar.
+    // Cantidad: garantizada > 0 por ensureEntryFill (narrow para TS).
     const quantity = ctx.entryFillQuantity;
-    if (!quantity || quantity <= 0) {
-      log.info(
-        { symbol: ctx.symbol, entryOrderId: ctx.bracket.entryOrderId },
-        'no entry fill yet — skipping synthetic exit',
-      );
-      return;
-    }
+    if (!quantity || quantity <= 0) return;
 
     let orderId: string | undefined;
     try {
