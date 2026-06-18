@@ -14,7 +14,9 @@ vi.mock(
 import { MaybeRepegSyntheticExit } from '../../../application/trade/MaybeRepegSyntheticExit.js';
 import { waitOrdersTerminal } from '../../../application/broker/flattenHelpers.js';
 import type { PlaceLimitOrder } from '../../../application/broker/PlaceLimitOrder.js';
+import type { RecordOrderFill } from '../../../application/trade/RecordOrderFill.js';
 import type { BrokerPort } from '../../../domain/broker/BrokerPort.js';
+import type { Order } from '../../../domain/broker/BrokerTypes.js';
 import type { Bar } from '../../../domain/marketdata/MarketDataTypes.js';
 import type { TradeContextRepository } from '../../../domain/trade/TradeContextRepository.js';
 import type { TradeContext } from '../../../domain/trade/TradeTypes.js';
@@ -83,17 +85,24 @@ function fakes(contexts: TradeContext[], bid = 100) {
     patch: ReturnType<typeof vi.fn>;
     listAllActive: ReturnType<typeof vi.fn>;
   };
-  return { placeLimitOrder, broker, tradeRepo };
+  const recordOrderFill = {
+    execute: vi.fn(async () => undefined),
+  } as unknown as RecordOrderFill & { execute: ReturnType<typeof vi.fn> };
+  return { placeLimitOrder, broker, tradeRepo, recordOrderFill };
 }
 
 describe('MaybeRepegSyntheticExit', () => {
   it('precio sin cambio (cross == forcedExitLimitPrice): no-op', async () => {
     // bid 100 → cross SELL = 100 * 0.9995 = 99.95 = forcedExitLimitPrice actual.
-    const { placeLimitOrder, broker, tradeRepo } = fakes([preCtx()], 100);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      100,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -105,11 +114,15 @@ describe('MaybeRepegSyntheticExit', () => {
 
   it('precio subió: cancela y recoloca el Limit más alto', async () => {
     // bid 102 → cross SELL = round2(102 * 0.9995) = 101.95 > 99.95.
-    const { placeLimitOrder, broker, tradeRepo } = fakes([preCtx()], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      102,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -129,11 +142,15 @@ describe('MaybeRepegSyntheticExit', () => {
 
   it('precio bajó: cancela y recoloca el Limit más bajo', async () => {
     // bid 98 → cross SELL = round2(98 * 0.9995) = 97.95 < 99.95.
-    const { placeLimitOrder, broker, tradeRepo } = fakes([preCtx()], 98);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      98,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -148,11 +165,15 @@ describe('MaybeRepegSyntheticExit', () => {
 
   it('ignora ctx EMA (sin trailingStopPercent)', async () => {
     const ctx = preCtx({ trailingStopPercent: undefined, emaTrailPeriod: 18 });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [ctx],
+      102,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -165,11 +186,15 @@ describe('MaybeRepegSyntheticExit', () => {
     const ctx = preCtx({
       bracket: { entryOrderId: 'E1' },
     });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctx], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [ctx],
+      102,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -179,11 +204,15 @@ describe('MaybeRepegSyntheticExit', () => {
 
   it('si la cancelación no confirma terminal, no recoloca este bar', async () => {
     vi.mocked(waitOrdersTerminal).mockResolvedValueOnce(false);
-    const { placeLimitOrder, broker, tradeRepo } = fakes([preCtx()], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      102,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -194,7 +223,10 @@ describe('MaybeRepegSyntheticExit', () => {
   });
 
   it('si placeLimitOrder viene rejected, no patchea (reintenta próximo bar)', async () => {
-    const { placeLimitOrder, broker, tradeRepo } = fakes([preCtx()], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      102,
+    );
     placeLimitOrder.execute = vi.fn(async () => ({
       orderId: '',
       status: 'rejected' as const,
@@ -204,6 +236,7 @@ describe('MaybeRepegSyntheticExit', () => {
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -212,7 +245,10 @@ describe('MaybeRepegSyntheticExit', () => {
   });
 
   it('getQuote throw → no rompe el loop (reintenta próximo bar)', async () => {
-    const { placeLimitOrder, broker, tradeRepo } = fakes([preCtx()], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      102,
+    );
     broker.getQuote = vi.fn(async () => {
       throw new Error('quote down');
     });
@@ -220,6 +256,7 @@ describe('MaybeRepegSyntheticExit', () => {
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await expect(useCase.execute('AAPL', aBar)).resolves.toBeUndefined();
@@ -245,11 +282,15 @@ describe('MaybeRepegSyntheticExit', () => {
         forcedExitLimitPrice: 99.95,
       },
     });
-    const { placeLimitOrder, broker, tradeRepo } = fakes([ctxA, ctxB], 102);
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [ctxA, ctxB],
+      102,
+    );
     const useCase = new MaybeRepegSyntheticExit({
       broker,
       tradeRepo,
       placeLimitOrder,
+      recordOrderFill,
     });
 
     await useCase.execute('AAPL', aBar);
@@ -258,5 +299,44 @@ describe('MaybeRepegSyntheticExit', () => {
     expect(qtys).toContain(100);
     expect(qtys).toContain(40);
     expect(placeLimitOrder.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('el Limit ya había llenado al cancelar: registra el fill y no recoloca', async () => {
+    // El cancel no canceló nada (la orden ya estaba filled); getOrders la
+    // devuelve terminal con filledQuantity. Registramos el exit en vez de
+    // recolocar contra "long 0 shares".
+    const { placeLimitOrder, broker, tradeRepo, recordOrderFill } = fakes(
+      [preCtx()],
+      102,
+    );
+    const filledExit: Order = {
+      id: 'X1',
+      symbol: 'AAPL',
+      quantity: 100,
+      side: 'SELL',
+      type: 'Limit',
+      status: 'filled',
+      filledQuantity: 100,
+      filledPrice: 101.95,
+      createdAt: 't',
+    };
+    broker.getOrders = vi.fn(async () => [filledExit]);
+    const useCase = new MaybeRepegSyntheticExit({
+      broker,
+      tradeRepo,
+      placeLimitOrder,
+      recordOrderFill,
+    });
+
+    await useCase.execute('AAPL', aBar);
+
+    expect(recordOrderFill.execute).toHaveBeenCalledWith({
+      ctx: expect.objectContaining({
+        bracket: expect.objectContaining({ entryOrderId: 'E1' }),
+      }),
+      order: filledExit,
+    });
+    expect(placeLimitOrder.execute).not.toHaveBeenCalled();
+    expect(tradeRepo.patch).not.toHaveBeenCalled();
   });
 });

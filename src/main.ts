@@ -206,6 +206,7 @@ async function main() {
     broker,
     tradeRepo,
     placeLimitOrder,
+    recordOrderFill,
   });
 
   const barStream = new BarStreamManager({
