@@ -1,5 +1,5 @@
 import type { BrokerPort } from '../../domain/broker/BrokerPort.js';
-import type { Order, Position } from '../../domain/broker/BrokerTypes.js';
+import type { Order } from '../../domain/broker/BrokerTypes.js';
 import type { TradeContextRepository } from '../../domain/trade/TradeContextRepository.js';
 import { logger } from '../../infrastructure/logging/logger.js';
 import { errMsg } from '../../shared/errors.js';
@@ -22,10 +22,23 @@ export interface CheckOpenTradesDeps {
   closeTrade: CloseTrade;
 }
 
-// Checks whether (model, symbol) still has an open trade. Reconciles the
-// trade context repo against the broker as a side effect: any active context
-// whose bracket has no order still alive (entry/stop/tp) is closed via
-// CloseTrade. Callers use the result as a gate before evaluating new entries.
+// Checks whether (model, symbol) still has an open trade. Callers use the
+// result as a gate before evaluating new entries.
+//
+// Dos regímenes según la sesión del context:
+//   - pre: gate puro sobre Redis. En pre el bot no deja órdenes de exit
+//     nativas en el broker (el stop es un Limit sintético que se cancela y
+//     recoloca cada barra) y la posición del broker es neta-agregada por
+//     cuenta+symbol — no distingue ctx cuando varios trades comparten symbol.
+//     Leer el broker acá producía falsos "sin exposición" en las ventanas de
+//     repeg (entry ya lleno + exit en tránsito) y abría trades duplicados. La
+//     verdad por-ctx vive en Redis: un ctx pre activo == símbolo expuesto. El
+//     cierre del ctx lo disparan RecordOrderFill (OrderStream), el self-heal
+//     de MaybeRepegSyntheticExit y el flatten 9:20 — nunca este gate.
+//   - rth: el bracket nativo deja stop/TP como órdenes vivas identificables
+//     por orderId. Reconcilia el repo contra el broker como efecto colateral:
+//     un context sin ninguna pierna del bracket aún activa se cierra via
+//     CloseTrade.
 export class CheckOpenTrades {
   private readonly tradeRepo: TradeContextRepository;
   private readonly broker: BrokerPort;
@@ -45,42 +58,32 @@ export class CheckOpenTrades {
     const contexts = all.filter((c) => c.symbol === symbol);
     if (contexts.length === 0) return { stillExposed: false };
 
-    // Los contexts de (model, symbol) normalmente comparten el mismo
-    // accountId (la strategy lo decide), pero por seguridad consultamos por
-    // cada accountId distinto presente en los contexts. Los contexts legacy
-    // sin accountId persistido no se pueden verificar contra el broker — el
-    // loop de abajo los marca como cerrados con un warn.
+    // Gate pre: cualquier ctx pre activo basta para considerar el símbolo
+    // expuesto, sin consultar el broker ni cerrar nada (ver comentario de
+    // clase). Si hay contexts mixtos, el pre activo ya cubre la exposición;
+    // los rth se reconcilian en una vuelta posterior cuando ya no quede pre.
+    if (contexts.some((c) => c.session === 'pre')) {
+      return { stillExposed: true };
+    }
+
+    // rth: los contexts normalmente comparten el mismo accountId (la strategy
+    // lo decide), pero por seguridad consultamos por cada accountId distinto.
+    // Los contexts legacy sin accountId no se pueden verificar contra el
+    // broker — el loop de abajo los cierra con un warn.
     const accountIdsToQuery = new Set<string>();
     for (const c of contexts) {
       if (c.accountId) accountIdsToQuery.add(c.accountId);
     }
-    // En sesion pre el bot no coloca StopMarket ni TP en el broker: el stop
-    // se simula con un Limit (CheckSyntheticStops). Para un ctx pre, "no hay
-    // ordenes activas" NO implica "trade cerrado": el exit sintetico es un
-    // Limit que puede no llenar (mercado fino), dejando la posicion abierta
-    // sin orden viva. Por eso, ante cualquier ctx pre, consultamos positions
-    // y solo cerramos el ctx si el broker confirma que no queda posicion —
-    // sin esto una posicion huerfana queda invisible al guard de duplicados.
-    const needsPositions = contexts.some((c) => c.session === 'pre');
-    const accountIdsArr = Array.from(accountIdsToQuery);
-    const [ordersByAccount, positionsByAccount] = await Promise.all([
-      Promise.all(
-        accountIdsArr.map((accountId) =>
-          this.broker.getOrders({ symbol, accountId }),
-        ),
+    const ordersByAccount = await Promise.all(
+      Array.from(accountIdsToQuery, (accountId) =>
+        this.broker.getOrders({ symbol, accountId }),
       ),
-      needsPositions
-        ? Promise.all(
-            accountIdsArr.map((accountId) =>
-              this.broker.getPositions({ accountId }),
-            ),
-          )
-        : Promise.resolve<Position[][]>([]),
-    ]);
-    const orders = ordersByAccount.flat();
-    const positions = positionsByAccount.flat();
+    );
     const activeOrderIds = new Set(
-      orders.filter(isOrderActive).map((o) => o.id),
+      ordersByAccount
+        .flat()
+        .filter(isOrderActive)
+        .map((o) => o.id),
     );
 
     let stillExposed = false;
@@ -112,23 +115,6 @@ export class CheckOpenTrades {
       if (hasActive) {
         stillExposed = true;
         continue;
-      }
-      // Fallback pre: si no hay orden activa pero el ctx es pre con la
-      // posicion todavia abierta en el broker, el trade sigue vivo. Aplica
-      // tambien tras disparar el exit sintetico: ese exit es un Limit que
-      // puede no haber llenado, asi que un forcedExitOrderId presente NO
-      // garantiza cierre. No cerrar el ctx ni habilitar entries duplicados.
-      if (ctx.session === 'pre' && ctx.accountId) {
-        const hasPosition = positions.some(
-          (p) =>
-            p.accountId === ctx.accountId &&
-            p.symbol === symbol &&
-            p.quantity !== 0,
-        );
-        if (hasPosition) {
-          stillExposed = true;
-          continue;
-        }
       }
       try {
         await this.closeTrade.execute(ctx.bracket.entryOrderId);

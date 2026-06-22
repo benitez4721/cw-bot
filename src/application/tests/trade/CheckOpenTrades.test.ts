@@ -39,18 +39,6 @@ function makeOrder(id: string, status: Order['status'] = 'open'): Order {
   };
 }
 
-function makePosition(over: Partial<Position> = {}): Position {
-  return {
-    symbol: 'AAPL',
-    accountId: 'SIM12345',
-    quantity: 100,
-    averagePrice: 100,
-    marketValue: 10_000,
-    unrealizedPnL: 0,
-    ...over,
-  };
-}
-
 interface Setup {
   contexts: TradeContext[];
   orders: Order[];
@@ -134,38 +122,18 @@ describe('CheckOpenTrades — forcedExitOrderId', () => {
   });
 });
 
-describe('CheckOpenTrades — sesion pre', () => {
-  it('ctx pre con entry filled + position abierta: stillExposed=true (no cierra)', async () => {
-    // El bot abrio una alert pre: entry Limit DYP, no hay StopMarket en
-    // broker. La entry llena y desaparece de las "ordenes activas". Sin
-    // fallback de positions, CheckOpenTrades cerraria el ctx aunque la
-    // posicion siga abierta — habilitando duplicados al llegar otra alerta.
+describe('CheckOpenTrades — sesion pre (gate puro sobre Redis)', () => {
+  it('ctx pre activo: stillExposed=true sin consultar el broker ni cerrar', async () => {
+    // Regresión del bug de duplicados (ICCM): el guard pre NO debe leer el
+    // broker. Mientras exista un ctx pre activo en Redis, el símbolo está
+    // expuesto — la posición del broker es neta-agregada y el exit sintético
+    // se cancela/recoloca cada barra, así que el broker da falsos negativos
+    // que abrían trades duplicados.
     const ctx = makeContext({
       session: 'pre',
       bracket: { entryOrderId: 'E1' },
     });
     const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
-      contexts: [ctx],
-      orders: [],
-      positions: [makePosition({ quantity: 2000 })],
-    });
-    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
-
-    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
-
-    expect(getPositions).toHaveBeenCalledWith({ accountId: 'SIM12345' });
-    expect(result.stillExposed).toBe(true);
-    expect(closeTrade.execute).not.toHaveBeenCalled();
-  });
-
-  it('ctx pre sin orden activa ni position: cierra el ctx', async () => {
-    // Caso esperado tras un exit que llego y dejo flat la posicion fuera del
-    // tracking sintetico (ej. cierre manual desde otro lado).
-    const ctx = makeContext({
-      session: 'pre',
-      bracket: { entryOrderId: 'E1' },
-    });
-    const { broker, tradeRepo, closeTrade } = buildDeps({
       contexts: [ctx],
       orders: [],
       positions: [],
@@ -174,37 +142,16 @@ describe('CheckOpenTrades — sesion pre', () => {
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
 
-    expect(result.stillExposed).toBe(false);
-    expect(closeTrade.execute).toHaveBeenCalledWith('E1');
-  });
-
-  it('ctx pre con exit ya disparado (forcedExitOrderId) pero posicion abierta: stillExposed=true (no cierra)', async () => {
-    // Regresion del bug de duplicados: el exit sintetico es un Limit que pudo
-    // NO llenar (mercado fino). exit ya disparado + forced ya inactivo
-    // NO implica cierre: si el broker reporta posicion abierta, el trade sigue
-    // vivo y no debe tacharse — cerrarlo dejaria una posicion huerfana que
-    // habilita un duplicado en la proxima alerta.
-    const ctx = makeContext({
-      session: 'pre',
-      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
-    });
-    const { broker, tradeRepo, closeTrade, getPositions } = buildDeps({
-      contexts: [ctx],
-      orders: [], // el Limit de exit X1 expiro sin llenar; ya no esta activo
-      positions: [makePosition({ quantity: 170 })],
-    });
-    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
-
-    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
-
-    expect(getPositions).toHaveBeenCalledWith({ accountId: 'SIM12345' });
     expect(result.stillExposed).toBe(true);
     expect(closeTrade.execute).not.toHaveBeenCalled();
+    expect(getPositions).not.toHaveBeenCalled();
+    expect(broker.getOrders).not.toHaveBeenCalled();
   });
 
-  it('ctx pre con exit ya disparado (forcedExitOrderId) y sin posicion: cierra el ctx', async () => {
-    // El exit sintetico llego y dejo flat la posicion: ni orden activa ni
-    // posicion en el broker → el trade realmente cerro y se tacha.
+  it('ctx pre con exit ya disparado (forcedExitOrderId): stillExposed=true sin tocar el broker', async () => {
+    // Aunque el exit sintético ya se disparó, el cierre del ctx lo hacen
+    // RecordOrderFill / el self-heal del repeg / el flatten — nunca este gate.
+    // Hasta que eso ocurra, el ctx sigue activo y el símbolo expuesto.
     const ctx = makeContext({
       session: 'pre',
       bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
@@ -218,23 +165,23 @@ describe('CheckOpenTrades — sesion pre', () => {
 
     const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
 
-    expect(getPositions).toHaveBeenCalledWith({ accountId: 'SIM12345' });
-    expect(result.stillExposed).toBe(false);
-    expect(closeTrade.execute).toHaveBeenCalledWith('E1');
+    expect(result.stillExposed).toBe(true);
+    expect(closeTrade.execute).not.toHaveBeenCalled();
+    expect(getPositions).not.toHaveBeenCalled();
   });
 
-  it('ctx pre con forcedExit todavia open: stillExposed=true por la orden activa', async () => {
-    // Con el forced Limit aun open, hasActive corta antes del fallback de
-    // positions: el trade sigue expuesto por la orden viva, sin importar lo
-    // que reporte getPositions.
-    const ctx = makeContext({
+  it('contexts mixtos pre+rth: el pre activo basta para stillExposed, no reconcilia rth esta vuelta', async () => {
+    const pre = makeContext({
       session: 'pre',
-      bracket: { entryOrderId: 'E1', forcedExitOrderId: 'X1' },
+      bracket: { entryOrderId: 'E1' },
+    });
+    const rth = makeContext({
+      session: 'rth',
+      bracket: { entryOrderId: 'E2', stopOrderId: 'S2' },
     });
     const { broker, tradeRepo, closeTrade } = buildDeps({
-      contexts: [ctx],
-      orders: [makeOrder('X1', 'open')],
-      positions: [],
+      contexts: [pre, rth],
+      orders: [], // E2/S2 inactivos, pero no se cierra mientras haya pre activo
     });
     const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
 
@@ -242,26 +189,6 @@ describe('CheckOpenTrades — sesion pre', () => {
 
     expect(result.stillExposed).toBe(true);
     expect(closeTrade.execute).not.toHaveBeenCalled();
-  });
-
-  it('ctx pre sin position pero en otra account: no marca stillExposed', async () => {
-    // Defensa contra positions cross-account: aunque haya una position en
-    // AAPL, si pertenece a otra cuenta, no es del ctx — no debe contar.
-    const ctx = makeContext({
-      accountId: 'SIM-A',
-      session: 'pre',
-      bracket: { entryOrderId: 'E1' },
-    });
-    const { broker, tradeRepo, closeTrade } = buildDeps({
-      contexts: [ctx],
-      orders: [],
-      positions: [makePosition({ accountId: 'SIM-B', quantity: 100 })],
-    });
-    const useCase = new CheckOpenTrades({ broker, tradeRepo, closeTrade });
-
-    const result = await useCase.execute({ model: 'm', symbol: 'AAPL' });
-
-    expect(result.stillExposed).toBe(false);
-    expect(closeTrade.execute).toHaveBeenCalledWith('E1');
+    expect(broker.getOrders).not.toHaveBeenCalled();
   });
 });
