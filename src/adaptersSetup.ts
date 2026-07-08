@@ -193,15 +193,15 @@ export function setupAdapters(): Adapters {
   // Modelos event-driven (sin DecisionModel, sin watchlist): el AlertEventManager
   // se suscribe directo a la alerta CW y dispara placeTrailingBracketOrder al
   // recibir cada NewAlert. Convive en paralelo con los DecisionStrategy.
-  const runningUp: EventStrategy = {
-    name: 'RunningUp0.5',
-    cwConfigId: '6a278bbe025065672d6359fd',
-    riskUsd: RISK_USD,
-    trailMode: 'percent',
-    trailingStopPercent: 8,
-    entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID!,
-  };
+  // const runningUp: EventStrategy = {
+  //   name: 'RunningUp0.5',
+  //   cwConfigId: '6a278bbe025065672d6359fd',
+  //   riskUsd: RISK_USD,
+  //   trailMode: 'percent',
+  //   trailingStopPercent: 8,
+  //   entryBufferBps: 0,
+  //   accountId: env.TRADESTATION_ACCOUNT_ID!,
+  // };
 
   // Variante paralela del mismo alert (mismo cwConfigId, misma cuenta) con
   // trail por EMA 18 en lugar de % fijo. Convive con allAlerts: cada
@@ -222,15 +222,15 @@ export function setupAdapters(): Adapters {
   // Tercera variante del mismo cwConfigId: usa el DecisionModel para filtrar
   // solo alerts cuya AlertNameColumn sea "High of the day". Los otros dos
   // EventStrategy (sin model) siguen disparando para cualquier nombre.
-  const highOfTheDayAlert: EventStrategy = {
-    name: 'HighOfTheDayAlert',
-    cwConfigId: '68ab7ca8a42020253d351a52',
-    riskUsd: RISK_USD,
-    trailMode: 'percent',
-    trailingStopPercent: 8,
-    entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID_2!,
-  };
+  // const highOfTheDayAlert: EventStrategy = {
+  //   name: 'HighOfTheDayAlert',
+  //   cwConfigId: '68ab7ca8a42020253d351a52',
+  //   riskUsd: RISK_USD,
+  //   trailMode: 'percent',
+  //   trailingStopPercent: 8,
+  //   entryBufferBps: 0,
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_2!,
+  // };
 
   // VWAP crossover: el config CW 6a1c6da4a3dbacf5c2d97a0c ya detecta el cruce de
   // VWAP upstream; esta strategy opera cada NewAlert con trail % fijo.
@@ -244,15 +244,15 @@ export function setupAdapters(): Adapters {
     accountId: env.TRADESTATION_ACCOUNT_ID_3!,
   };
 
-  const runningUpLowVolume: EventStrategy = {
-    name: 'RunningUp0.5LowVolume',
-    cwConfigId: '6a3035beb7983c861b346525',
-    riskUsd: RISK_USD,
-    trailMode: 'percent',
-    trailingStopPercent: 8,
-    entryBufferBps: 0,
-    accountId: env.TRADESTATION_ACCOUNT_ID_3!,
-  };
+  // const runningUpLowVolume: EventStrategy = {
+  //   name: 'RunningUp0.5LowVolume',
+  //   cwConfigId: '6a3035beb7983c861b346525',
+  //   riskUsd: RISK_USD,
+  //   trailMode: 'percent',
+  //   trailingStopPercent: 8,
+  //   entryBufferBps: 0,
+  //   accountId: env.TRADESTATION_ACCOUNT_ID_3!,
+  // };
 
   // const runningUpHighVol: EventStrategy = {
   //   name: 'RunningUpHighVol',
@@ -277,12 +277,7 @@ export function setupAdapters(): Adapters {
   // };
 
   const strategies = [] as ConfiguredStrategy[];
-  const eventStrategies = [
-    runningUp,
-    highOfTheDayAlert,
-    crossOverVwap,
-    runningUpLowVolume,
-  ];
+  const eventStrategies = [crossOverVwap];
 
   // Unión de cuentas declaradas por las estrategias. Por cada accountId
   // distinto se abre un websocket de orders y otro de positions.
